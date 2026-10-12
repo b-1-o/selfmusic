@@ -57,13 +57,13 @@ function Is-Placeholder([string]$Value, [int]$MinLength) {
 }
 
 $Password = Get-EnvValue "SELF_MUSIC_PASSWORD"
-if (Is-Placeholder $Password 12) {
+if (Is-Placeholder $Password 8) {
     do {
-        $Password = Read-Secret "Choose SelfMusic password (12+ characters; input hidden)"
+        $Password = Read-Secret "Choose SelfMusic password (8+ characters; input hidden)"
         $Confirm = Read-Secret "Confirm password"
         if ($Password -ne $Confirm) { Write-Host "Passwords did not match." -ForegroundColor Yellow }
-        elseif ($Password.Length -lt 12) { Write-Host "Use at least 12 characters." -ForegroundColor Yellow }
-    } while ($Password -ne $Confirm -or $Password.Length -lt 12)
+        elseif ($Password.Length -lt 8) { Write-Host "Use at least 8 characters." -ForegroundColor Yellow }
+    } while ($Password -ne $Confirm -or $Password.Length -lt 8)
     Set-EnvValue "SELF_MUSIC_PASSWORD" $Password
     $Password = $null
     $Confirm = $null
