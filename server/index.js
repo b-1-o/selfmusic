@@ -14,6 +14,7 @@ import { pipeline } from "node:stream/promises";
 import { create as createYoutubeDl } from "youtube-dl-exec";
 import { createDatabase } from "./database.js";
 import { getTracks as readTracks, getTrackRow, listAlbums, listArtists, scanLibrary } from "./library.js";
+import { mountCollectionRoutes } from "./collections.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 dotenv.config({ path: path.join(projectRoot, ".env") });
@@ -259,7 +260,7 @@ function describeYtdlpError(error) {
 
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
-app.use(express.json({ limit: "16kb" }));
+app.use(express.json({ limit: "2mb" }));
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "same-origin");
@@ -468,6 +469,7 @@ async function findTracks(query = {}, options = {}) {
   await scanLibrary(db, musicRoot, { coverCacheDir, ...options });
   return readTracks(db, query);
 }
+mountCollectionRoutes(app, { db, requireAuth, findTracks });
 async function resolveTrackFile(id) {
   const filePath = safeTrackPath(id);
   if (!filePath) return null;
