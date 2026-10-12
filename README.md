@@ -115,6 +115,22 @@ Open the app in a browser that supports web audio and Media Session controls, st
 
 Support is controlled by the browser and operating system, not solely by the app. iOS Safari, installed web apps, and other mobile browsers may behave differently across versions. Test on your actual phone before relying on uninterrupted background playback. The PWA shell alone does not make audio play offline.
 
+## Import audio files into your home library
+
+After signing in, open **Import music** in the sidebar (or mobile navigation), choose one or more audio files from the device you are using, then press **Import selected tracks**. Drag-and-drop is also supported on desktop browsers.
+
+Uploads are saved on the home server in `MUSIC_DIR/Uploads` (by default `./music/Uploads`) and appear in the regular library after scanning. The server accepts MP3, M4A, AAC, FLAC, WAV, OGG, OPUS, and WebM audio files. Up to 20 files can be uploaded in a batch, with a 250 MB limit per file. The upload view shows transfer progress.
+
+This is also how you can add audio purchased from artists or downloaded from websites that explicitly provide downloadable files. For example, Bandcamp lets you download purchases in formats including MP3 and FLAC; its help guide explains where to get purchase downloads:
+
+- https://get.bandcamp.help/en/articles/15263100-where-do-i-download-my-purchase
+
+For public collections such as Internet Archive, check each item’s permissions and whether a download is offered; not every item is downloadable or licensed for every use:
+
+- https://archivesupport.zendesk.com/hc/en-us/articles/360016398872-Downloading-A-Basic-Guide
+
+Keep the downloaded audio files on the device that has them, then upload them to SelfMusic. This MVP does not scrape third-party sites or fetch arbitrary URLs; that avoids importing content without authorization and prevents unsafe server-side URL fetching.
+
 ## YouTube discovery
 
 The **Explore YouTube** page searches embeddable videos through the official YouTube Data API v3 and plays a selected result in YouTube's visible embedded player. Search results are only kept in page memory; the server does not cache or save audiovisual content.
@@ -141,6 +157,7 @@ The server recognizes MP3, M4A, AAC, FLAC, WAV, OGG, OPUS, and WebM audio extens
 - Favorites and last-played track are currently saved in the browser's local storage, not synced between devices.
 - Media Session controls and lock-screen artwork vary by platform.
 - No server admin panel for arbitrary directory selection. Configure **MUSIC_DIR** on the server instead.
+- Audio upload currently supports supported file types, up to 20 files per batch and 250 MB per file; metadata/tag extraction and duplicate-content detection are not implemented yet.
 
 ## Security checklist
 
