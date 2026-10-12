@@ -1861,6 +1861,75 @@ function App() {
 
               <div className="settings-grid">
                 <div className="settings-card">
+                  <div className="settings-card-head"><span className="settings-icon"><AudioLines size={19} /></span><span className="settings-overline">SIGNED-IN ACCOUNT</span></div>
+                  <h3>{profile.username || "Server owner"}</h3>
+                  <p>You are signed in with the <strong>{profile.role || "user"}</strong> role. Preferences for playback stay on this browser; playlists, favorites, and history are stored on the server.</p>
+                  <div className="settings-action"><ShieldCheck size={15} /> Account role <span>{profile.role || "user"}</span></div>
+                  <button className="settings-action" type="button" onClick={handleLogout}><LogOut size={15} /> Sign out of this account</button>
+                </div>
+
+                <div className="settings-card">
+                  <div className="settings-card-head"><span className="settings-icon settings-icon-blue"><AudioLines size={19} /></span><span className="settings-overline">STREAM QUALITY</span></div>
+                  <h3>Audio format and bitrate</h3>
+                  <p>Original files avoid transcoding. Alternate formats use the server's FFmpeg cache and require <code>TRANSCODE_ENABLED=true</code>.</p>
+                  <label className="appearance-control-label" htmlFor="stream-format-select"><strong>Format</strong><span>Choose what the player requests</span></label>
+                  <select id="stream-format-select" value={streamFormat} onChange={(event) => setStreamFormat(event.target.value)}>
+                    <option value="original">Original audio</option>
+                    <option value="mp3" disabled={!playerSettings.transcodingEnabled}>MP3</option>
+                    <option value="opus" disabled={!playerSettings.transcodingEnabled}>Opus</option>
+                    <option value="aac" disabled={!playerSettings.transcodingEnabled}>AAC</option>
+                  </select>
+                  <label className="appearance-control-label" htmlFor="stream-bitrate-select"><strong>Target bitrate</strong><span>Used only when transcoding</span></label>
+                  <select id="stream-bitrate-select" value={streamBitrate} onChange={(event) => setStreamBitrate(event.target.value)}>
+                    {(playerSettings.bitrates || ["96k", "128k", "160k", "192k", "256k", "320k"]).map((bitrate) => <option value={bitrate} key={bitrate}>{bitrate}</option>)}
+                  </select>
+                  <div className="info-note"><ShieldCheck size={16} /><span>{playerSettings.transcodingEnabled ? "Transcoding is enabled." : "Transcoding is currently disabled by the server administrator."}</span></div>
+                </div>
+
+                <div className="settings-card">
+                  <div className="settings-card-head"><span className="settings-icon"><Globe2 size={19} /></span><span className="settings-overline">LAST.FM SCROBBLING</span></div>
+                  <h3>{lastFmStatus.connected ? "Last.fm connected" : "Connect your Last.fm account"}</h3>
+                  <p>{lastFmStatus.connected ? "Scrobbles will be sent for eligible tracks on this account." : "Authorize Last.fm to send now-playing updates and scrobbles from this profile."}</p>
+                  {lastFmStatus.connected && <div className="settings-action"><Check size={15} /> Connected account <span>{lastFmStatus.account?.username || "Last.fm user"}</span></div>}
+                  {lastFmMessage && <p className={lastFmMessage.toLowerCase().includes("could not") || lastFmMessage.toLowerCase().includes("failed") ? "form-error" : "settings-footnote"} role="status">{lastFmMessage}</p>}
+                  {!lastFmStatus.connected ? (
+                    <button className="settings-action" type="button" disabled={!lastFmStatus.configured} onClick={connectLastFm}><Globe2 size={15} /> Authorize Last.fm <ArrowUpRight size={15} /></button>
+                  ) : (
+                    <button className="settings-action" type="button" onClick={disconnectLastFm}><X size={15} /> Disconnect Last.fm</button>
+                  )}
+                  {!lastFmStatus.configured && <p className="settings-footnote">The server owner must set <code>LASTFM_API_KEY</code>, <code>LASTFM_API_SECRET</code>, and a callback URL in <code>.env</code>.</p>}
+                </div>
+
+                {profile.role === "admin" && (
+                  <div className="settings-card settings-card-wide">
+                    <div className="settings-card-head"><span className="settings-icon"><LockKeyhole size={19} /></span><span className="settings-overline">ADMINISTRATION</span></div>
+                    <h3>Manage user accounts</h3>
+                    <p>Registration is restricted to administrators. Use unique passwords of at least 12 characters.</p>
+                    <form className="account-create-form" onSubmit={createAccount}>
+                      <label htmlFor="new-account-username">Username</label>
+                      <input id="new-account-username" type="text" value={newAccountUsername} onChange={(event) => setNewAccountUsername(event.target.value)} minLength={3} maxLength={32} pattern="[A-Za-z0-9._-]+" autoComplete="off" required />
+                      <label htmlFor="new-account-password">Temporary password</label>
+                      <input id="new-account-password" type="password" value={newAccountPassword} onChange={(event) => setNewAccountPassword(event.target.value)} minLength={12} maxLength={128} autoComplete="new-password" required />
+                      <label htmlFor="new-account-role">Role</label>
+                      <select id="new-account-role" value={newAccountRole} onChange={(event) => setNewAccountRole(event.target.value)}><option value="user">User — stream only</option><option value="admin">Admin — manage server</option></select>
+                      <button className="primary-button" type="submit"><Plus size={15} /> Create account</button>
+                    </form>
+                    {accountMessage && <p className={accountMessageError ? "form-error" : "settings-footnote"} role="status">{accountMessage}</p>}
+                    <div className="admin-user-list">
+                      {adminUsers.map((user) => (
+                        <div className="admin-user-row" key={user.id}>
+                          <div><strong>{user.username}</strong><small>Created {new Date(user.createdAt).toLocaleDateString()}</small></div>
+                          <select aria-label={"Role for " + user.username} value={user.role} disabled={user.id === profile.id} onChange={(event) => changeAccountRole(user, event.target.value)}><option value="user">User</option><option value="admin">Admin</option></select>
+                          {user.id !== profile.id && <button className="icon-button" type="button" title={"Delete " + user.username} aria-label={"Delete account " + user.username} onClick={() => deleteAccount(user)}><Trash2 size={15} /></button>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+
+                <div className="settings-card">
                   <div className="settings-card-head"><span className="settings-icon"><FolderOpen size={19} /></span><span className="settings-overline">MUSIC COLLECTION</span></div>
                   <h3>Where your files live</h3>
                   <p>Put supported audio files into the folder configured by <code>MUSIC_DIR</code>. By default, that is <code>./music</code> in the project directory.</p>
