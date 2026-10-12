@@ -555,7 +555,7 @@ function App() {
 
   useEffect(() => {
     let active = true;
-    fetch("/api/auth/session")
+    fetch("/api/auth/session", { credentials: "same-origin", cache: "no-store", headers: { "Cache-Control": "no-cache" } })
       .then((response) => {
         if (!response.ok) throw new Error("server_unavailable");
         return response.json();
@@ -603,10 +603,26 @@ function App() {
         setLoginError(await readMessage(response));
         return;
       }
-      const sessionResponse = await fetch("/api/auth/session", { credentials: "same-origin", cache: "no-store" });
-      const session = sessionResponse.ok ? await sessionResponse.json() : { authenticated: false };
+
+      // A short retry helps browsers which persist a Set-Cookie asynchronously.
+      let session = { authenticated: false, sessionStatus: "missing" };
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        if (attempt > 0) await new Promise((resolve) => window.setTimeout(resolve, attempt * 250));
+        const sessionResponse = await fetch("/api/auth/session", {
+          credentials: "same-origin",
+          cache: "no-store",
+          headers: { "Cache-Control": "no-cache" },
+        });
+        session = sessionResponse.ok ? await sessionResponse.json() : { authenticated: false, sessionStatus: "missing" };
+        if (session.authenticated) break;
+      }
+
       if (!session.authenticated) {
-        setLoginError("The password was accepted, but this browser did not keep the sign-in session. Open SelfMusic through its HTTPS Tailscale address, then try again.");
+        if (session.sessionStatus === "invalid") {
+          setLoginError("The browser sent a session cookie, but the server rejected it. Restart SelfMusic with selfmusic restart and try again. If this keeps happening, send the server log without sharing your .env.");
+        } else {
+          setLoginError("Safari still isn't sending the sign-in cookie. Confirm you're using https://blood.tail358c96.ts.net, then clear this site's website data in Safari and try again.");
+        }
         return;
       }
       setAuthenticated(true);
