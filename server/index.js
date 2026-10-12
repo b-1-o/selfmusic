@@ -12,15 +12,21 @@ import multer from "multer";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { create as createYoutubeDl } from "youtube-dl-exec";
-
-const youtubedl = createYoutubeDl(process.env.YT_DLP_PATH || (process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp"));
+import { createDatabase } from "./database.js";
+import { getTracks as readTracks, getTrackRow, listAlbums, listArtists, scanLibrary } from "./library.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 dotenv.config({ path: path.join(projectRoot, ".env") });
+const youtubedl = createYoutubeDl(process.env.YT_DLP_PATH || (process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp"));
 
 const app = express();
 const port = Number.parseInt(process.env.PORT || "8787", 10);
 const musicRoot = path.resolve(projectRoot, process.env.MUSIC_DIR || "music");
+const databasePath = process.env.DATABASE_PATH === ":memory:"
+  ? ":memory:"
+  : path.resolve(projectRoot, process.env.DATABASE_PATH || "data/selfmusic.sqlite");
+const coverCacheDir = path.resolve(projectRoot, process.env.COVER_CACHE_DIR || "data/artwork");
+const db = createDatabase(databasePath);
 const configuredSessionSecret = process.env.SESSION_SECRET || "";
 const hasPersistentSessionSecret = configuredSessionSecret.length >= 32 && !configuredSessionSecret.toLowerCase().includes("replace-with");
 const sessionSecret = hasPersistentSessionSecret ? configuredSessionSecret : crypto.randomBytes(32).toString("hex");
@@ -263,6 +269,44 @@ app.use((req, res, next) => {
 });
 app.use("/api", enforceSameOriginMutation);
 
+const rateLimitBuckets = new Map();
+function rateLimitHeavyApi(req, res, next) {
+  const heavy = /^\/api\/(?:youtube\/(?:search|download)|import-url|upload)$/.test(req.path);
+  if (!heavy) return next();
+  const windowMs = Math.max(10000, Number.parseInt(process.env.API_RATE_LIMIT_WINDOW_MS || "60000", 10) || 60000);
+  const max = Math.max(1, Number.parseInt(process.env.HEAVY_API_RATE_LIMIT_MAX || "8", 10) || 8);
+  const key = (req.ip || req.socket.remoteAddress || "unknown") + ":" + req.path;
+  const now = Date.now();
+  let bucket = rateLimitBuckets.get(key);
+  if (!bucket || now - bucket.startedAt >= windowMs) bucket = { startedAt: now, count: 0 };
+  bucket.count += 1;
+  rateLimitBuckets.set(key, bucket);
+  if (rateLimitBuckets.size > 5000) {
+    for (const [entryKey, entry] of rateLimitBuckets) {
+      if (now - entry.startedAt >= windowMs * 2) rateLimitBuckets.delete(entryKey);
+    }
+  }
+  if (bucket.count > max) {
+    res.setHeader("Retry-After", String(Math.ceil((windowMs - (now - bucket.startedAt)) / 1000)));
+    return res.status(429).json({ error: "rate_limited", message: "Too many requests for this operation. Try again later." });
+  }
+  next();
+}
+app.use("/api", rateLimitHeavyApi);
+
+app.use((req, res, next) => {
+  const started = Date.now();
+  res.on("finish", () => {
+    if (res.statusCode >= 400 || /^\/api\/(?:youtube|import-url|upload)/.test(req.path)) {
+      console.info("[SelfMusic] request", JSON.stringify({
+        method: req.method, path: req.path, status: res.statusCode,
+        durationMs: Date.now() - started
+      }));
+    }
+  });
+  next();
+});
+
 function isConfigured() {
   return typeof process.env.SELF_MUSIC_PASSWORD === "string" && process.env.SELF_MUSIC_PASSWORD.length >= 8 && !process.env.SELF_MUSIC_PASSWORD.toLowerCase().includes("replace-with");
 }
@@ -369,51 +413,10 @@ function safeTrackPath(id) {
   return absolutePath;
 }
 
-async function findTracks() {
-  const tracks = [];
-  async function walk(folder) {
-    if (tracks.length >= 20000) return;
-    let entries;
-    try {
-      entries = await fs.promises.readdir(folder, { withFileTypes: true });
-    } catch (error) {
-      if (error.code === "ENOENT") return;
-      throw error;
-    }
-
-    entries.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }));
-    for (const entry of entries) {
-      if (tracks.length >= 20000) break;
-      if (entry.name.startsWith(".") || entry.isSymbolicLink()) continue;
-      const absolutePath = path.join(folder, entry.name);
-      if (entry.isDirectory()) {
-        await walk(absolutePath);
-        continue;
-      }
-      if (!entry.isFile() || !supportedExtensions.has(path.extname(entry.name).toLowerCase())) continue;
-
-      const relativePath = path.relative(musicRoot, absolutePath);
-      const parent = path.dirname(relativePath);
-      const title = path.basename(entry.name, path.extname(entry.name))
-        .replace(/[_]+/g, " ")
-        .replace(/^\d{1,3}\s*[-_.]\s*/, "")
-        .trim();
-      const artist = parent === "." ? "Unknown artist" : path.basename(parent);
-      tracks.push({
-        id: Buffer.from(relativePath).toString("base64url"),
-        title: title || entry.name,
-        artist,
-        album: parent === "." ? "Local library" : parent.split(path.sep).join(" / "),
-        streamUrl: "/api/stream/" + Buffer.from(relativePath).toString("base64url"),
-        artworkUrl: "/api/artwork/" + Buffer.from(relativePath).toString("base64url")
-      });
-    }
-  }
-
-  await walk(musicRoot);
-  return tracks;
+async function findTracks(query = {}, options = {}) {
+  await scanLibrary(db, musicRoot, { coverCacheDir, ...options });
+  return readTracks(db, query);
 }
-
 async function resolveTrackFile(id) {
   const filePath = safeTrackPath(id);
   if (!filePath) return null;
@@ -706,6 +709,57 @@ app.get("/api/tracks", requireAuth, async (_req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+app.get("/api/artists", requireAuth, async (_req, res, next) => {
+  try {
+    await findTracks();
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ artists: listArtists(db) });
+  } catch (error) { next(error); }
+});
+
+app.get("/api/albums", requireAuth, async (req, res, next) => {
+  try {
+    await findTracks();
+    const artistId = typeof req.query.artistId === "string" ? req.query.artistId : null;
+    if (artistId && !/^[A-Za-z0-9_-]{1,128}$/.test(artistId)) {
+      return res.status(400).json({ error: "invalid_artist_id", message: "The artist ID is invalid." });
+    }
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ albums: listAlbums(db, artistId) });
+  } catch (error) { next(error); }
+});
+
+app.get("/api/search", requireAuth, async (req, res, next) => {
+  try {
+    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    if (q.length < 1 || q.length > 100) {
+      return res.status(400).json({ error: "invalid_query", message: "Search must contain 1–100 characters." });
+    }
+    const tracks = await findTracks({ q });
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ tracks, total: tracks.length });
+  } catch (error) { next(error); }
+});
+
+app.post("/api/library/scan", requireAuth, async (_req, res, next) => {
+  try {
+    const tracks = await findTracks({}, { force: true });
+    console.info("[SelfMusic] library scan complete", JSON.stringify({ tracks: tracks.length }));
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ scanned: true, tracks: tracks.length });
+  } catch (error) { next(error); }
+});
+
+app.get("/api/duplicates", requireAuth, async (_req, res, next) => {
+  try {
+    await findTracks();
+    const groups = db.prepare("SELECT sha256, COUNT(*) AS count FROM tracks WHERE sha256 IS NOT NULL GROUP BY sha256 HAVING COUNT(*) > 1 ORDER BY count DESC").all();
+    const readGroup = db.prepare("SELECT id, title, artist, album, relative_path AS path, size_bytes AS bytes, added_at AS addedAt FROM tracks WHERE sha256 = ? ORDER BY added_at, relative_path");
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ groups: groups.map((group) => ({ sha256: group.sha256, count: group.count, tracks: readGroup.all(group.sha256) })) });
+  } catch (error) { next(error); }
 });
 
 app.delete("/api/tracks/:id", requireAuth, async (req, res, next) => {
@@ -1059,6 +1113,23 @@ app.get("/api/artwork/:id", requireAuth, async (req, res, next) => {
     const track = await resolveTrackFile(req.params.id);
     if (!track) return res.status(404).json({ error: "not_found" });
     const folder = path.dirname(track.filePath);
+    const catalogTrack = getTrackRow(db, req.params.id);
+    if (catalogTrack?.cover_path) {
+      const coverPath = path.resolve(catalogTrack.cover_path);
+      const cacheRoot = path.resolve(coverCacheDir);
+      if (coverPath.startsWith(cacheRoot + path.sep)) {
+        try {
+          const coverStats = await fs.promises.lstat(coverPath);
+          if (coverStats.isFile() && !coverStats.isSymbolicLink()) {
+            res.setHeader("Cache-Control", "private, max-age=3600");
+            res.type(mimeTypes[path.extname(coverPath).toLowerCase()] || "image/jpeg");
+            return fs.createReadStream(coverPath).pipe(res);
+          }
+        } catch {
+          // A stale embedded-cover cache entry should fall back to sidecar/folder art.
+        }
+      }
+    }
     const trackStem = path.basename(track.filePath, path.extname(track.filePath));
     for (const extension of [".jpg", ".jpeg", ".png", ".webp", ".avif"]) {
       const trackArtPath = path.join(folder, trackStem + extension);
@@ -1160,6 +1231,7 @@ fs.promises.mkdir(musicRoot, { recursive: true }).then(() => {
   app.listen(port, "0.0.0.0", () => {
     console.log("SelfMusic server listening on http://localhost:" + port);
     console.log("Music folder: " + musicRoot);
+    console.log("SQLite database: " + databasePath);
     if (!isConfigured()) console.warn("Setup required: create .env and set SELF_MUSIC_PASSWORD to a password of at least 8 characters.");
     if (process.env.NODE_ENV === "production" && !hasPersistentSessionSecret) {
       console.warn("Set a random SESSION_SECRET of at least 32 characters in production so sessions remain valid after restarts.");
