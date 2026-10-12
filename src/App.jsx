@@ -19,6 +19,7 @@ import {
   LockKeyhole,
   LogOut,
   Music,
+  Palette,
   Pause,
   Play,
   RefreshCw,
@@ -27,6 +28,7 @@ import {
   Server,
   Settings,
   ShieldCheck,
+  Smartphone,
   Shuffle,
   SkipBack,
   SkipForward,
@@ -259,6 +261,18 @@ function App() {
   const [importingUrl, setImportingUrl] = useState(false);
   const [urlImportMessage, setUrlImportMessage] = useState("");
   const [urlImportError, setUrlImportError] = useState(false);
+  const [appearance, setAppearance] = useState(() => {
+    const saved = readLocalJson(APPEARANCE_KEY, {});
+    return {
+      accent: ["rose", "ocean", "violet", "amber", "mint"].includes(saved?.accent) ? saved.accent : "rose",
+      glass: ["liquid", "soft", "solid"].includes(saved?.glass) ? saved.glass : "liquid",
+    };
+  });
+  const [playerTint, setPlayerTint] = useState("201,90,120");
+  const [networkAddresses, setNetworkAddresses] = useState({ local: [], tailscale: [] });
+  const [networkLoading, setNetworkLoading] = useState(false);
+  const [networkError, setNetworkError] = useState("");
+  const [remoteWizardOpen, setRemoteWizardOpen] = useState(() => localStorage.getItem(REMOTE_WIZARD_KEY) !== "1");
 
   const currentTrack = tracks.find((track) => track.id === currentTrackId) || null;
 
