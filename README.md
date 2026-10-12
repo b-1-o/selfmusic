@@ -14,16 +14,51 @@ from any device on your network or through a tunnel you control.
 * **Download a YouTube video's audio to MP3 and add it to the library.**
 * Optional YouTube search using the official YouTube Data API v3.
 * Password-protected server with HMAC-signed session cookies.
+* One-command setup with Docker Compose and private remote access through Tailscale.
 
-## Requirements
+## Quick start
 
-* **Node.js** 20 or later.
-* **npm** 10 or later.
-* A music folder on the same machine as the server.
-* For **YouTube → MP3 downloads**: `yt-dlp` and `ffmpeg` installed on the
-  server (see the YouTube section below).
+SelfMusic can run on **Linux, macOS, and Windows** with Docker Desktop / Docker Engine and Docker Compose. The installer prepares the configuration, starts the containers, and prints the URL for your phone.
 
-## Setup
+1. Clone the repository or download and extract its ZIP. Open a terminal in the project directory.
+2. Run the installer:
+   * **Linux / macOS / Git Bash / WSL:** `bash ./install.sh`
+   * **Windows PowerShell:** `powershell -ExecutionPolicy Bypass -File .\install.ps1`
+3. Enter a SelfMusic password and a reusable Tailscale auth key when prompted. Install Tailscale on your phone and sign in to the same tailnet. Open the URL printed by the installer (usually `http://<tailscale-ip>:8787`, or `http://selfmusic:8787` when MagicDNS is enabled).
+
+The host computer must stay powered on, the containers must remain running, and its internet connection must remain available for remote playback. Access is private to your tailnet; the default Compose setup does not publish port 8787 to the public internet.
+
+## Manual setup with Docker
+
+1. Create a local configuration file and edit it:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   Set `SELF_MUSIC_PASSWORD` to a unique password of at least 12 characters, set `SESSION_SECRET` to a random secret of at least 32 characters, and add a reusable `TS_AUTHKEY` created at <https://login.tailscale.com/admin/settings/keys>. Allow `tag:selfmusic` in your tailnet policy. Never commit `.env`.
+
+2. Place audio files in the host folder configured by `MUSIC_HOST_DIR` (defaults to `./music`). Create the data directory and start the stack:
+
+   ```bash
+   mkdir -p music data
+   docker compose up -d --build
+   ```
+
+3. Get the Tailscale IP and logs if necessary:
+
+   ```bash
+   docker compose exec tailscale tailscale ip -4
+   docker compose logs -f selfmusic
+   ```
+
+There is no published host port by default. To use direct LAN access instead of Tailscale, follow the comments in `docker-compose.yml`; remove the shared-network settings and do not expose the service directly to the public internet.
+
+The Compose setup keeps music in the host-mounted `MUSIC_HOST_DIR`, data in `./data`, and the Tailscale identity in a named volume. The YouTube download route is not changed by this deployment work. To use `cookies.txt` in Docker, create the file beside `.env` and uncomment the optional read-only mount in `docker-compose.yml`. Treat exported cookies as credentials.
+
+## Local development (advanced)
+
+This is the advanced option for users who prefer to run Node.js directly rather than using Docker.
 
 1. Clone the repository and install dependencies:
 
@@ -76,6 +111,14 @@ from any device on your network or through a tunnel you control.
    ```
 
    The Node server serves the built frontend and the API on the same port.
+
+## Requirements
+
+* **Node.js** 20 or later.
+* **npm** 10 or later.
+* A music folder on the same machine as the server.
+* For **YouTube → MP3 downloads**: `yt-dlp` and `ffmpeg` installed on the
+  server (see the YouTube section below).
 
 ## Music folder layout
 
@@ -147,6 +190,8 @@ Keep this key on the server; do not put it in React or commit it to GitHub.
 
 ### 2. Download audio as MP3
 
+In the Docker setup, yt-dlp and ffmpeg are already installed inside the container.
+
 The **Import music** page can save the audio track of a YouTube video to
 your library as an MP3 file. This is useful for archiving podcasts, talks,
 or music you are allowed to keep.
@@ -191,6 +236,14 @@ YouTube sometimes requires a signed-in session. To handle those cases:
 Only download content you are allowed to keep. Respect YouTube's Terms of
 Service and local copyright law.
 
+## Remote access with Tailscale
+
+1. Open <https://login.tailscale.com/admin/settings/keys> and create a **reusable auth key**. Allow the `tag:selfmusic` tag in your tailnet access policy, then put the key into `TS_AUTHKEY` in `.env`. Never share or commit the key.
+2. Install Tailscale on your phone and sign in to the same Tailscale account / tailnet.
+3. Get the address with `docker compose exec tailscale tailscale ip -4`, or use the installer output. Open `http://<tailscale-ip>:8787` on your phone. If MagicDNS is enabled, `http://selfmusic:8787` should also resolve.
+
+Keep the `tailscale-state` volume: it stores the node's identity, so ordinary restarts do not require re-authenticating the node. Do not publish port 8787 publicly, and keep the SelfMusic password enabled as a second layer.
+
 ## Security notes
 
 * Passwords are compared in constant time after SHA-256 hashing.
@@ -215,19 +268,38 @@ Service and local copyright law.
 * Metadata/tag extraction and duplicate-content detection are not
   implemented yet.
 * No playlist persistence beyond the in-memory queue and favorites.
+* Docker build requires roughly 500 MB of disk space for the image and build cache.
+
+## Troubleshooting
+
+* **A port is already in use:** SelfMusic does not publish host ports by default. If you enable the optional LAN mapping, stop the other service using 8787 or pick another host port.
+* **yt-dlp fails or YouTube behaviour changes:** rebuild the image with `docker compose up -d --build`, then inspect `docker compose logs -f selfmusic`. Only download content you have permission to save.
+* **Tailscale does not connect:** verify `TS_AUTHKEY`, check that the key is permitted to use `tag:selfmusic`, and ensure the phone is signed in to the same tailnet. Inspect `docker compose logs -f tailscale` and `docker compose exec tailscale tailscale status`.
+* **A YouTube download fails for a video requiring a signed-in session:** verify that `cookies.txt` is a valid Netscape-format export and mounted read-only into `/app/cookies.txt`. Cookies are sensitive credentials; never commit or share them.
+* **The site cannot be reached remotely:** confirm both devices are connected in Tailscale and the home server is online. Try the printed Tailscale IP to separate a MagicDNS issue from a connection issue.
+* **Setup rejects credentials:** edit `.env`; the password must have at least 12 characters and `SESSION_SECRET` at least 32. Restart with `docker compose up -d`.
 
 ## Project layout
 
 ```
 .
 ├── server/
-│   └── index.js          # Express API, auth, upload, import, YouTube download
+│   └── index.js              # Express API, authentication, audio streaming and YouTube routes
 ├── src/
-│   └── App.jsx           # React app: library, player, import panel
-├── music/                # MUSIC_DIR default (library root)
-│   └── Uploads/          # uploaded and downloaded files
-├── dist/                 # built frontend (after npm run build)
+│   └── App.jsx               # React client, library, player and import panels
+├── public/                   # PWA manifest, service worker and icons
+├── music/                    # Default host music directory
+├── data/                     # Persisted application data / future data files
+├── backups/                  # Local backups created by selfmusic.sh
+├── Dockerfile                # Multi-stage production image
+├── docker-compose.yml        # SelfMusic + Tailscale sidecar
+├── docker-entrypoint.sh      # Runtime checks and process handoff
+├── install.sh                # Linux/macOS/Git Bash/WSL installer
+├── install.ps1               # Windows PowerShell installer
+├── selfmusic.sh              # Container controls and backups
+├── .dockerignore
 ├── .env.example
+├── .gitignore
 ├── package.json
 └── README.md
 ```
