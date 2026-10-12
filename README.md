@@ -8,12 +8,14 @@ from any device on your network or through a tunnel you control.
 
 * Personal music library scanned from a local folder.
 * Streaming with HTTP range requests (seek, resume, gapless-friendly).
-* Simple playlist, favorites, and "now playing" bar.
+* SQLite-backed metadata index, artist/album/track browsing, per-user favorites, playlists and listening history.
+* Smart playlists, M3U import/export, SHA-256 duplicate review, and admin-managed accounts.
+* Optional FFmpeg transcoding, Subsonic-compatible client API, and per-user Last.fm scrobbling.
 * Upload audio files from a device through the web UI.
 * Import a single track from a direct HTTPS audio URL.
 * **Download a YouTube video's audio to MP3 and add it to the library.**
 * Optional YouTube search using the official YouTube Data API v3.
-* Password-protected server with HMAC-signed session cookies.
+* Legacy password login plus admin-managed user accounts and HMAC-signed session cookies.
 * One-command native setup, with optional Docker deployment and private remote access through Tailscale.
 
 ## Quick start
@@ -95,7 +97,7 @@ The host computer must remain powered on, awake, and connected to the internet w
 
 There is no published host port by default. To use direct LAN access instead of Tailscale, follow the comments in `docker-compose.yml`; remove the shared-network settings and do not expose the service directly to the public internet.
 
-The Compose setup keeps music in the host-mounted `MUSIC_HOST_DIR`, data in `./data`, and the Tailscale identity in a named volume. The YouTube download route is not changed by this deployment work. To use `cookies.txt` in Docker, create the file beside `.env` and uncomment the optional read-only mount in `docker-compose.yml`. Treat exported cookies as credentials.
+The Compose setup keeps music in the host-mounted `MUSIC_HOST_DIR`, the SQLite database and caches in `./data`, and the Tailscale identity in a named volume. To use `cookies.txt` in Docker, create the file beside `.env` and uncomment the optional read-only mount in `docker-compose.yml`. Treat exported cookies as credentials.
 
 ## Manual development (advanced)
 
@@ -115,25 +117,41 @@ Use this section when developing the app or when you prefer to start Node.js man
    SELF_MUSIC_PASSWORD=your-strong-password-here
    SESSION_SECRET=replace-with-a-random-string-of-at-least-32-characters
    MUSIC_DIR=music
+   DATABASE_PATH=./data/selfmusic.sqlite
+   COVER_CACHE_DIR=./data/artwork
    PORT=8787
 
-   # Optional
+   # Optional first-login administrator on a fresh database
+   BOOTSTRAP_ADMIN_USERNAME=admin
+   BOOTSTRAP_ADMIN_PASSWORD=use-a-unique-password-of-at-least-12-characters
+
+   # Optional services
    YOUTUBE_API_KEY=
    YOUTUBE_MAX_DURATION_SECONDS=3600
-   ```
+   YOUTUBE_CACHE_TTL_SECONDS=300
+   TRANSCODE_ENABLED=false
+   TRANSCODE_CACHE_DIR=./data/transcodes
+   DEFAULT_BITRATE=192k
+   LASTFM_API_KEY=
+   LASTFM_API_SECRET=
+   LASTFM_CALLBACK_URL=
 
-   * **SELF_MUSIC_PASSWORD:** login password for the web UI; at least 8
-     characters.
-   * **SESSION_SECRET:** random string of 32+ characters; keeps sessions
-     valid across server restarts. Generate with
-     `openssl rand -hex 32`.
-   * **MUSIC_DIR:** folder scanned for audio files, relative to the project
-     root or an absolute path.
+   * **SELF_MUSIC_PASSWORD:** legacy login password, at least 8 characters.
+     Existing installations can continue using it.
+   * **SESSION_SECRET:** persistent random string of 32+ characters for sessions
+     and encrypted integration credentials. Generate with `openssl rand -hex 32`.
+   * **BOOTSTRAP_ADMIN_USERNAME / BOOTSTRAP_ADMIN_PASSWORD:** optional; seeds the
+     initial admin only when the database contains no users.
+   * **DATABASE_PATH / COVER_CACHE_DIR:** SQLite database and extracted cover cache.
+     Back up these paths with your music directory.
+   * **TRANSCODE_ENABLED / TRANSCODE_CACHE_DIR / DEFAULT_BITRATE:** optional
+     FFmpeg transcoding; it is disabled by default.
+   * **LASTFM_API_KEY / LASTFM_API_SECRET / LASTFM_CALLBACK_URL:** optional Last.fm
+     integration; each SelfMusic account authorizes its own Last.fm account.
+   * **YOUTUBE_API_KEY:** optional; enables official Data API search only.
+   * **YOUTUBE_MAX_DURATION_SECONDS:** optional download limit (default 3600 sec).
+   * **MUSIC_DIR:** audio folder scanned by the server; defaults to `music`.
    * **PORT:** HTTP port for the server.
-   * **YOUTUBE_API_KEY:** optional; enables YouTube search on the Explore
-     page.
-   * **YOUTUBE_MAX_DURATION_SECONDS:** optional; maximum length in seconds
-     for a YouTube download (default 3600 = 60 minutes).
 
 3. Run in development:
 
@@ -327,18 +345,26 @@ Keep the `tailscale-state` volume: it stores the container node's identity. Do n
 
 ## Current limitations
 
-* No user accounts — a single shared password protects the whole library.
-* Streaming uses the source file's original codec; transcode-on-the-fly for
-  very large or unsupported formats is not implemented.
-* File upload supports up to 20 files per batch and 250 MB per file.
-  Direct URL import supports one direct HTTPS audio link at a time, up to
-  250 MB. YouTube download also produces one MP3 per request, up to
-  `YOUTUBE_MAX_DURATION_SECONDS` (default 60 minutes).
-* Metadata/tag extraction and duplicate-content detection are not
-  implemented yet.
-* Native YouTube-to-MP3 imports require `yt-dlp` and `ffmpeg` available on `PATH` (or an explicit `YT_DLP_PATH` pointing to the downloader). The native launcher works on Windows/macOS/Linux; the optional Docker image includes the downloader and FFmpeg.
-* No playlist persistence beyond the in-memory queue and favorites.
-* Docker build requires roughly 500 MB of disk space for the image and build cache.
+* Metadata extraction uses Python Mutagen. Without Python/Mutagen in a native setup, the scanner falls back to names and folders, so embedded tags and covers may not be available.
+* Duplicate matching is exact SHA-256. Acoustic fingerprints (Chromaprint) are not implemented; differently encoded copies will not necessarily be identified.
+* FFmpeg transcoding is optional and disabled by default. Set `TRANSCODE_ENABLED=true`; actual playback compatibility still depends on the client.
+* Last.fm requires server-side API credentials and a callback URL that can reach SelfMusic. Retries use a lightweight SQLite queue rather than a distributed queue.
+* The YouTube conversion queue is deliberately small (three queued/running jobs) and progress is approximate. Some videos are unavailable due to regional, account, or rights-holder restrictions.
+* The Subsonic-compatible API implements a documented minimal method set; client-specific extensions and advanced behaviors may vary.
+* Upload supports up to 20 audio files per batch and 250 MB per file. Direct URL import accepts one HTTPS audio asset per request, up to 250 MB.
+* Native YouTube-to-MP3 imports require `yt-dlp` and `ffmpeg` on `PATH` (or `YT_DLP_PATH` for the downloader). The Docker image includes these tools.
+* Docker builds need disk space for Node.js, FFmpeg, Python, yt-dlp, and the build cache.
+
+## API reference and tests
+
+See [docs/API.md](docs/API.md) for API routes, roles, and curl/Postman-ready examples. Run the automated tests and production build before deployment:
+
+```bash
+npm test
+npm run build
+```
+
+GitHub Actions runs the same checks on pull requests. Tests cover SQLite migrations, metadata indexing, persistent playlists/favorites/history, Subsonic auth, secret encryption, and YouTube job validation.
 
 ## Troubleshooting
 
