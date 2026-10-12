@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import path from "node:path";
-import { getTracks, getTrackRow } from "./library.js";
+import { getTrackRow } from "./library.js";
 
 const LEGACY_USER_ID = "legacy";
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,2048}$/;
