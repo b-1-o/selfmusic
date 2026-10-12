@@ -1,0 +1,20 @@
+{
+  "id": "/",
+  "name": "SelfMusic",
+  "short_name": "SelfMusic",
+  "description": "Your personal music library, served from home.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#09090c",
+  "theme_color": "#09090c",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
