@@ -13,7 +13,7 @@ services:
       - /dev/net/tun:/dev/net/tun
     cap_add:
       - NET_ADMIN
-      - SYS_MODULE
+      - NET_RAW
     restart: unless-stopped
 
   selfmusic:
