@@ -56,6 +56,7 @@ const mimeTypes = {
 };
 const artNames = ["cover.webp", "cover.jpg", "cover.jpeg", "cover.png", "folder.webp", "folder.jpg", "folder.jpeg", "folder.png"];
 const loginAttempts = new Map();
+const youtubeSearchCache = new Map();
 
 const audioMimeToExtension = {
   "audio/mpeg": ".mp3",
@@ -1095,6 +1096,20 @@ app.get("/api/network/addresses", requireAuth, (_req, res) => {
   res.json({ local: [...local], tailscale: [...tailscale] });
 });
 
+function parseIsoDuration(value) {
+  const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/.exec(String(value || ""));
+  if (!match) return null;
+  const seconds = Number(match[1] || 0) * 3600 + Number(match[2] || 0) * 60 + Number(match[3] || 0);
+  return Number.isFinite(seconds) ? Math.round(seconds) : null;
+}
+
+function pruneYoutubeSearchCache(now = Date.now()) {
+  for (const [key, entry] of youtubeSearchCache) {
+    if (entry.expiresAt <= now) youtubeSearchCache.delete(key);
+  }
+  while (youtubeSearchCache.size > 250) youtubeSearchCache.delete(youtubeSearchCache.keys().next().value);
+}
+
 app.get("/api/youtube/search", requireAuth, async (req, res, next) => {
   try {
     const apiKey = process.env.YOUTUBE_API_KEY;
@@ -1111,6 +1126,14 @@ app.get("/api/youtube/search", requireAuth, async (req, res, next) => {
         error: "invalid_query",
         message: "Enter a search with 2–100 characters."
       });
+    }
+
+    const cacheKey = query.toLocaleLowerCase();
+    pruneYoutubeSearchCache();
+    const cached = youtubeSearchCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      res.setHeader("Cache-Control", "private, max-age=60");
+      return res.json({ ...cached.payload, cached: true });
     }
 
     const url = new URL("https://www.googleapis.com/youtube/v3/search");
@@ -1148,11 +1171,35 @@ app.get("/api/youtube/search", requireAuth, async (req, res, next) => {
         title: String(item.snippet?.title || "Untitled video"),
         channelTitle: String(item.snippet?.channelTitle || "YouTube"),
         description: String(item.snippet?.description || ""),
-        thumbnail: String(item.snippet?.thumbnails?.medium?.url || item.snippet?.thumbnails?.default?.url || "")
+        thumbnail: String(item.snippet?.thumbnails?.medium?.url || item.snippet?.thumbnails?.default?.url || ""),
+        duration: null
       }));
 
-    res.setHeader("Cache-Control", "no-store");
-    res.json({ items, totalResults: payload.pageInfo?.totalResults || items.length });
+    if (items.length) {
+      const detailsUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
+      detailsUrl.searchParams.set("key", apiKey);
+      detailsUrl.searchParams.set("part", "contentDetails");
+      detailsUrl.searchParams.set("id", items.map((item) => item.videoId).join(","));
+      try {
+        const detailsResponse = await fetch(detailsUrl, { signal: AbortSignal.timeout(7000) });
+        if (detailsResponse.ok) {
+          const detailsPayload = await detailsResponse.json();
+          const durationById = new Map((detailsPayload.items || []).map((item) => [item.id, parseIsoDuration(item.contentDetails?.duration)]));
+          for (const item of items) item.duration = durationById.get(item.videoId) ?? null;
+        }
+      } catch (error) {
+        console.warn("[SelfMusic] YouTube duration lookup failed:", error.message);
+      }
+    }
+
+    const resultPayload = { items, totalResults: payload.pageInfo?.totalResults || items.length, cached: false };
+    const cacheSeconds = Math.min(3600, Math.max(0, Number.parseInt(process.env.YOUTUBE_CACHE_TTL_SECONDS || "300", 10) || 300));
+    if (cacheSeconds > 0) {
+      youtubeSearchCache.set(cacheKey, { payload: resultPayload, expiresAt: Date.now() + cacheSeconds * 1000 });
+      pruneYoutubeSearchCache();
+    }
+    res.setHeader("Cache-Control", "private, max-age=60");
+    res.json(resultPayload);
   } catch (error) {
     if (error.name === "TimeoutError" || error.name === "AbortError") {
       return res.status(504).json({ error: "youtube_timeout", message: "YouTube search took too long. Try again." });
