@@ -1310,6 +1310,7 @@ function App() {
 
       <PlayerBar
         audioRef={audioRef}
+        trackTint={playerTint}
         track={currentTrack}
         isPlaying={isPlaying}
         currentTime={currentTime}
@@ -1403,6 +1404,7 @@ function TrackList({
 
 function PlayerBar({
   audioRef,
+  trackTint,
   track,
   isPlaying,
   currentTime,
@@ -1424,6 +1426,44 @@ function PlayerBar({
 }) {
   const progress = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
   const [expanded, setExpanded] = useState(false);
+  const touchStartRef = useRef(null);
+
+  useEffect(() => {
+    if (!expanded) return undefined;
+    const handleExpandedKeys = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setExpanded(false);
+      } else if (event.key === "ArrowLeft" && !["INPUT", "TEXTAREA"].includes(event.target?.tagName)) {
+        event.preventDefault();
+        onPrevious();
+      } else if (event.key === "ArrowRight" && !["INPUT", "TEXTAREA"].includes(event.target?.tagName)) {
+        event.preventDefault();
+        onNext();
+      }
+    };
+    window.addEventListener("keydown", handleExpandedKeys);
+    return () => window.removeEventListener("keydown", handleExpandedKeys);
+  }, [expanded, onPrevious, onNext]);
+
+  const handleExpandedTouchStart = (event) => {
+    if (event.target.closest("button, input, a")) return;
+    const touch = event.changedTouches?.[0];
+    if (touch) touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+  };
+
+  const handleExpandedTouchEnd = (event) => {
+    const start = touchStartRef.current;
+    touchStartRef.current = null;
+    if (!start || event.target.closest("button, input, a")) return;
+    const touch = event.changedTouches?.[0];
+    if (!touch) return;
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
+    if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.25) return;
+    if (dx < 0) onNext();
+    else onPrevious();
+  };
 
   return (
     <>
@@ -1476,10 +1516,14 @@ function PlayerBar({
             style={{ "--range-progress": ((muted ? 0 : volume) * 100) + "%" }}
             onChange={(event) => onVolume(Number(event.target.value))}
           />
-          <button className="player-control mobile-expand" onClick={() => setExpanded((value) => !value)} aria-label="Show mobile player controls">{expanded ? <X size={18} /> : <AudioLines size={18} />}</button>
+          <button className="player-control mobile-expand" onClick={() => setExpanded((value) => !value)} disabled={!track} aria-label={expanded ? "Close mobile player controls" : "Open full-screen player"}>{expanded ? <X size={18} /> : <AudioLines size={18} />}</button>
         </div>
       </footer>
-      <div className={"mobile-player-expanded" + (expanded ? " mobile-player-expanded-open" : "")}>
+      <div className={"mobile-player-expanded" + (expanded ? " mobile-player-expanded-open" : "")} style={{ "--track-rgb": trackTint }} onTouchStart={handleExpandedTouchStart} onTouchEnd={handleExpandedTouchEnd}>
+        <div className="expanded-topbar">
+          <span className="expanded-now-playing">NOW PLAYING</span>
+          <button className="icon-button expanded-close" type="button" onClick={() => setExpanded(false)} aria-label="Close full-screen player"><X size={22} /></button>
+        </div>
         <div className="expanded-cover">{track && <Cover track={track} large />}</div>
         <div className="expanded-meta"><strong>{track?.title || "Pick a track"}</strong><span>{track?.artist || "Your music is right here"}</span></div>
         <div className="expanded-progress"><span>{formatTime(currentTime)}</span><input className="range-input progress-range" type="range" min="0" max={duration || 1} step="0.1" value={Math.min(currentTime, duration || 1)} style={{ "--range-progress": progress + "%" }} onChange={(event) => onSeek(Number(event.target.value))} disabled={!track || !duration} /><span>{formatTime(duration)}</span></div>
