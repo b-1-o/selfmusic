@@ -229,8 +229,10 @@ Keep this key on the server; do not put it in React or commit it to GitHub.
 In the Docker setup, yt-dlp and ffmpeg are already installed inside the container.
 
 The **Import music** page can save the audio track of a YouTube video to
-your library as an MP3 file. This is useful for archiving podcasts, talks,
-or music you are allowed to keep.
+your library as an MP3 file. SelfMusic also downloads the video's thumbnail
+as a matching JPG sidecar and embeds it into the MP3 when supported, so the
+track shows its own cover instead of the generic app icon. This is useful
+for archiving podcasts, talks, or music you are allowed to keep.
 
 **Requirements**
 
@@ -242,6 +244,7 @@ or music you are allowed to keep.
   * **Arch / CachyOS:** `sudo pacman -S ffmpeg`
   * **Debian / Ubuntu:** `sudo apt install ffmpeg`
   * **macOS:** `brew install ffmpeg`
+  * **Windows:** install FFmpeg and ensure `ffmpeg.exe` is on `PATH`. The same applies to `yt-dlp.exe`.
 
 **How to use it**
 
@@ -323,7 +326,7 @@ Keep the `tailscale-state` volume: it stores the container node's identity. Do n
   `YOUTUBE_MAX_DURATION_SECONDS` (default 60 minutes).
 * Metadata/tag extraction and duplicate-content detection are not
   implemented yet.
-* The committed YouTube-to-MP3 runner currently uses the Linux path `/usr/bin/yt-dlp`; that specific native-download path is Linux-specific. Docker includes the downloader. Windows/macOS native launch works, but YouTube MP3 imports need a platform-specific downloader-path adjustment in the current upstream server source.
+* Native YouTube-to-MP3 imports require `yt-dlp` and `ffmpeg` available on `PATH` (or an explicit `YT_DLP_PATH` pointing to the downloader). The native launcher works on Windows/macOS/Linux; the optional Docker image includes the downloader and FFmpeg.
 * No playlist persistence beyond the in-memory queue and favorites.
 * Docker build requires roughly 500 MB of disk space for the image and build cache.
 

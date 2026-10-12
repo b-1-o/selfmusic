@@ -132,6 +132,9 @@ if (-not [string]::IsNullOrWhiteSpace($DesktopDir)) {
     Write-Host "Created desktop shortcut: $ShortcutPath" -ForegroundColor Green
 }
 
+if (-not (Get-Command yt-dlp -ErrorAction SilentlyContinue) -or -not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+    Write-Warning "YouTube-to-MP3 import needs yt-dlp.exe and ffmpeg.exe on PATH. Install both tools, then restart SelfMusic."
+}
 Write-Host ([Environment]::NewLine + "Native setup complete. Docker is not required.") -ForegroundColor Green
 Write-Host "Click the SelfMusic desktop shortcut, or open a NEW PowerShell window and run: selfmusic"
 Write-Host "Available commands: selfmusic stop | status | logs | open | remote"

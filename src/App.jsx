@@ -19,6 +19,7 @@ import {
   LockKeyhole,
   LogOut,
   Music,
+  Palette,
   Pause,
   Play,
   RefreshCw,
@@ -27,6 +28,7 @@ import {
   Server,
   Settings,
   ShieldCheck,
+  Smartphone,
   Shuffle,
   SkipBack,
   SkipForward,
@@ -39,6 +41,10 @@ import {
 
 const FAVORITES_KEY = "selfmusic:favorites:v1";
 const LAST_TRACK_KEY = "selfmusic:last-track:v1";
+const APPEARANCE_KEY = "selfmusic:appearance:v1";
+const REMOTE_WIZARD_KEY = "selfmusic:remote-wizard-seen:v1";
+const TAILSCALE_DOWNLOAD_URL = "https://tailscale.com/download";
+const TAILSCALE_QR_URL = "https://api.qrserver.com/v1/create-qr-code/?size=192x192&margin=8&data=" + encodeURIComponent(TAILSCALE_DOWNLOAD_URL);
 const SUPPORTED_UPLOAD_EXTENSIONS = new Set(["mp3", "m4a", "aac", "flac", "wav", "ogg", "opus", "webm"]);
 const MAX_UPLOAD_BYTES = 250 * 1024 * 1024;
 
@@ -256,8 +262,95 @@ function App() {
   const [importingUrl, setImportingUrl] = useState(false);
   const [urlImportMessage, setUrlImportMessage] = useState("");
   const [urlImportError, setUrlImportError] = useState(false);
+  const [appearance, setAppearance] = useState(() => {
+    const saved = readLocalJson(APPEARANCE_KEY, {});
+    return {
+      accent: ["rose", "ocean", "violet", "amber", "mint"].includes(saved?.accent) ? saved.accent : "rose",
+      glass: ["liquid", "soft", "solid"].includes(saved?.glass) ? saved.glass : "liquid",
+    };
+  });
+  const [playerTint, setPlayerTint] = useState("201,90,120");
+  const [networkAddresses, setNetworkAddresses] = useState({ local: [], tailscale: [] });
+  const [networkLoading, setNetworkLoading] = useState(false);
+  const [networkError, setNetworkError] = useState("");
+  const [remoteWizardOpen, setRemoteWizardOpen] = useState(() => localStorage.getItem(REMOTE_WIZARD_KEY) !== "1");
 
   const currentTrack = tracks.find((track) => track.id === currentTrackId) || null;
+
+  const refreshNetworkAddresses = useCallback(async () => {
+    setNetworkLoading(true);
+    setNetworkError("");
+    try {
+      const response = await fetch("/api/network/addresses");
+      if (response.status === 401) {
+        setAuthenticated(false);
+        return;
+      }
+      if (!response.ok) throw new Error(await readMessage(response));
+      const addresses = await response.json();
+      setNetworkAddresses({
+        local: Array.isArray(addresses.local) ? addresses.local : [],
+        tailscale: Array.isArray(addresses.tailscale) ? addresses.tailscale : [],
+      });
+    } catch (error) {
+      setNetworkError(error.message || "Couldn't check this computer's network addresses.");
+    } finally {
+      setNetworkLoading(false);
+    }
+  }, []);
+
+  const closeRemoteWizard = useCallback(() => {
+    setRemoteWizardOpen(false);
+    localStorage.setItem(REMOTE_WIZARD_KEY, "1");
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(APPEARANCE_KEY, JSON.stringify(appearance));
+  }, [appearance]);
+
+  useEffect(() => {
+    if (!authenticated) return;
+    refreshNetworkAddresses();
+  }, [authenticated, refreshNetworkAddresses]);
+
+  useEffect(() => {
+    if (!currentTrack?.artworkUrl) {
+      setPlayerTint("201,90,120");
+      return;
+    }
+    let active = true;
+    const image = new Image();
+    image.onload = () => {
+      if (!active) return;
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = 24;
+        canvas.height = 24;
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        if (!context) return;
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+        let red = 0, green = 0, blue = 0, totalWeight = 0;
+        for (let i = 0; i < pixels.length; i += 4) {
+          if (pixels[i + 3] < 40) continue;
+          const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
+          const brightness = (r + g + b) / 3;
+          const saturation = Math.max(r, g, b) - Math.min(r, g, b);
+          const weight = brightness > 24 && brightness < 238 && saturation > 22 ? 2 : 1;
+          red += r * weight;
+          green += g * weight;
+          blue += b * weight;
+          totalWeight += weight;
+        }
+        if (totalWeight) setPlayerTint([Math.round(red / totalWeight), Math.round(green / totalWeight), Math.round(blue / totalWeight)].join(","));
+      } catch {
+        setPlayerTint("201,90,120");
+      }
+    };
+    image.onerror = () => { if (active) setPlayerTint("201,90,120"); };
+    image.src = currentTrack.artworkUrl;
+    return () => { active = false; image.onload = null; image.onerror = null; };
+  }, [currentTrack?.artworkUrl, currentTrackId]);
 
   const loadTracks = useCallback(async () => {
     setLoadingTracks(true);
@@ -400,6 +493,13 @@ function App() {
       setCurrentTime(0);
       return;
     }
+    const index = tracks.findIndex((track) => track.id === currentTrackId);
+    const previousIndex = index <= 0 ? (repeatMode === "all" ? tracks.length - 1 : 0) : index - 1;
+    if (tracks[previousIndex]) playTrack(tracks[previousIndex]);
+  }, [tracks, currentTrackId, repeatMode, playTrack]);
+
+  const playPreviousTrack = useCallback(() => {
+    if (!tracks.length) return;
     const index = tracks.findIndex((track) => track.id === currentTrackId);
     const previousIndex = index <= 0 ? (repeatMode === "all" ? tracks.length - 1 : 0) : index - 1;
     if (tracks[previousIndex]) playTrack(tracks[previousIndex]);
@@ -675,7 +775,7 @@ function App() {
   const pageTitle = view === "home" ? "Listen now" : view === "library" ? "Your library" : view === "favorites" ? "Liked tracks" : view === "youtube" ? "Explore YouTube" : view === "import" ? "Import music" : "Server settings";
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-accent={appearance.accent} data-glass={appearance.glass}>
       <aside className={"sidebar" + (mobileMenuOpen ? " sidebar-open" : "")}>
         <div className="brand">
           <span className="brand-mark"><AudioLines size={22} strokeWidth={2.2} /></span>
@@ -1112,9 +1212,49 @@ function App() {
                 <div className="settings-card">
                   <div className="settings-card-head"><span className="settings-icon settings-icon-blue"><Globe2 size={19} /></span><span className="settings-overline">REMOTE ACCESS</span></div>
                   <h3>Listen outside your Wi-Fi</h3>
-                  <p>Use an HTTPS tunnel and add an access policy. Do not expose this server directly to the public internet or forward its port on your router.</p>
-                  <a className="settings-action settings-link" href="https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/" target="_blank" rel="noreferrer">Cloudflare Tunnel guide <ArrowUpRight size={15} /></a>
-                  <div className="info-note"><ShieldCheck size={16} /><span>The tunnel must stay running, and your home computer must stay on.</span></div>
+                  <p>Set up Tailscale on this computer and your phone. No router port forwarding and no shared auth key are needed for the normal native setup.</p>
+                  <button className="settings-action" type="button" onClick={() => setRemoteWizardOpen(true)}><Smartphone size={15} /> Open setup wizard <ArrowUpRight size={15} /></button>
+                  {networkAddresses.tailscale.length > 0 && <div className="info-note"><ShieldCheck size={16} /><span>Tailscale detected: {networkAddresses.tailscale[0]}</span></div>}
+                </div>
+
+                <div className="settings-card settings-card-wide appearance-settings-card">
+                  <div className="settings-card-head"><span className="settings-icon"><Palette size={19} /></span><span className="settings-overline">PERSONALIZE YOUR PLAYER</span></div>
+                  <h3>Make SelfMusic yours</h3>
+                  <p>Your appearance is saved in this browser. It changes the interface, not your music files or server settings.</p>
+                  <div className="appearance-control">
+                    <div className="appearance-control-label"><strong>Accent color</strong><span>Choose the interface highlight</span></div>
+                    <div className="appearance-swatches" role="group" aria-label="Accent color">
+                      {[
+                        { id: "rose", label: "Rose", color: "#f1a0ba" },
+                        { id: "ocean", label: "Ocean", color: "#87d7ee" },
+                        { id: "violet", label: "Violet", color: "#c5a9ff" },
+                        { id: "amber", label: "Amber", color: "#f4c27a" },
+                        { id: "mint", label: "Mint", color: "#8fe0bf" },
+                      ].map((choice) => (
+                        <button key={choice.id} type="button" className={"appearance-swatch" + (appearance.accent === choice.id ? " appearance-swatch-active" : "")} style={{ "--swatch-color": choice.color }} onClick={() => setAppearance((value) => ({ ...value, accent: choice.id }))} aria-label={choice.label} aria-pressed={appearance.accent === choice.id}>
+                          <span />
+                          <small>{choice.label}</small>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="appearance-control">
+                    <div className="appearance-control-label"><strong>Glass effect</strong><span>Change blur and panel opacity</span></div>
+                    <div className="appearance-glass-options" role="group" aria-label="Glass effect">
+                      {[
+                        { id: "liquid", label: "Liquid glass", description: "Rich blur and highlights" },
+                        { id: "soft", label: "Soft glass", description: "Lighter translucency" },
+                        { id: "solid", label: "Solid", description: "Minimal blur, opaque panels" },
+                      ].map((choice) => (
+                        <button key={choice.id} type="button" className={"appearance-glass-option" + (appearance.glass === choice.id ? " appearance-glass-option-active" : "")} onClick={() => setAppearance((value) => ({ ...value, glass: choice.id }))} aria-pressed={appearance.glass === choice.id}>
+                          <span className={"glass-preview glass-preview-" + choice.id} />
+                          <strong>{choice.label}</strong>
+                          <small>{choice.description}</small>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <button className="text-button appearance-reset" type="button" onClick={() => setAppearance({ accent: "rose", glass: "liquid" })}>Reset appearance</button>
                 </div>
 
                 <div className="settings-card settings-card-wide">
@@ -1137,6 +1277,42 @@ function App() {
         </div>
       </main>
 
+      {remoteWizardOpen && (
+        <div className="remote-wizard-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeRemoteWizard(); }}>
+          <section className="remote-wizard" role="dialog" aria-modal="true" aria-labelledby="remote-wizard-title">
+            <div className="remote-wizard-head">
+              <div className="remote-wizard-brand"><span className="remote-wizard-icon"><Globe2 size={19} /></span><span>PRIVATE REMOTE ACCESS</span></div>
+              <button className="icon-button remote-wizard-close" type="button" onClick={closeRemoteWizard} aria-label="Close setup wizard"><X size={19} /></button>
+            </div>
+            <h2 id="remote-wizard-title">Take your music with you.</h2>
+            <p className="remote-wizard-intro">Your computer keeps the original files. Tailscale connects your phone to it privately, without opening ports on your router.</p>
+            <div className="remote-wizard-steps">
+              <div className="remote-wizard-step"><span>1</span><div><strong>Install Tailscale on this computer</strong><p>Sign in to your Tailscale account. On Linux, make sure the system service is running.</p><a href={TAILSCALE_DOWNLOAD_URL} target="_blank" rel="noreferrer">Get Tailscale for desktop <ArrowUpRight size={14} /></a></div></div>
+              <div className="remote-wizard-step"><span>2</span><div><strong>Install it on your phone</strong><p>Open the official download page, install the app, and sign in to the same account as your computer.</p><a href={TAILSCALE_DOWNLOAD_URL} target="_blank" rel="noreferrer">Open phone download page <ArrowUpRight size={14} /></a></div></div>
+              <div className="remote-wizard-step"><span>3</span><div><strong>Enable private HTTPS</strong><p>On the computer, run <code>selfmusic remote</code>. Tailscale may ask you to enable MagicDNS and HTTPS certificates.</p><button className="text-button wizard-copy-command" type="button" onClick={() => copyText("selfmusic remote")}><Copy size={14} /> Copy command</button></div></div>
+            </div>
+            <div className="remote-wizard-qr-card">
+              <img src={TAILSCALE_QR_URL} alt="QR code linking to the official Tailscale download page" width="144" height="144" loading="lazy" />
+              <div><strong>Scan with your phone</strong><span>QR contains only the public Tailscale download link, not your private server address.</span></div>
+              <a href={TAILSCALE_DOWNLOAD_URL} target="_blank" rel="noreferrer">Open download page <ArrowUpRight size={14} /></a>
+            </div>
+            <div className="remote-wizard-addresses">
+              <div className="remote-address-title"><div><strong>Your connection addresses</strong><span>Refresh after Tailscale connects</span></div><button className="ghost-button" type="button" onClick={refreshNetworkAddresses} disabled={networkLoading}>{networkLoading ? <RefreshCw size={14} className="spin" /> : <RefreshCw size={14} />} Check connection</button></div>
+              {networkError && <p className="remote-address-error">{networkError}</p>}
+              {networkAddresses.tailscale.length > 0 ? networkAddresses.tailscale.map((ip) => (
+                <div className="remote-address-row" key={ip}><div><span className="remote-address-kind"><ShieldCheck size={14} /> Tailscale</span><strong>http://{ip}:{window.location.port || "8787"}</strong></div><button className="icon-button" type="button" onClick={() => copyText("http://" + ip + ":" + (window.location.port || "8787"))} aria-label={"Copy Tailscale address " + ip}><Copy size={16} /></button></div>
+              )) : (
+                <div className="remote-address-row remote-address-pending"><div><span className="remote-address-kind"><RefreshCw size={14} /> Waiting for Tailscale</span><strong>No Tailscale IP detected on this server yet.</strong></div></div>
+              )}
+              {networkAddresses.local.slice(0, 2).map((ip) => (
+                <div className="remote-address-row" key={ip}><div><span className="remote-address-kind"><Smartphone size={14} /> Same Wi-Fi only</span><strong>http://{ip}:{window.location.port || "8787"}</strong></div><button className="icon-button" type="button" onClick={() => copyText("http://" + ip + ":" + (window.location.port || "8787"))} aria-label={"Copy local address " + ip}><Copy size={16} /></button></div>
+              ))}
+            </div>
+            <div className="remote-wizard-footer"><span><ShieldCheck size={15} /> Never forward port 8787 publicly.</span><button className="primary-button" type="button" onClick={closeRemoteWizard}>Got it <Check size={16} /></button></div>
+          </section>
+        </div>
+      )}
+
       <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
         <button className={view === "home" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("home")}><Home size={19} /><span>Home</span></button>
         <button className={view === "library" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("library")}><Library size={19} /><span>Library</span></button>
@@ -1147,6 +1323,7 @@ function App() {
 
       <PlayerBar
         audioRef={audioRef}
+        trackTint={playerTint}
         track={currentTrack}
         isPlaying={isPlaying}
         currentTime={currentTime}
@@ -1157,6 +1334,7 @@ function App() {
         repeatMode={repeatMode}
         onToggle={togglePlayback}
         onPrevious={playPrevious}
+        onSwitchPrevious={playPreviousTrack}
         onNext={playNext}
         onSeek={(value) => { if (audioRef.current) audioRef.current.currentTime = value; setCurrentTime(value); }}
         onVolume={(value) => { setVolume(value); setMuted(false); }}
@@ -1240,6 +1418,7 @@ function TrackList({
 
 function PlayerBar({
   audioRef,
+  trackTint,
   track,
   isPlaying,
   currentTime,
@@ -1250,6 +1429,7 @@ function PlayerBar({
   repeatMode,
   onToggle,
   onPrevious,
+  onSwitchPrevious,
   onNext,
   onSeek,
   onVolume,
@@ -1261,6 +1441,44 @@ function PlayerBar({
 }) {
   const progress = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
   const [expanded, setExpanded] = useState(false);
+  const touchStartRef = useRef(null);
+
+  useEffect(() => {
+    if (!expanded) return undefined;
+    const handleExpandedKeys = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setExpanded(false);
+      } else if (event.key === "ArrowLeft" && !["INPUT", "TEXTAREA"].includes(event.target?.tagName)) {
+        event.preventDefault();
+        onSwitchPrevious();
+      } else if (event.key === "ArrowRight" && !["INPUT", "TEXTAREA"].includes(event.target?.tagName)) {
+        event.preventDefault();
+        onNext();
+      }
+    };
+    window.addEventListener("keydown", handleExpandedKeys);
+    return () => window.removeEventListener("keydown", handleExpandedKeys);
+  }, [expanded, onSwitchPrevious, onNext]);
+
+  const handleExpandedTouchStart = (event) => {
+    if (event.target.closest("button, input, a")) return;
+    const touch = event.changedTouches?.[0];
+    if (touch) touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+  };
+
+  const handleExpandedTouchEnd = (event) => {
+    const start = touchStartRef.current;
+    touchStartRef.current = null;
+    if (!start || event.target.closest("button, input, a")) return;
+    const touch = event.changedTouches?.[0];
+    if (!touch) return;
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
+    if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.25) return;
+    if (dx < 0) onNext();
+    else onSwitchPrevious();
+  };
 
   return (
     <>
@@ -1313,10 +1531,14 @@ function PlayerBar({
             style={{ "--range-progress": ((muted ? 0 : volume) * 100) + "%" }}
             onChange={(event) => onVolume(Number(event.target.value))}
           />
-          <button className="player-control mobile-expand" onClick={() => setExpanded((value) => !value)} aria-label="Show mobile player controls">{expanded ? <X size={18} /> : <AudioLines size={18} />}</button>
+          <button className="player-control mobile-expand" onClick={() => setExpanded((value) => !value)} disabled={!track} aria-label={expanded ? "Close mobile player controls" : "Open full-screen player"}>{expanded ? <X size={18} /> : <AudioLines size={18} />}</button>
         </div>
       </footer>
-      <div className={"mobile-player-expanded" + (expanded ? " mobile-player-expanded-open" : "")}>
+      <div className={"mobile-player-expanded" + (expanded ? " mobile-player-expanded-open" : "")} style={{ "--track-rgb": trackTint }} onTouchStart={handleExpandedTouchStart} onTouchEnd={handleExpandedTouchEnd}>
+        <div className="expanded-topbar">
+          <span className="expanded-now-playing">NOW PLAYING</span>
+          <button className="icon-button expanded-close" type="button" onClick={() => setExpanded(false)} aria-label="Close full-screen player"><X size={22} /></button>
+        </div>
         <div className="expanded-cover">{track && <Cover track={track} large />}</div>
         <div className="expanded-meta"><strong>{track?.title || "Pick a track"}</strong><span>{track?.artist || "Your music is right here"}</span></div>
         <div className="expanded-progress"><span>{formatTime(currentTime)}</span><input className="range-input progress-range" type="range" min="0" max={duration || 1} step="0.1" value={Math.min(currentTime, duration || 1)} style={{ "--range-progress": progress + "%" }} onChange={(event) => onSeek(Number(event.target.value))} disabled={!track || !duration} /><span>{formatTime(duration)}</span></div>

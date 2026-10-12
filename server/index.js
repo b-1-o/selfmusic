@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import dns from "node:dns/promises";
 import https from "node:https";
 import net from "node:net";
+import os from "node:os";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,7 +13,7 @@ import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { create as createYoutubeDl } from "youtube-dl-exec";
 
-const youtubedl = createYoutubeDl("/usr/bin/yt-dlp");
+const youtubedl = createYoutubeDl(process.env.YT_DLP_PATH || (process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp"));
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 dotenv.config({ path: path.join(projectRoot, ".env") });
@@ -648,6 +649,28 @@ app.get("/api/tracks", requireAuth, async (_req, res, next) => {
   }
 });
 
+app.get("/api/network/addresses", requireAuth, (_req, res) => {
+  const local = new Set();
+  const tailscale = new Set();
+  const interfaces = os.networkInterfaces();
+
+  for (const [interfaceName, entries] of Object.entries(interfaces)) {
+    if (/^(docker|br-|veth|podman|cni|virbr|vEthernet)/i.test(interfaceName)) continue;
+    for (const entry of entries || []) {
+      if (entry.internal || (entry.family !== 4 && entry.family !== "IPv4")) continue;
+      const address = String(entry.address || "");
+      if (/^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(address)) {
+        tailscale.add(address);
+      } else if (/^10\./.test(address) || /^192\.168\./.test(address) || /^172\.(1[6-9]|2\d|3[01])\./.test(address)) {
+        local.add(address);
+      }
+    }
+  }
+
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ local: [...local], tailscale: [...tailscale] });
+});
+
 app.get("/api/youtube/search", requireAuth, async (req, res, next) => {
   try {
     const apiKey = process.env.YOUTUBE_API_KEY;
@@ -737,7 +760,6 @@ app.post("/api/youtube/download", requireAuth, async (req, res, next) => {
 
     const ytdlpCommon = {
       noWarnings: true,
-      noCheckCertificates: true,
       noPlaylist: true,
       verbose: true,
       forceIpv4: true,
@@ -795,6 +817,9 @@ app.post("/api/youtube/download", requireAuth, async (req, res, next) => {
         extractAudio: true,
         audioFormat: "mp3",
         audioQuality: 0,
+        writeThumbnail: true,
+        convertThumbnails: "jpg",
+        embedThumbnail: true,
         output: outputTemplate
       });
     } catch (error) {
@@ -850,6 +875,20 @@ app.get("/api/artwork/:id", requireAuth, async (req, res, next) => {
     const track = await resolveTrackFile(req.params.id);
     if (!track) return res.status(404).json({ error: "not_found" });
     const folder = path.dirname(track.filePath);
+    const trackStem = path.basename(track.filePath, path.extname(track.filePath));
+    for (const extension of [".jpg", ".jpeg", ".png", ".webp", ".avif"]) {
+      const trackArtPath = path.join(folder, trackStem + extension);
+      try {
+        const stats = await fs.promises.stat(trackArtPath);
+        if (stats.isFile()) {
+          res.setHeader("Cache-Control", "private, max-age=3600");
+          res.type(mimeTypes[extension] || "application/octet-stream");
+          return fs.createReadStream(trackArtPath).pipe(res);
+        }
+      } catch {
+        // A track-specific thumbnail may not exist; try a folder cover next.
+      }
+    }
     for (const name of artNames) {
       const artPath = path.join(folder, name);
       try {
