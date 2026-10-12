@@ -59,6 +59,12 @@ const artNames = ["cover.webp", "cover.jpg", "cover.jpeg", "cover.png", "folder.
 const loginAttempts = new Map();
 const youtubeSearchCache = new Map();
 
+function configuredDuplicateStrategy() {
+  const strategy = String(process.env.DUPLICATE_STRATEGY || "keep").toLowerCase();
+  return ["skip", "keep", "ask"].includes(strategy) ? strategy : "keep";
+}
+
+
 const audioMimeToExtension = {
   "audio/mpeg": ".mp3",
   "audio/mp4": ".m4a",
@@ -664,6 +670,9 @@ app.delete("/api/admin/users/:id", requireAuth, (req, res) => {
   db.prepare("DELETE FROM favorites WHERE user_id = ?").run(id);
   db.prepare("DELETE FROM play_history WHERE user_id = ?").run(id);
   db.prepare("DELETE FROM lastfm_accounts WHERE user_id = ?").run(id);
+  db.prepare("DELETE FROM lastfm_pending_auth WHERE user_id = ?").run(id);
+  db.prepare("DELETE FROM scrobble_queue WHERE user_id = ?").run(id);
+  db.prepare("DELETE FROM youtube_jobs WHERE user_id = ?").run(id);
   console.info("[SelfMusic] account deleted", JSON.stringify({ id }));
   res.status(204).end();
 });
@@ -757,9 +766,7 @@ app.post("/api/upload", requireAuth, requireAdmin, async (req, res, next) => {
       });
     }
 
-    const duplicateStrategy = ["skip", "keep", "ask"].includes(String(process.env.DUPLICATE_STRATEGY || "keep").toLowerCase())
-      ? String(process.env.DUPLICATE_STRATEGY || "keep").toLowerCase()
-      : "keep";
+    const duplicateStrategy = configuredDuplicateStrategy();
     const accepted = [];
     const skipped = [];
     const duplicateMatches = [];
@@ -802,6 +809,7 @@ app.post("/api/import-url", requireAuth, requireAdmin, async (req, res, next) =>
   let targetPath = null;
   let targetCreated = false;
   try {
+    await findTracks();
     let url = validateImportUrl(req.body?.url);
     let response = null;
     let redirects = 0;
@@ -895,12 +903,25 @@ app.post("/api/import-url", requireAuth, requireAdmin, async (req, res, next) =>
       throw new Error("The source returned an empty file.");
     }
 
+    const sha256 = await hashFile(targetPath);
+    const duplicateMatches = db.prepare("SELECT id, title, artist, album, relative_path AS path FROM tracks WHERE sha256 = ? LIMIT 10").all(sha256);
+    const duplicateStrategy = configuredDuplicateStrategy();
+    if (duplicateMatches.length && duplicateStrategy === "skip") {
+      await fs.promises.unlink(targetPath).catch(() => {});
+      targetCreated = false;
+      res.setHeader("Cache-Control", "no-store");
+      return res.status(200).json({ imported: false, skipped: true, reason: "duplicate", duplicateStrategy, duplicates: duplicateMatches });
+    }
+
+    await findTracks();
     res.setHeader("Cache-Control", "no-store");
     res.status(201).json({
       imported: true,
       name: path.basename(targetPath),
       bytes: bytesReceived,
-      destination: "Uploads"
+      destination: "Uploads",
+      duplicateStrategy,
+      duplicates: duplicateStrategy === "ask" ? duplicateMatches : []
     });
   } catch (error) {
     if (targetPath && !targetCreated) await fs.promises.unlink(targetPath).catch(() => {});
@@ -1356,6 +1377,7 @@ app.post("/api/youtube/download", requireAuth, requireAdmin, async (req, res, ne
         message: "That does not look like a valid YouTube video URL."
       });
     }
+    await findTracks();
 
     const ytdlpCommon = {
       noWarnings: true,
@@ -1453,6 +1475,18 @@ app.post("/api/youtube/download", requireAuth, requireAdmin, async (req, res, ne
       });
     }
 
+    const outputSha256 = await hashFile(targetPath);
+    const duplicateMatches = db.prepare("SELECT id, title, artist, album, relative_path AS path FROM tracks WHERE sha256 = ? LIMIT 10").all(outputSha256);
+    const duplicateStrategy = configuredDuplicateStrategy();
+    if (duplicateMatches.length && duplicateStrategy === "skip") {
+      const outputDir = path.dirname(targetPath);
+      const outputStem = path.basename(targetPath, ".mp3");
+      await fs.promises.unlink(targetPath).catch(() => {});
+      await Promise.all([".jpg", ".jpeg", ".png", ".webp"].map((ext) => fs.promises.unlink(path.join(outputDir, outputStem + ext)).catch(() => {})));
+      res.setHeader("Cache-Control", "no-store");
+      return res.status(200).json({ downloaded: false, skipped: true, reason: "duplicate", duplicateStrategy, duplicates: duplicateMatches });
+    }
+
     let artworkName = null;
     try {
       artworkName = await ensureYoutubeArtwork(info, targetPath);
@@ -1461,6 +1495,8 @@ app.post("/api/youtube/download", requireAuth, requireAdmin, async (req, res, ne
       console.warn("[SelfMusic] Could not save YouTube thumbnail:", artworkError?.message || artworkError);
     }
 
+    try { await findTracks(); }
+    catch (error) { console.error("[SelfMusic] downloaded audio could not be indexed immediately:", error.message); }
     res.setHeader("Cache-Control", "no-store");
     res.status(201).json({
       downloaded: true,
@@ -1469,7 +1505,9 @@ app.post("/api/youtube/download", requireAuth, requireAdmin, async (req, res, ne
       durationSeconds,
       title: rawTitle,
       artwork: Boolean(artworkName),
-      destination: "Uploads"
+      destination: "Uploads",
+      duplicateStrategy,
+      duplicates: duplicateStrategy === "ask" ? duplicateMatches : []
     });
   } catch (error) {
     if (targetPath) await fs.promises.unlink(targetPath).catch(() => {});
