@@ -41,9 +41,9 @@ jobs:
           foreach ($file in $files) {
             $parseTokens = $null
             $parseErrors = $null
-            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file), [ref]$tokens, [ref]$errors) | Out-Null
-            if ($errors.Count -gt 0) {
-              $errors | ForEach-Object { Write-Error $_ }
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file), [ref]$parseTokens, [ref]$parseErrors) | Out-Null
+            if ($parseErrors.Count -gt 0) {
+              $parseErrors | ForEach-Object { Write-Error $_ }
               exit 1
             }
           }
