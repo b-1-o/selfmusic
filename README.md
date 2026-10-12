@@ -77,7 +77,7 @@ The host computer must remain powered on, awake, and connected to the internet w
    cp .env.example .env
    ```
 
-   Set `SELF_MUSIC_PASSWORD` to a unique password of at least 12 characters, set `SESSION_SECRET` to a random secret of at least 32 characters, and add a reusable `TS_AUTHKEY` created at <https://login.tailscale.com/admin/settings/keys>. Allow `tag:selfmusic` in your tailnet policy. Never commit `.env`.
+   Set `SELF_MUSIC_PASSWORD` to a unique password of at least 8 characters, set `SESSION_SECRET` to a random secret of at least 32 characters, and add a reusable `TS_AUTHKEY` created at <https://login.tailscale.com/admin/settings/keys>. Allow `tag:selfmusic` in your tailnet policy. Never commit `.env`.
 
 2. Place audio files in the host folder configured by `MUSIC_HOST_DIR` (defaults to `./music`). Create the data directory and start the stack:
 
@@ -122,7 +122,7 @@ Use this section when developing the app or when you prefer to start Node.js man
    YOUTUBE_MAX_DURATION_SECONDS=3600
    ```
 
-   * **SELF_MUSIC_PASSWORD:** login password for the web UI; at least 12
+   * **SELF_MUSIC_PASSWORD:** login password for the web UI; at least 8
      characters.
    * **SESSION_SECRET:** random string of 32+ characters; keeps sessions
      valid across server restarts. Generate with
@@ -342,7 +342,7 @@ Keep the `tailscale-state` volume: it stores the container node's identity. Do n
 * **Tailscale does not connect:** verify `TS_AUTHKEY`, check that the key is permitted to use `tag:selfmusic`, and ensure the phone is signed in to the same tailnet. Inspect `docker compose logs -f tailscale` and `docker compose exec tailscale tailscale status`.
 * **A YouTube download fails for a video requiring a signed-in session:** verify that `cookies.txt` is a valid Netscape-format export and mounted read-only into `/app/cookies.txt`. Cookies are sensitive credentials; never commit or share them.
 * **The site cannot be reached remotely:** confirm both devices are connected in Tailscale and the home server is online. Try the printed Tailscale IP to separate a MagicDNS issue from a connection issue.
-* **Setup rejects credentials:** edit `.env`; the password must have at least 12 characters and `SESSION_SECRET` at least 32. Restart with `docker compose up -d`.
+* **Setup rejects credentials:** edit `.env`; the password must have at least 8 characters and `SESSION_SECRET` at least 32. Restart with `docker compose up -d`.
 
 ## Project layout
 
