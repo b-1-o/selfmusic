@@ -28,6 +28,9 @@ services:
       NODE_ENV: development
       PORT: "8787"
       MUSIC_DIR: /app/music
+      DATABASE_PATH: /app/data/selfmusic.sqlite
+      COVER_CACHE_DIR: /app/data/artwork
+      TRANSCODE_CACHE_DIR: /app/data/transcodes
     volumes:
       - ${MUSIC_HOST_DIR:-./music}:/app/music
       - ./data:/app/data
