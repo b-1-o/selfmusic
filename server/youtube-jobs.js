@@ -80,7 +80,7 @@ function sanitizeName(value) {
   return name;
 }
 
-function duplicateStrategy() {
+export function getDuplicateStrategy() {
   const configured = String(process.env.DUPLICATE_STRATEGY || "keep").toLowerCase();
   return ["skip", "keep", "ask"].includes(configured) ? configured : "keep";
 }
@@ -284,7 +284,7 @@ async function runOneJob(db, config, row) {
     await runFfmpegMetadata(outputPath, effectiveMetadata, jobTemp);
     const finalStats = await fs.stat(outputPath);
     const outputSha256 = await hashFile(outputPath);
-    const strategy = duplicateStrategy();
+    const strategy = getDuplicateStrategy();
     const duplicateMatches = db.prepare("SELECT id, title, artist, album, relative_path AS path, size_bytes AS bytes FROM tracks WHERE sha256 = ? LIMIT 10").all(outputSha256);
 
     if (duplicateMatches.length && strategy === "skip") {
