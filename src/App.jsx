@@ -658,6 +658,61 @@ function App() {
   }, [loadTracks]);
 
   useEffect(() => {
+    if (!authenticated) return undefined;
+    let active = true;
+    const loadAccountData = async () => {
+      try {
+        const profileResponse = await fetch("/api/auth/profile", { credentials: "same-origin", cache: "no-store" });
+        if (profileResponse.status === 401) { setAuthenticated(false); return; }
+        if (!profileResponse.ok) throw new Error("Could not load account profile.");
+        const profileBody = await profileResponse.json();
+        const user = profileBody.user || { id: "legacy", username: "owner", role: "admin", legacy: true };
+        if (active) setProfile(user);
+
+        let favoriteResponse = await fetch("/api/favorites", { credentials: "same-origin", cache: "no-store" });
+        let favoriteBody = favoriteResponse.ok ? await favoriteResponse.json() : { tracks: [] };
+        let serverFavoriteIds = (favoriteBody.tracks || []).map((track) => track.id);
+        if (user.legacy && serverFavoriteIds.length === 0) {
+          const previousFavorites = readLocalJson(FAVORITES_KEY, []);
+          for (const id of previousFavorites.slice(0, 500)) {
+            await fetch("/api/favorites/" + encodeURIComponent(id), { method: "POST", credentials: "same-origin" }).catch(() => {});
+          }
+          if (previousFavorites.length) {
+            favoriteResponse = await fetch("/api/favorites", { credentials: "same-origin", cache: "no-store" });
+            favoriteBody = favoriteResponse.ok ? await favoriteResponse.json() : { tracks: [] };
+            serverFavoriteIds = (favoriteBody.tracks || []).map((track) => track.id);
+          }
+        }
+        if (active) setFavorites(serverFavoriteIds);
+
+        const [playlistResponse, lastFmResponse, playerResponse] = await Promise.all([
+          fetch("/api/playlists", { credentials: "same-origin", cache: "no-store" }),
+          fetch("/api/lastfm/status", { credentials: "same-origin", cache: "no-store" }),
+          fetch("/api/player/settings", { credentials: "same-origin", cache: "no-store" }),
+        ]);
+        if (active && playlistResponse.ok) {
+          const body = await playlistResponse.json();
+          setPlaylists(body.playlists || []);
+        }
+        if (active && lastFmResponse.ok) setLastFmStatus(await lastFmResponse.json());
+        if (active && playerResponse.ok) setPlayerSettings(await playerResponse.json());
+        if (active && new URLSearchParams(window.location.search).get("lastfm") === "connected") {
+          setLastFmMessage("Last.fm connected successfully.");
+          window.history.replaceState({}, "", window.location.pathname + window.location.hash);
+        }
+      } catch {
+        // Library playback still works when optional account services are unavailable.
+      }
+    };
+    loadAccountData();
+    return () => { active = false; };
+  }, [authenticated]);
+
+  useEffect(() => {
+    localStorage.setItem("selfmusic:stream-quality:v1", JSON.stringify({ format: streamFormat, bitrate: streamBitrate }));
+  }, [streamFormat, streamBitrate]);
+
+  useEffect(() => {
     if (currentTrackId) localStorage.setItem(LAST_TRACK_KEY, currentTrackId);
   }, [currentTrackId]);
 
@@ -718,24 +773,138 @@ function App() {
       setIsPlaying(false);
       setAuthenticated(false);
       setTracks([]);
+      setFavorites([]);
+      setPlaylists([]);
+      setSelectedPlaylist(null);
+      setSelectedPlaylistTracks([]);
+      setProfile({ id: "legacy", username: "owner", role: "admin", legacy: true });
+      setLastFmStatus({ configured: false, connected: false, account: null });
       setView("home");
     }
   }, []);
+
+  const refreshPlaylists = useCallback(async () => {
+    const response = await fetch("/api/playlists", { credentials: "same-origin", cache: "no-store" });
+    if (response.status === 401) { setAuthenticated(false); return; }
+    if (!response.ok) throw new Error(await readMessage(response));
+    const body = await response.json();
+    setPlaylists(body.playlists || []);
+  }, []);
+
+  const createPlaylist = useCallback(async (name) => {
+    const response = await fetch("/api/playlists", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name.trim() }),
+    });
+    if (!response.ok) throw new Error(await readMessage(response));
+    const body = await response.json();
+    setPlaylists((items) => [body.playlist, ...items]);
+    setPlaylistName("");
+    setPlaylistMessage("Playlist created.");
+    setPlaylistError(false);
+    return body.playlist;
+  }, []);
+
+  const openPlaylist = useCallback(async (playlist) => {
+    try {
+      const response = await fetch("/api/playlists/" + encodeURIComponent(playlist.id), { credentials: "same-origin", cache: "no-store" });
+      if (!response.ok) throw new Error(await readMessage(response));
+      const body = await response.json();
+      setSelectedPlaylist(body.playlist);
+      setSelectedPlaylistTracks(body.playlist.tracks || []);
+    } catch (error) {
+      setPlaylistMessage(error.message || "Could not open playlist.");
+      setPlaylistError(true);
+    }
+  }, []);
+
+  const addTrackToPlaylist = useCallback(async (playlistId, trackId) => {
+    const response = await fetch("/api/playlists/" + encodeURIComponent(playlistId) + "/tracks", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ trackId }),
+    });
+    if (!response.ok) throw new Error(await readMessage(response));
+    const body = await response.json();
+    if (selectedPlaylist?.id === playlistId) {
+      setSelectedPlaylistTracks(body.playlist.tracks || []);
+      setSelectedPlaylist(body.playlist);
+    }
+    await refreshPlaylists();
+    setPlaylistMessage("Track added to playlist.");
+    setPlaylistError(false);
+  }, [refreshPlaylists, selectedPlaylist]);
+
+  const removeTrackFromPlaylist = useCallback(async (playlistId, trackId) => {
+    const response = await fetch("/api/playlists/" + encodeURIComponent(playlistId) + "/tracks/" + encodeURIComponent(trackId), {
+      method: "DELETE", credentials: "same-origin",
+    });
+    if (!response.ok) throw new Error(await readMessage(response));
+    setSelectedPlaylistTracks((items) => items.filter((track) => track.id !== trackId));
+    await refreshPlaylists();
+    setPlaylistMessage("Track removed.");
+    setPlaylistError(false);
+  }, [refreshPlaylists]);
+
+  const deletePlaylist = useCallback(async (playlistId) => {
+    if (!window.confirm("Delete this playlist? The audio files will not be removed.")) return;
+    const response = await fetch("/api/playlists/" + encodeURIComponent(playlistId), { method: "DELETE", credentials: "same-origin" });
+    if (!response.ok) throw new Error(await readMessage(response));
+    setPlaylists((items) => items.filter((item) => item.id !== playlistId));
+    if (selectedPlaylist?.id === playlistId) {
+      setSelectedPlaylist(null);
+      setSelectedPlaylistTracks([]);
+    }
+    setPlaylistMessage("Playlist deleted.");
+    setPlaylistError(false);
+  }, [selectedPlaylist]);
+
+  const connectLastFm = useCallback(async () => {
+    setLastFmMessage("");
+    try {
+      const response = await fetch("/api/lastfm/connect", { method: "POST", credentials: "same-origin" });
+      if (!response.ok) throw new Error(await readMessage(response));
+      const body = await response.json();
+      if (body.authUrl) window.location.assign(body.authUrl);
+    } catch (error) {
+      setLastFmMessage(error.message || "Could not connect to Last.fm.");
+    }
+  }, []);
+
+  const disconnectLastFm = useCallback(async () => {
+    const response = await fetch("/api/lastfm/connect", { method: "DELETE", credentials: "same-origin" });
+    if (!response.ok) {
+      setLastFmMessage(await readMessage(response));
+      return;
+    }
+    setLastFmStatus({ configured: Boolean(lastFmStatus.configured), connected: false, account: null });
+    setLastFmMessage("Last.fm disconnected.");
+  }, [lastFmStatus.configured]);
 
   const playTrack = useCallback((track) => {
     if (!track || !audioRef.current) return;
     setSelectedYoutube(null);
     const audio = audioRef.current;
-    if (audio.getAttribute("src") !== track.streamUrl) {
+    const requestedFormat = playerSettings.transcodingEnabled ? streamFormat : "original";
+    const streamUrl = requestedFormat === "original"
+      ? track.streamUrl
+      : track.streamUrl + "?format=" + encodeURIComponent(requestedFormat) + "&bitrate=" + encodeURIComponent(streamBitrate);
+    if (audio.getAttribute("src") !== streamUrl) {
       // Assigning src already starts resource selection; load() here can restart it.
-      audio.src = track.streamUrl;
+      audio.src = streamUrl;
     }
     lastUiTimeRef.current = 0;
+    scrobbledTrackRef.current = "";
+    historyTrackRef.current = "";
+    nowPlayingTrackRef.current = "";
     setCurrentTrackId(track.id);
     setCurrentTime(0);
     setDuration(0);
     audio.play().catch(() => setIsPlaying(false));
-  }, []);
+  }, [playerSettings.transcodingEnabled, streamFormat, streamBitrate]);
 
   const playNext = useCallback(() => {
     if (!tracks.length) return;
