@@ -44,6 +44,7 @@ const LAST_TRACK_KEY = "selfmusic:last-track:v1";
 const APPEARANCE_KEY = "selfmusic:appearance:v1";
 const REMOTE_WIZARD_KEY = "selfmusic:remote-wizard-seen:v1";
 const TAILSCALE_DOWNLOAD_URL = "https://tailscale.com/download";
+const TAILSCALE_QR_URL = "https://api.qrserver.com/v1/create-qr-code/?size=192x192&margin=8&data=" + encodeURIComponent(TAILSCALE_DOWNLOAD_URL);
 const SUPPORTED_UPLOAD_EXTENSIONS = new Set(["mp3", "m4a", "aac", "flac", "wav", "ogg", "opus", "webm"]);
 const MAX_UPLOAD_BYTES = 250 * 1024 * 1024;
 
