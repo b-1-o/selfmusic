@@ -78,6 +78,19 @@ Open **http://localhost:8787** on the same computer. The first-run screen explai
 
 To develop the UI locally instead, use **npm run dev**. Vite serves the client and proxies API requests to port 8787.
 
+### Alternative: Docker Compose
+
+If Docker Desktop (Windows/macOS) or Docker Engine (Linux) is already installed, you can run the server as a container. Keep the host port loopback-only unless you have deliberately configured a private network or firewall rule.
+
+~~~sh
+cp .env.example .env
+mkdir -p music
+# Edit .env and set SELF_MUSIC_PASSWORD and SESSION_SECRET.
+docker compose up --build -d
+~~~
+
+On Windows PowerShell, make the config with `Copy-Item .env.example .env`; create the music folder in File Explorer if needed. Then open **http://localhost:8787**. Use `docker compose logs -f selfmusic` to inspect startup logs and `docker compose down` to stop the container. The provided Compose file binds the port to localhost by default, so a tunnel running on that same host can reach it.
+
 ## Listen away from home
 
 Do not simply port-forward port 8787 to the public internet.
