@@ -73,7 +73,7 @@ function readMetadata(filePath, musicRoot) {
   });
 }
 
-async function hashFile(filePath) {
+export async function hashFile(filePath) {
   const hash = crypto.createHash("sha256");
   await new Promise((resolve, reject) => {
     const stream = fs.createReadStream(filePath);
