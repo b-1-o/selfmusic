@@ -253,7 +253,7 @@ function Cover({ track, large = false }) {
   );
 }
 
-const TrackRow = React.memo(function TrackRow({ track, index, active, playing, favorite, onPlay, onFavorite, onDelete, deleting, canManage = true }) {
+const TrackRow = React.memo(function TrackRow({ track, index, active, playing, favorite, onPlay, onFavorite, onDelete, deleting, canManage = true, currentTime = 0, duration = 0 }) {
   return (
     <div className={"track-row" + (active ? " track-row-active" : "")}>
       <button className="track-index" aria-label={"Play " + track.title} onClick={() => onPlay(track)}>
@@ -265,6 +265,9 @@ const TrackRow = React.memo(function TrackRow({ track, index, active, playing, f
       <button className="track-identity" onClick={() => onPlay(track)}>
         <span className="track-title">{track.title}</span>
         <span className="track-subtitle">{track.artist}</span>
+        <span className={"track-progress-inline" + (active ? " track-progress-inline-active" : "")} aria-label={active && duration > 0 ? "Playback progress " + Math.round((currentTime / duration) * 100) + "%" : undefined}>
+          <span style={{ width: active && duration > 0 ? Math.min(100, Math.max(0, (currentTime / duration) * 100)) + "%" : "0%" }} />
+        </span>
       </button>
       <span className="track-album">{track.album}</span>
       <button
@@ -1436,6 +1439,8 @@ function App() {
                   emptyCopy={query ? "Try another title, artist, or album name." : "Put your own music files in the server's music folder, then refresh the library."}
                   onSettings={() => setView("settings")}
                   canManage={profile.role === "admin"}
+                  currentTime={currentTime}
+                  duration={duration}
                 />
               </section>
             </>
@@ -1487,6 +1492,8 @@ function App() {
                 emptyCopy={view === "favorites" ? "Tap the heart beside any track to keep it here." : "Add audio files to your server's music folder, then refresh."}
                 onSettings={() => setView("settings")}
                 canManage={profile.role === "admin"}
+                currentTime={currentTime}
+                duration={duration}
               />
             </section>
           )}
@@ -2055,6 +2062,13 @@ function App() {
                       ))}
                     </div>
                   </div>
+                  <div className="appearance-control">
+                    <div className="appearance-control-label"><strong>Color scheme</strong><span>Choose a light or dark interface</span></div>
+                    <div className="appearance-glass-options theme-options" role="group" aria-label="Color scheme">
+                      <button type="button" className={"appearance-glass-option" + (appearance.theme === "dark" ? " appearance-glass-option-active" : "")} onClick={() => setAppearance((value) => ({ ...value, theme: "dark" }))} aria-pressed={appearance.theme === "dark"}><span className="theme-preview theme-preview-dark" /><strong>Dark</strong><small>OLED-friendly</small></button>
+                      <button type="button" className={"appearance-glass-option" + (appearance.theme === "light" ? " appearance-glass-option-active" : "")} onClick={() => setAppearance((value) => ({ ...value, theme: "light" }))} aria-pressed={appearance.theme === "light"}><span className="theme-preview theme-preview-light" /><strong>Light</strong><small>Bright surfaces</small></button>
+                    </div>
+                  </div>
                   <button className="text-button appearance-reset" type="button" onClick={() => setAppearance({ accent: "rose", accentColor: ACCENT_PRESETS[0].color, ...hexToHsv(ACCENT_PRESETS[0].color), glass: "liquid", theme: "dark" })}>Reset appearance</button>
                 </div>
 
@@ -2220,6 +2234,8 @@ function TrackList({
   emptyCopy,
   onSettings,
   canManage = true,
+  currentTime = 0,
+  duration = 0,
 }) {
   if (loading && !tracks.length) {
     return <div className="empty-state"><RefreshCw size={23} className="spin" /><h3>Finding your music</h3><p>Scanning the library on your home server.</p></div>;
@@ -2258,6 +2274,8 @@ function TrackList({
           onDelete={onDelete}
           deleting={deletingTrackId === track.id}
           canManage={canManage}
+          currentTime={currentTime}
+          duration={duration}
         />
       ))}
     </div>
