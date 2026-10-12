@@ -649,6 +649,49 @@ app.get("/api/tracks", requireAuth, async (_req, res, next) => {
   }
 });
 
+app.delete("/api/tracks/:id", requireAuth, async (req, res, next) => {
+  try {
+    const track = await resolveTrackFile(req.params.id);
+    if (!track) {
+      return res.status(404).json({ error: "track_not_found", message: "This track is no longer in the library." });
+    }
+
+    // Resolve symlinks before deletion so a crafted track ID cannot escape MUSIC_DIR.
+    const rootRealPath = await fs.promises.realpath(musicRoot);
+    const fileRealPath = await fs.promises.realpath(track.filePath);
+    const entryStats = await fs.promises.lstat(track.filePath);
+    const relativePath = path.relative(rootRealPath, fileRealPath);
+    if (
+      entryStats.isSymbolicLink() ||
+      !entryStats.isFile() ||
+      !relativePath ||
+      relativePath === "." ||
+      relativePath.startsWith(".." + path.sep) ||
+      path.isAbsolute(relativePath)
+    ) {
+      return res.status(400).json({ error: "invalid_track_path", message: "This file cannot be deleted from the library." });
+    }
+
+    const name = path.basename(track.filePath);
+    const folder = path.dirname(track.filePath);
+    const stem = path.basename(track.filePath, path.extname(track.filePath));
+    await fs.promises.unlink(track.filePath);
+
+    // Clean up thumbnails saved beside imported tracks, without touching folder covers.
+    for (const extension of [".jpg", ".jpeg", ".png", ".webp", ".avif"]) {
+      await fs.promises.unlink(path.join(folder, stem + extension)).catch(() => {});
+    }
+
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({ deleted: true, name });
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      return res.status(404).json({ error: "track_not_found", message: "This track is no longer in the library." });
+    }
+    next(error);
+  }
+});
+
 app.get("/api/network/addresses", requireAuth, (_req, res) => {
   const local = new Set();
   const tailscale = new Set();
