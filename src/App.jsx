@@ -201,7 +201,7 @@ function LoginScreen({ configured, checking, onLogin, error, serverUnavailable, 
         ) : !configured ? (
           <div className="setup-notice">
             <div className="notice-heading"><CircleAlert size={18} /> The server needs setup</div>
-            <p>SelfMusic runs on your computer. In the project <strong>.env</strong> file, set <code>SELF_MUSIC_PASSWORD</code> to a strong password of at least 12 characters and <code>SESSION_SECRET</code> to a random value of at least 32 characters. After editing the file, restart SelfMusic on the home computer. This screen cannot read or change the file for you.</p>
+            <p>SelfMusic runs on your computer. In the project <strong>.env</strong> file, set <code>SELF_MUSIC_PASSWORD</code> to a password of at least 8 characters and <code>SESSION_SECRET</code> to a random value of at least 32 characters. After editing the file, restart SelfMusic on the home computer. This screen cannot read or change the file for you.</p>
             <p className="notice-foot">A webpage cannot start a background server or grant itself access to your computer's music folders. The cross-platform setup steps are in the README.</p>
             <a className="text-link" href="https://github.com/b-1-o/selfmusic#run-the-home-server" target="_blank" rel="noreferrer">Open setup guide <ArrowUpRight size={15} /></a>
           </div>
@@ -1346,7 +1346,7 @@ function App() {
                   <div className="settings-card-head"><span className="settings-icon"><LockKeyhole size={19} /></span><span className="settings-overline">SECURITY CHECKLIST</span></div>
                   <h3>Before you use it remotely</h3>
                   <div className="security-checklist">
-                    <div><Check size={16} /><span>Set a unique password with at least 12 characters.</span></div>
+                    <div><Check size={16} /><span>Set a unique password with at least 8 characters.</span></div>
                     <div><Check size={16} /><span>Set <code>SESSION_SECRET</code> in your local <code>.env</code> file.</span></div>
                     <div><Check size={16} /><span>Use HTTPS with a private access policy and never commit <code>.env</code>.</span></div>
                     <div><Check size={16} /><span>Keep the operating system and Node.js updated.</span></div>

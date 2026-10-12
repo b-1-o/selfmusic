@@ -263,7 +263,7 @@ app.use((req, res, next) => {
 });
 
 function isConfigured() {
-  return typeof process.env.SELF_MUSIC_PASSWORD === "string" && process.env.SELF_MUSIC_PASSWORD.length >= 12 && !process.env.SELF_MUSIC_PASSWORD.toLowerCase().includes("replace-with");
+  return typeof process.env.SELF_MUSIC_PASSWORD === "string" && process.env.SELF_MUSIC_PASSWORD.length >= 8 && !process.env.SELF_MUSIC_PASSWORD.toLowerCase().includes("replace-with");
 }
 
 function constantTimeTextCompare(left, right) {
@@ -389,7 +389,7 @@ app.post("/api/auth/login", (req, res) => {
   if (!isConfigured()) {
     return res.status(503).json({
       error: "server_not_configured",
-      message: "Create .env from .env.example, set a password of at least 12 characters, then restart SelfMusic."
+      message: "Create .env from .env.example, set a password of at least 8 characters, then restart SelfMusic."
     });
   }
 
@@ -1019,7 +1019,7 @@ fs.promises.mkdir(musicRoot, { recursive: true }).then(() => {
   app.listen(port, "0.0.0.0", () => {
     console.log("SelfMusic server listening on http://localhost:" + port);
     console.log("Music folder: " + musicRoot);
-    if (!isConfigured()) console.warn("Setup required: create .env and set SELF_MUSIC_PASSWORD to a password of at least 12 characters.");
+    if (!isConfigured()) console.warn("Setup required: create .env and set SELF_MUSIC_PASSWORD to a password of at least 8 characters.");
     if (process.env.NODE_ENV === "production" && !hasPersistentSessionSecret) {
       console.warn("Set a random SESSION_SECRET of at least 32 characters in production so sessions remain valid after restarts.");
     }

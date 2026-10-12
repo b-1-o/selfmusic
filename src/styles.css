@@ -1923,3 +1923,9 @@ button:focus-visible, a:focus-visible, input:focus-visible {
   -webkit-backdrop-filter:blur(5px);
 }
 .app-shell[data-glass="solid"] .track-row { background:rgba(255,255,255,.025); }
+
+
+/* Keep the player at its designed scale while preserving ordinary scrolling. */
+html, body, #root {
+  touch-action: pan-x pan-y;
+}
