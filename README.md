@@ -18,17 +18,53 @@ from any device on your network or through a tunnel you control.
 
 ## Quick start
 
-SelfMusic can run on **Linux, macOS, and Windows** with Docker Desktop / Docker Engine and Docker Compose. The installer prepares the configuration, starts the containers, and prints the URL for your phone.
+**Recommended: native installation.** Docker and Tailscale auth keys are not required for ordinary local use.
 
-1. Clone the repository or download and extract its ZIP. Open a terminal in the project directory.
-2. Run the installer:
-   * **Linux / macOS / Git Bash / WSL:** `bash ./install.sh`
-   * **Windows PowerShell:** `powershell -ExecutionPolicy Bypass -File .\install.ps1`
-3. Enter a SelfMusic password and a reusable Tailscale auth key when prompted. Install Tailscale on your phone and sign in to the same tailnet. Open the URL printed by the installer (usually `http://<tailscale-ip>:8787`, or `http://selfmusic:8787` when MagicDNS is enabled).
+### Linux / macOS
 
-The host computer must stay powered on, the containers must remain running, and its internet connection must remain available for remote playback. Access is private to your tailnet; the default Compose setup does not publish port 8787 to the public internet.
+1. Install Node.js 20.19+ and npm. On CachyOS / Arch, for example: `sudo pacman -S nodejs npm`.
+2. Clone the repository (or extract its ZIP), open a terminal in the project directory, and run:
 
-## Manual setup with Docker
+   ~~~~bash
+   bash ./install.sh
+   ~~~~
+
+3. Start SelfMusic any day with `selfmusic`. The installer adds a desktop launcher where supported.
+
+Useful commands:
+
+| Command | What it does |
+|---|---|
+| `selfmusic` | Start the server and open the browser |
+| `selfmusic stop` | Stop the server |
+| `selfmusic status` | Show status and connection addresses |
+| `selfmusic logs` | Follow the server log |
+| `selfmusic remote` | Try to configure private HTTPS through Tailscale |
+
+### Windows
+
+1. Install Node.js 20.19+ from <https://nodejs.org/> and reopen PowerShell.
+2. In the repository directory, run:
+
+   ~~~~powershell
+   powershell -ExecutionPolicy Bypass -File .\install.ps1
+   ~~~~
+
+3. The installer creates a **SelfMusic** desktop shortcut and a `selfmusic` command shim. Click the shortcut, or open a new PowerShell window and run `selfmusic`.
+
+Use `selfmusic stop`, `selfmusic status`, `selfmusic logs`, `selfmusic open`, or `selfmusic remote` to manage the server.
+
+A browser/PWA shortcut can open SelfMusic, but browser security prevents a webpage from starting a stopped local server. The desktop shortcut / `selfmusic` launcher starts the server first, then opens the browser.
+
+### Access from your phone
+
+For use at home, open `http://<computer-lan-ip>:8787` from a phone on the same Wi-Fi network. To listen away from home, install Tailscale on the computer and phone and sign both into the same tailnet. No reusable auth key or `tag:selfmusic` policy is needed when adding the host computer as a normal Tailscale device.
+
+Once both devices are connected, `selfmusic status` shows the private Tailscale address. Run `selfmusic remote` to try configuring Tailscale Serve HTTPS. HTTPS Serve requires MagicDNS and HTTPS certificates enabled in the tailnet admin console. The direct Tailscale-IP URL uses HTTP at the browser level, although traffic between Tailscale devices is encrypted by Tailscale; HTTPS is preferred for installable PWA/service-worker features.
+
+The host computer must remain powered on, awake, and connected to the internet while you listen remotely. Do not port-forward SelfMusic directly to the public internet.
+
+## Optional: Docker deployment (advanced)
 
 1. Create a local configuration file and edit it:
 
@@ -56,9 +92,9 @@ There is no published host port by default. To use direct LAN access instead of 
 
 The Compose setup keeps music in the host-mounted `MUSIC_HOST_DIR`, data in `./data`, and the Tailscale identity in a named volume. The YouTube download route is not changed by this deployment work. To use `cookies.txt` in Docker, create the file beside `.env` and uncomment the optional read-only mount in `docker-compose.yml`. Treat exported cookies as credentials.
 
-## Local development (advanced)
+## Manual development (advanced)
 
-This is the advanced option for users who prefer to run Node.js directly rather than using Docker.
+Use this section when developing the app or when you prefer to start Node.js manually instead of using the native launcher.
 
 1. Clone the repository and install dependencies:
 
@@ -107,15 +143,15 @@ This is the advanced option for users who prefer to run Node.js directly rather 
 
    ```bash
    npm run build
-   NODE_ENV=production npm start
+   NODE_ENV=development npm start
    ```
 
    The Node server serves the built frontend and the API on the same port.
 
 ## Requirements
 
-* **Node.js** 20 or later.
-* **npm** 10 or later.
+* **Node.js** 20.19 or later for native installation.
+* **npm** (included with Node.js).
 * A music folder on the same machine as the server.
 * For **YouTube → MP3 downloads**: `yt-dlp` and `ffmpeg` installed on the
   server (see the YouTube section below).
@@ -238,20 +274,31 @@ Service and local copyright law.
 
 ## Remote access with Tailscale
 
-1. Open <https://login.tailscale.com/admin/settings/keys> and create a **reusable auth key**. Allow the `tag:selfmusic` tag in your tailnet access policy, then put the key into `TS_AUTHKEY` in `.env`. Never share or commit the key.
-2. Install Tailscale on your phone and sign in to the same Tailscale account / tailnet.
-3. Get the address with `docker compose exec tailscale tailscale ip -4`, or use the installer output. Open `http://<tailscale-ip>:8787` on your phone. If MagicDNS is enabled, `http://selfmusic:8787` should also resolve.
+### Native installation (recommended)
 
-For full HTTPS and installable-PWA/service-worker support, you can enable Tailscale Serve after the node is connected:
+1. Install Tailscale on the host computer and your phone: <https://tailscale.com/download>.
+2. Sign both devices into the same Tailscale account / tailnet. The host uses the regular Tailscale client; you do **not** need a reusable auth key or `tag:selfmusic` policy for this normal device setup.
+3. Start SelfMusic on the host and run `selfmusic remote` (Linux/macOS) or `selfmusic remote` in PowerShell (Windows). The launcher tries to configure Tailscale Serve and prints the connection status.
 
-```bash
-docker compose exec tailscale tailscale serve --bg 8787
-docker compose exec tailscale tailscale serve status
-```
+Tailscale Serve HTTPS requires MagicDNS and HTTPS certificates to be enabled in the tailnet admin console. See <https://tailscale.com/docs/how-to/set-up-https-certificates>. Tailscale notes that enabling HTTPS certificates publishes device and tailnet DNS names in a public certificate-transparency log, so review that choice before enabling it.
 
-If prompted, enable HTTPS certificates for your tailnet in the Tailscale admin console. Open the HTTPS URL printed by Serve (the hostname normally ends in `.ts.net`). The HTTP IP URL remains available for normal playback, but browsers may restrict service-worker/PWA features on non-secure origins.
+If you don't configure Serve, the private Tailscale IP can still be used as `http://<tailscale-ip>:8787`. That HTTP URL is encrypted across Tailscale's network tunnel, but a browser may treat it as an insecure origin and restrict PWA/service-worker features. Prefer the HTTPS Serve URL when available.
 
-Keep the `tailscale-state` volume: it stores the node's identity, so ordinary restarts do not require re-authenticating the node. Do not publish port 8787 publicly, and keep the SelfMusic password enabled as a second layer.
+### Optional Docker deployment
+
+The Docker Compose deployment runs a Tailscale sidecar and does use an auth key:
+
+1. Create a reusable key from <https://login.tailscale.com/admin/settings/keys> and allow `tag:selfmusic` in the tailnet policy. Store it as `TS_AUTHKEY` in `.env`; never share or commit that file.
+2. Install Tailscale on the phone and sign in to the same tailnet.
+3. Get the address and (optionally) enable HTTPS:
+
+   ~~~~bash
+   docker compose exec tailscale tailscale ip -4
+   docker compose exec tailscale tailscale serve --bg 8787
+   docker compose exec tailscale tailscale serve status
+   ~~~~
+
+Keep the `tailscale-state` volume: it stores the container node's identity. Do not publish port 8787 to the public internet, and keep the SelfMusic password enabled as a second layer.
 
 ## Security notes
 
@@ -303,9 +350,11 @@ Keep the `tailscale-state` volume: it stores the node's identity, so ordinary re
 ├── Dockerfile                # Multi-stage production image
 ├── docker-compose.yml        # SelfMusic + Tailscale sidecar
 ├── docker-entrypoint.sh      # Runtime checks and process handoff
-├── install.sh                # Linux/macOS/Git Bash/WSL installer
-├── install.ps1               # Windows PowerShell installer
-├── selfmusic.sh              # Container controls and backups
+├── install.sh                # Native Linux/macOS installer; creates selfmusic command
+├── install.ps1               # Native Windows installer; creates desktop shortcut
+├── selfmusic.sh              # Native Linux/macOS commands plus optional Docker controls
+├── selfmusic.ps1              # Windows start/stop/status/logs/remote commands
+├── selfmusic.cmd              # Windows command wrapper
 ├── .dockerignore
 ├── .env.example
 ├── .gitignore
