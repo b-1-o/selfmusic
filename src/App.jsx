@@ -49,6 +49,62 @@ const TAILSCALE_QR_URL = "https://api.qrserver.com/v1/create-qr-code/?size=192x1
 const SUPPORTED_UPLOAD_EXTENSIONS = new Set(["mp3", "m4a", "aac", "flac", "wav", "ogg", "opus", "webm"]);
 const MAX_UPLOAD_BYTES = 250 * 1024 * 1024;
 
+const ACCENT_PRESETS = [
+  { id: "rose", label: "Rose", color: "#f1a0ba" },
+  { id: "ocean", label: "Ocean", color: "#87d7ee" },
+  { id: "violet", label: "Violet", color: "#c5a9ff" },
+  { id: "amber", label: "Amber", color: "#f4c27a" },
+  { id: "mint", label: "Mint", color: "#8fe0bf" },
+];
+
+const clampNumber = (value, min, max) => Math.min(max, Math.max(min, value));
+
+function hexToHsv(hex) {
+  const normalized = String(hex || "").replace(/^#/, "");
+  if (!/^[0-9a-f]{6}$/i.test(normalized)) return { hue: 338, saturation: 33, value: 95 };
+  const red = parseInt(normalized.slice(0, 2), 16) / 255;
+  const green = parseInt(normalized.slice(2, 4), 16) / 255;
+  const blue = parseInt(normalized.slice(4, 6), 16) / 255;
+  const max = Math.max(red, green, blue);
+  const min = Math.min(red, green, blue);
+  const delta = max - min;
+  let hue = 0;
+  if (delta) {
+    if (max === red) hue = 60 * (((green - blue) / delta) % 6);
+    else if (max === green) hue = 60 * ((blue - red) / delta + 2);
+    else hue = 60 * ((red - green) / delta + 4);
+  }
+  return {
+    hue: Math.round((hue + 360) % 360),
+    saturation: Math.round(max === 0 ? 0 : (delta / max) * 100),
+    value: Math.round(max * 100),
+  };
+}
+
+function hsvToHex(hueInput, saturationInput, valueInput) {
+  const hue = ((Number(hueInput) % 360) + 360) % 360;
+  const saturation = clampNumber(Number(saturationInput) || 0, 0, 100) / 100;
+  const value = clampNumber(Number(valueInput) || 0, 0, 100) / 100;
+  const chroma = value * saturation;
+  const secondary = chroma * (1 - Math.abs(((hue / 60) % 2) - 1));
+  let red = 0, green = 0, blue = 0;
+  if (hue < 60) [red, green, blue] = [chroma, secondary, 0];
+  else if (hue < 120) [red, green, blue] = [secondary, chroma, 0];
+  else if (hue < 180) [red, green, blue] = [0, chroma, secondary];
+  else if (hue < 240) [red, green, blue] = [0, secondary, chroma];
+  else if (hue < 300) [red, green, blue] = [secondary, 0, chroma];
+  else [red, green, blue] = [chroma, 0, secondary];
+  const offset = value - chroma;
+  return "#" + [red, green, blue]
+    .map((channel) => Math.round((channel + offset) * 255).toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function darkenAccent(hex) {
+  const hsv = hexToHsv(hex);
+  return hsvToHex(hsv.hue, Math.min(100, hsv.saturation + 8), Math.max(30, hsv.value * 0.72));
+}
+
 function readLocalJson(key, fallback) {
   try {
     const value = localStorage.getItem(key);
@@ -170,7 +226,7 @@ function LoginScreen({ configured, checking, onLogin, error, serverUnavailable, 
   const [showPassword, setShowPassword] = useState(false);
 
   return (
-    <div className="login-shell" data-accent={appearance.accent} data-glass={appearance.glass}>
+    <div className="login-shell" data-accent={appearance.accent} data-glass={appearance.glass} style={{ "--user-accent": appearance.accentColor, "--user-accent-strong": darkenAccent(appearance.accentColor) }}>
       <div className="login-orb login-orb-one" />
       <div className="login-orb login-orb-two" />
       <div className="login-card">
@@ -278,8 +334,18 @@ function App() {
   const [urlImportError, setUrlImportError] = useState(false);
   const [appearance, setAppearance] = useState(() => {
     const saved = readLocalJson(APPEARANCE_KEY, {});
+    const validPreset = ACCENT_PRESETS.some((choice) => choice.id === saved?.accent) ? saved.accent : "rose";
+    const presetColor = ACCENT_PRESETS.find((choice) => choice.id === validPreset)?.color || ACCENT_PRESETS[0].color;
+    const hasSavedColor = typeof saved?.accentColor === "string" && /^#[0-9a-f]{6}$/i.test(saved.accentColor);
+    const accentColor = hasSavedColor ? saved.accentColor : presetColor;
+    const colorState = hexToHsv(accentColor);
+    const matchingPreset = ACCENT_PRESETS.some((choice) => choice.id === saved?.accent && choice.color.toLowerCase() === accentColor.toLowerCase());
     return {
-      accent: ["rose", "ocean", "violet", "amber", "mint"].includes(saved?.accent) ? saved.accent : "rose",
+      accent: matchingPreset ? validPreset : (hasSavedColor ? "custom" : validPreset),
+      accentColor,
+      hue: Number.isFinite(saved?.hue) ? clampNumber(saved.hue, 0, 359) : colorState.hue,
+      saturation: Number.isFinite(saved?.saturation) ? clampNumber(saved.saturation, 0, 100) : colorState.saturation,
+      value: Number.isFinite(saved?.value) ? clampNumber(saved.value, 0, 100) : colorState.value,
       glass: ["liquid", "soft", "solid"].includes(saved?.glass) ? saved.glass : "liquid",
     };
   });
@@ -318,9 +384,52 @@ function App() {
     localStorage.setItem(REMOTE_WIZARD_KEY, "1");
   }, []);
 
+  const updateAccentFromField = (event) => {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    if (!bounds.width || !bounds.height) return;
+    const saturation = Math.round(clampNumber((event.clientX - bounds.left) / bounds.width, 0, 1) * 100);
+    const brightness = Math.round((1 - clampNumber((event.clientY - bounds.top) / bounds.height, 0, 1)) * 100);
+    setAppearance((current) => ({
+      ...current,
+      accent: "custom",
+      saturation,
+      value: brightness,
+      accentColor: hsvToHex(current.hue, saturation, brightness),
+    }));
+  };
+
+  const handleAccentFieldKeyDown = (event) => {
+    const step = event.shiftKey ? 5 : 1;
+    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+    event.preventDefault();
+    setAppearance((current) => {
+      const saturation = clampNumber(current.saturation + (event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0), 0, 100);
+      const brightness = clampNumber(current.value + (event.key === "ArrowDown" ? -step : event.key === "ArrowUp" ? step : 0), 0, 100);
+      return { ...current, accent: "custom", saturation, value: brightness, accentColor: hsvToHex(current.hue, saturation, brightness) };
+    });
+  };
+
   useEffect(() => {
     localStorage.setItem(APPEARANCE_KEY, JSON.stringify(appearance));
   }, [appearance]);
+
+  useEffect(() => {
+    if (!trackActionMessage) return undefined;
+    const timer = window.setTimeout(() => setTrackActionMessage(""), 1500);
+    return () => window.clearTimeout(timer);
+  }, [trackActionMessage]);
+
+  useEffect(() => {
+    if (!uploadMessage) return undefined;
+    const timer = window.setTimeout(() => setUploadMessage(""), 1500);
+    return () => window.clearTimeout(timer);
+  }, [uploadMessage]);
+
+  useEffect(() => {
+    if (!urlImportMessage) return undefined;
+    const timer = window.setTimeout(() => setUrlImportMessage(""), 1500);
+    return () => window.clearTimeout(timer);
+  }, [urlImportMessage]);
 
   useEffect(() => {
     if (!authenticated) return;
@@ -806,7 +915,7 @@ function App() {
         if (response.status === 401) setAuthenticated(false);
         throw new Error(payload.message || "Could not download from YouTube.");
       }
-      setUrlImportMessage("Saved " + payload.name + " to music/Uploads (" + formatBytes(payload.bytes) + ").");
+      setUrlImportMessage("Saved " + payload.name + (payload.artwork ? " with cover" : "") + " to music/Uploads (" + formatBytes(payload.bytes) + ").");
       setUrlImportError(false);
       setAudioUrl("");
       await loadTracks();
@@ -844,7 +953,7 @@ function App() {
   const pageTitle = view === "home" ? "Listen now" : view === "library" ? "Your library" : view === "favorites" ? "Liked tracks" : view === "youtube" ? "Explore YouTube" : view === "import" ? "Import music" : "Server settings";
 
   return (
-    <div className="app-shell" data-accent={appearance.accent} data-glass={appearance.glass}>
+    <div className="app-shell" data-accent={appearance.accent} data-glass={appearance.glass} style={{ "--user-accent": appearance.accentColor, "--user-accent-strong": darkenAccent(appearance.accentColor) }}>
       <aside className={"sidebar" + (mobileMenuOpen ? " sidebar-open" : "")}>
         <div className="brand">
           <span className="brand-mark"><AudioLines size={22} strokeWidth={2.2} /></span>
@@ -1309,18 +1418,59 @@ function App() {
                   <div className="appearance-control">
                     <div className="appearance-control-label"><strong>Accent color</strong><span>Choose the interface highlight</span></div>
                     <div className="appearance-swatches" role="group" aria-label="Accent color">
-                      {[
-                        { id: "rose", label: "Rose", color: "#f1a0ba" },
-                        { id: "ocean", label: "Ocean", color: "#87d7ee" },
-                        { id: "violet", label: "Violet", color: "#c5a9ff" },
-                        { id: "amber", label: "Amber", color: "#f4c27a" },
-                        { id: "mint", label: "Mint", color: "#8fe0bf" },
-                      ].map((choice) => (
-                        <button key={choice.id} type="button" className={"appearance-swatch" + (appearance.accent === choice.id ? " appearance-swatch-active" : "")} style={{ "--swatch-color": choice.color }} onClick={() => setAppearance((value) => ({ ...value, accent: choice.id }))} aria-label={choice.label} aria-pressed={appearance.accent === choice.id}>
+                      {ACCENT_PRESETS.map((choice) => (
+                        <button
+                          key={choice.id}
+                          type="button"
+                          className={"appearance-swatch" + (appearance.accent === choice.id ? " appearance-swatch-active" : "")}
+                          style={{ "--swatch-color": choice.color }}
+                          onClick={() => {
+                            const colorState = hexToHsv(choice.color);
+                            setAppearance((current) => ({ ...current, ...colorState, accent: choice.id, accentColor: choice.color }));
+                          }}
+                          aria-label={choice.label}
+                          aria-pressed={appearance.accent === choice.id}
+                        >
                           <span />
                           <small>{choice.label}</small>
                         </button>
                       ))}
+                    </div>
+                    <div className="accent-picker">
+                      <div className="accent-picker-heading"><span>Full spectrum</span><code aria-live="polite">{appearance.accentColor.toUpperCase()}</code></div>
+                      <div className="accent-picker-field-wrap">
+                        <div
+                          className="accent-color-field"
+                          role="application"
+                          tabIndex={0}
+                          aria-label="Choose saturation and brightness with arrow keys"
+                          style={{ "--picker-hue": appearance.hue, "--picker-x": appearance.saturation + "%", "--picker-y": (100 - appearance.value) + "%" }}
+                          onPointerDown={(event) => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); updateAccentFromField(event); }}
+                          onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) updateAccentFromField(event); }}
+                          onKeyDown={handleAccentFieldKeyDown}
+                        >
+                          <span className="accent-color-field-white" />
+                          <span className="accent-color-field-black" />
+                          <span className="accent-color-field-cursor" style={{ background: appearance.accentColor }} />
+                        </div>
+                        <label className="accent-hue-control">
+                          <span>Hue spectrum</span>
+                          <input
+                            className="accent-hue-range"
+                            type="range"
+                            min="0"
+                            max="359"
+                            step="1"
+                            value={appearance.hue}
+                            aria-label="Hue spectrum"
+                            style={{ "--hue-thumb": appearance.hue }}
+                            onChange={(event) => {
+                              const hue = Number(event.target.value);
+                              setAppearance((current) => ({ ...current, accent: "custom", hue, accentColor: hsvToHex(hue, current.saturation, current.value) }));
+                            }}
+                          />
+                        </label>
+                      </div>
                     </div>
                   </div>
                   <div className="appearance-control">
@@ -1339,7 +1489,7 @@ function App() {
                       ))}
                     </div>
                   </div>
-                  <button className="text-button appearance-reset" type="button" onClick={() => setAppearance({ accent: "rose", glass: "liquid" })}>Reset appearance</button>
+                  <button className="text-button appearance-reset" type="button" onClick={() => setAppearance({ accent: "rose", accentColor: ACCENT_PRESETS[0].color, ...hexToHsv(ACCENT_PRESETS[0].color), glass: "liquid" })}>Reset appearance</button>
                 </div>
 
                 <div className="settings-card settings-card-wide">

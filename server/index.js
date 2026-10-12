@@ -291,9 +291,16 @@ function hasValidSession(req) {
 }
 
 function setSessionCookie(req, res, value, maxAge = sessionLifetimeSeconds) {
-  const secure = req.secure || req.get("x-forwarded-proto") === "https";
+  const forwardedProtocol = String(req.get("x-forwarded-proto") || "").split(",")[0].trim().toLowerCase();
+  let originIsHttps = false;
+  try {
+    originIsHttps = new URL(String(req.get("origin") || "")).protocol === "https:";
+  } catch {
+    // Requests without a valid Origin header can still use req.secure or proxy headers.
+  }
+  const secure = Boolean(req.secure || forwardedProtocol === "https" || originIsHttps || process.env.NODE_ENV === "production");
   const flags = ["Path=/", "HttpOnly", "SameSite=Lax", "Max-Age=" + maxAge];
-  if (secure || process.env.NODE_ENV === "production") flags.push("Secure");
+  if (secure) flags.push("Secure");
   res.setHeader("Set-Cookie", sessionCookie + "=" + value + "; " + flags.join("; "));
 }
 
@@ -780,6 +787,79 @@ app.get("/api/youtube/search", requireAuth, async (req, res, next) => {
   }
 });
 
+
+async function ensureYoutubeArtwork(info, targetPath) {
+  const directory = path.dirname(targetPath);
+  const stem = path.basename(targetPath, path.extname(targetPath));
+  const extensions = [".jpg", ".jpeg", ".png", ".webp", ".avif"];
+
+  for (const extension of extensions) {
+    const artworkPath = path.join(directory, stem + extension);
+    try {
+      const stats = await fs.promises.stat(artworkPath);
+      if (stats.isFile() && stats.size > 0) return path.basename(artworkPath);
+      if (stats.isFile()) await fs.promises.unlink(artworkPath).catch(() => {});
+    } catch {
+      // yt-dlp may not have left a sidecar thumbnail; try the metadata URL below.
+    }
+  }
+
+  const candidate = String(info?.thumbnail || info?.thumbnails?.slice?.().reverse().find((item) => item?.url)?.url || "");
+  if (!candidate) return null;
+  let thumbnailUrl;
+  try {
+    thumbnailUrl = new URL(candidate);
+  } catch {
+    return null;
+  }
+
+  const supportedMimeTypes = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/avif": ".avif",
+  };
+
+  for (let redirectCount = 0; redirectCount <= 3; redirectCount += 1) {
+    if (thumbnailUrl.protocol !== "https:" || !/(^|\.)ytimg\.com$/i.test(thumbnailUrl.hostname)) {
+      throw new Error("Refusing an untrusted YouTube thumbnail URL.");
+    }
+
+    const response = await fetch(thumbnailUrl, {
+      redirect: "manual",
+      signal: AbortSignal.timeout(12000),
+      headers: { "user-agent": "SelfMusic/0.1" },
+    });
+
+    if ([301, 302, 303, 307, 308].includes(response.status)) {
+      const location = response.headers.get("location");
+      if (!location || redirectCount === 3) throw new Error("YouTube thumbnail redirect limit reached.");
+      thumbnailUrl = new URL(location, thumbnailUrl);
+      continue;
+    }
+    if (!response.ok || !response.body) return null;
+
+    const mimeType = String(response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+    const extension = supportedMimeTypes[mimeType];
+    if (!extension) return null;
+
+    const chunks = [];
+    let totalBytes = 0;
+    for await (const chunk of response.body) {
+      const buffer = Buffer.from(chunk);
+      totalBytes += buffer.length;
+      if (totalBytes > 8 * 1024 * 1024) throw new Error("YouTube thumbnail exceeds the 8 MB limit.");
+      chunks.push(buffer);
+    }
+    if (!totalBytes) return null;
+
+    const artworkPath = path.join(directory, stem + extension);
+    await fs.promises.writeFile(artworkPath, Buffer.concat(chunks), { flag: "wx" });
+    return path.basename(artworkPath);
+  }
+  return null;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Download audio from a YouTube URL and convert to MP3 using yt-dlp.
 // POST /api/youtube/download   body: { url: "https://www.youtube.com/watch?v=..." }
@@ -897,6 +977,14 @@ app.post("/api/youtube/download", requireAuth, async (req, res, next) => {
       });
     }
 
+    let artworkName = null;
+    try {
+      artworkName = await ensureYoutubeArtwork(info, targetPath);
+    } catch (artworkError) {
+      // A missing cover should not discard a successful audio conversion.
+      console.warn("[SelfMusic] Could not save YouTube thumbnail:", artworkError?.message || artworkError);
+    }
+
     res.setHeader("Cache-Control", "no-store");
     res.status(201).json({
       downloaded: true,
@@ -904,6 +992,7 @@ app.post("/api/youtube/download", requireAuth, async (req, res, next) => {
       bytes: stats.size,
       durationSeconds,
       title: rawTitle,
+      artwork: Boolean(artworkName),
       destination: "Uploads"
     });
   } catch (error) {
