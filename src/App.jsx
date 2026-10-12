@@ -290,6 +290,7 @@ const TrackRow = React.memo(function TrackRow({ track, index, active, playing, f
 });
 
 function LoginScreen({ configured, checking, onLogin, error, serverUnavailable, appearance }) {
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
@@ -330,8 +331,20 @@ function LoginScreen({ configured, checking, onLogin, error, serverUnavailable, 
             <a className="text-link" href="https://github.com/b-1-o/selfmusic#run-the-home-server" target="_blank" rel="noreferrer">Open setup guide <ArrowUpRight size={15} /></a>
           </div>
         ) : (
-          <form className="login-form" onSubmit={(event) => { event.preventDefault(); onLogin(password); }}>
-            <label htmlFor="server-password">Server password</label>
+          <form className="login-form" onSubmit={(event) => { event.preventDefault(); onLogin({ username: username.trim(), password }); }}>
+            <label htmlFor="server-username">Username (optional for the server owner)</label>
+            <div className="password-wrap">
+              <input
+                id="server-username"
+                type="text"
+                autoComplete="username"
+                placeholder="Username for your account"
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                maxLength={32}
+              />
+            </div>
+            <label htmlFor="server-password">Password</label>
             <div className="password-wrap">
               <LockKeyhole size={17} />
               <input
@@ -381,6 +394,22 @@ function App() {
   const [view, setView] = useState("home");
   const contentWrapRef = useRef(null);
   const [favorites, setFavorites] = useState(() => readLocalJson(FAVORITES_KEY, []));
+  const [profile, setProfile] = useState({ id: "legacy", username: "owner", role: "admin", legacy: true });
+  const [playlists, setPlaylists] = useState([]);
+  const [selectedPlaylist, setSelectedPlaylist] = useState(null);
+  const [selectedPlaylistTracks, setSelectedPlaylistTracks] = useState([]);
+  const [playlistName, setPlaylistName] = useState("");
+  const [playlistMessage, setPlaylistMessage] = useState("");
+  const [playlistError, setPlaylistError] = useState(false);
+  const [lastFmStatus, setLastFmStatus] = useState({ configured: false, connected: false, account: null });
+  const [lastFmMessage, setLastFmMessage] = useState("");
+  const [playerSettings, setPlayerSettings] = useState({ transcodingEnabled: false, formats: ["original"], defaultBitrate: "192k", bitrates: ["128k", "192k"] });
+  const [streamFormat, setStreamFormat] = useState(() => readLocalJson("selfmusic:stream-quality:v1", {}).format || "original");
+  const [streamBitrate, setStreamBitrate] = useState(() => readLocalJson("selfmusic:stream-quality:v1", {}).bitrate || "192k");
+  const scrobbledTrackRef = useRef("");
+  const historyTrackRef = useRef("");
+  const nowPlayingTrackRef = useRef("");
+
   const [currentTrackId, setCurrentTrackId] = useState(() => localStorage.getItem(LAST_TRACK_KEY) || "");
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -629,10 +658,6 @@ function App() {
   }, [loadTracks]);
 
   useEffect(() => {
-    localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites));
-  }, [favorites]);
-
-  useEffect(() => {
     if (currentTrackId) localStorage.setItem(LAST_TRACK_KEY, currentTrackId);
   }, [currentTrackId]);
 
@@ -641,7 +666,7 @@ function App() {
     if (audio) audio.volume = muted ? 0 : volume;
   }, [volume, muted]);
 
-  const handleLogin = useCallback(async (password) => {
+  const handleLogin = useCallback(async ({ username, password }) => {
     setLoginError("");
     setServerUnavailable(false);
     try {
@@ -650,7 +675,7 @@ function App() {
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
         cache: "no-store",
-        body: JSON.stringify({ password }),
+        body: JSON.stringify(username ? { username, password } : { password }),
       });
       if (!response.ok) {
         setLoginError(await readMessage(response));
