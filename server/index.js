@@ -853,6 +853,20 @@ app.get("/api/artwork/:id", requireAuth, async (req, res, next) => {
     const track = await resolveTrackFile(req.params.id);
     if (!track) return res.status(404).json({ error: "not_found" });
     const folder = path.dirname(track.filePath);
+    const trackStem = path.basename(track.filePath, path.extname(track.filePath));
+    for (const extension of [".jpg", ".jpeg", ".png", ".webp", ".avif"]) {
+      const trackArtPath = path.join(folder, trackStem + extension);
+      try {
+        const stats = await fs.promises.stat(trackArtPath);
+        if (stats.isFile()) {
+          res.setHeader("Cache-Control", "private, max-age=3600");
+          res.type(mimeTypes[extension] || "application/octet-stream");
+          return fs.createReadStream(trackArtPath).pipe(res);
+        }
+      } catch {
+        // A track-specific thumbnail may not exist; try a folder cover next.
+      }
+    }
     for (const name of artNames) {
       const artPath = path.join(folder, name);
       try {
