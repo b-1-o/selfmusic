@@ -29,12 +29,15 @@ import {
   SkipForward,
   Volume2,
   VolumeX,
+  Upload,
   X,
   Youtube,
 } from "lucide-react";
 
 const FAVORITES_KEY = "selfmusic:favorites:v1";
 const LAST_TRACK_KEY = "selfmusic:last-track:v1";
+const SUPPORTED_UPLOAD_EXTENSIONS = new Set(["mp3", "m4a", "aac", "flac", "wav", "ogg", "opus", "webm"]);
+const MAX_UPLOAD_BYTES = 250 * 1024 * 1024;
 
 function readLocalJson(key, fallback) {
   try {
@@ -50,6 +53,19 @@ function formatTime(value) {
   const minutes = Math.floor(value / 60);
   const seconds = Math.floor(value % 60).toString().padStart(2, "0");
   return minutes + ":" + seconds;
+}
+
+function formatBytes(value) {
+  if (!Number.isFinite(value) || value < 0) return "0 B";
+  if (value < 1024) return value + " B";
+  const units = ["KB", "MB", "GB", "TB"];
+  let size = value / 1024;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+  return size.toFixed(size >= 10 ? 0 : 1) + " " + units[unitIndex];
 }
 
 async function readMessage(response) {
@@ -203,6 +219,12 @@ function App() {
   const [repeatMode, setRepeatMode] = useState("off");
   const [copied, setCopied] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const uploadInputRef = useRef(null);
+  const [selectedUploadFiles, setSelectedUploadFiles] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadMessage, setUploadMessage] = useState("");
+  const [uploadError, setUploadError] = useState(false);
 
   const currentTrack = tracks.find((track) => track.id === currentTrackId) || null;
 
@@ -450,6 +472,91 @@ function App() {
     setFavorites((items) => items.includes(id) ? items.filter((item) => item !== id) : [...items, id]);
   }, []);
 
+  const handleSelectUploadFiles = useCallback((fileList) => {
+    const nextFiles = Array.from(fileList || []);
+    setSelectedUploadFiles(nextFiles.slice(0, 20));
+    setUploadError(false);
+    setUploadMessage("");
+
+    if (nextFiles.length > 20) {
+      setUploadError(true);
+      setUploadMessage("Choose no more than 20 files per upload.");
+      return;
+    }
+    const unsupported = nextFiles.find((file) => {
+      const extension = file.name.split(".").pop()?.toLowerCase() || "";
+      return !SUPPORTED_UPLOAD_EXTENSIONS.has(extension);
+    });
+    if (unsupported) {
+      setUploadError(true);
+      setUploadMessage(unsupported.name + " is not a supported audio format.");
+      return;
+    }
+    const tooLarge = nextFiles.find((file) => file.size > MAX_UPLOAD_BYTES);
+    if (tooLarge) {
+      setUploadError(true);
+      setUploadMessage(tooLarge.name + " is larger than the 250 MB per-file limit.");
+    }
+  }, []);
+
+  const uploadSelectedFiles = useCallback(async () => {
+    if (!selectedUploadFiles.length || uploading) return;
+    const invalidFile = selectedUploadFiles.find((file) => {
+      const extension = file.name.split(".").pop()?.toLowerCase() || "";
+      return !SUPPORTED_UPLOAD_EXTENSIONS.has(extension) || file.size > MAX_UPLOAD_BYTES;
+    });
+    if (invalidFile) {
+      setUploadError(true);
+      setUploadMessage("Remove unsupported or oversized files before uploading.");
+      return;
+    }
+
+    setUploading(true);
+    setUploadProgress(0);
+    setUploadError(false);
+    setUploadMessage("");
+    const formData = new FormData();
+    selectedUploadFiles.forEach((file) => formData.append("files", file, file.name));
+
+    try {
+      const result = await new Promise((resolve, reject) => {
+        const request = new XMLHttpRequest();
+        request.open("POST", "/api/upload");
+        request.responseType = "json";
+        request.upload.addEventListener("progress", (event) => {
+          if (event.lengthComputable) {
+            setUploadProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
+          }
+        });
+        request.addEventListener("load", () => resolve({
+          status: request.status,
+          body: request.response || null,
+        }));
+        request.addEventListener("error", () => reject(new Error("The server could not be reached during upload.")));
+        request.addEventListener("abort", () => reject(new Error("The upload was cancelled.")));
+        request.send(formData);
+      });
+
+      if (result.status < 200 || result.status >= 300) {
+        if (result.status === 401) setAuthenticated(false);
+        throw new Error(result.body?.message || "The server could not save these files.");
+      }
+
+      const uploaded = Number(result.body?.uploaded || selectedUploadFiles.length);
+      setUploadMessage("Imported " + uploaded + " " + (uploaded === 1 ? "track" : "tracks") + " into music/Uploads.");
+      setUploadError(false);
+      setUploadProgress(100);
+      setSelectedUploadFiles([]);
+      if (uploadInputRef.current) uploadInputRef.current.value = "";
+      await loadTracks();
+    } catch (error) {
+      setUploadError(true);
+      setUploadMessage(error.message || "Upload failed. Check the server and try again.");
+    } finally {
+      setUploading(false);
+    }
+  }, [selectedUploadFiles, uploading, loadTracks]);
+
   const copyText = useCallback(async (text) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -472,7 +579,7 @@ function App() {
     );
   }
 
-  const pageTitle = view === "home" ? "Listen now" : view === "library" ? "Your library" : view === "favorites" ? "Liked tracks" : view === "youtube" ? "Explore YouTube" : "Server settings";
+  const pageTitle = view === "home" ? "Listen now" : view === "library" ? "Your library" : view === "favorites" ? "Liked tracks" : view === "youtube" ? "Explore YouTube" : view === "import" ? "Import music" : "Server settings";
 
   return (
     <div className="app-shell">
@@ -491,6 +598,9 @@ function App() {
             </button>
             <button className={view === "library" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("library"); setMobileMenuOpen(false); }}>
               <Library size={18} /> <span>Library</span><span className="nav-count">{tracks.length}</span>
+            </button>
+            <button className={view === "import" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("import"); setMobileMenuOpen(false); }}>
+              <Upload size={18} /> <span>Import music</span>
             </button>
             <button className={view === "favorites" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("favorites"); setMobileMenuOpen(false); }}>
               <Heart size={18} /> <span>Liked tracks</span>
@@ -709,6 +819,109 @@ function App() {
             </section>
           )}
 
+          {view === "import" && (
+            <section className="page-section import-page">
+              <div className="page-intro">
+                <div className="intro-icon"><Upload size={22} /></div>
+                <p className="eyebrow">YOUR MUSIC, ON YOUR SERVER</p>
+                <h1>Import music</h1>
+                <p>Choose audio files from this device and send them straight to your home library. They stay on your computer after upload.</p>
+                <div className="intro-meta"><span><ShieldCheck size={14} /> Private upload</span><span className="meta-separator" /><span><Library size={14} /> {tracks.length} tracks in library</span></div>
+              </div>
+
+              <div className="import-layout">
+                <div className="import-main-panel glass-mist-panel">
+                  <div className="import-panel-heading">
+                    <div><p className="eyebrow">ADD TO YOUR COLLECTION</p><h2>Upload audio files</h2></div>
+                    <span className="import-folder-tag"><FolderOpen size={14} /> music/Uploads</span>
+                  </div>
+
+                  <div
+                    className="import-dropzone"
+                    onDragOver={(event) => { event.preventDefault(); event.currentTarget.classList.add("is-dragging"); }}
+                    onDragLeave={(event) => { event.currentTarget.classList.remove("is-dragging"); }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      event.currentTarget.classList.remove("is-dragging");
+                      handleSelectUploadFiles(event.dataTransfer.files);
+                    }}
+                  >
+                    <input
+                      ref={uploadInputRef}
+                      className="import-file-input"
+                      type="file"
+                      accept=".mp3,.m4a,.aac,.flac,.wav,.ogg,.opus,.webm,audio/*"
+                      multiple
+                      onChange={(event) => {
+                        handleSelectUploadFiles(event.target.files);
+                        event.target.value = "";
+                      }}
+                      aria-label="Choose audio files to upload"
+                    />
+                    <div className="import-drop-icon"><Upload size={25} /></div>
+                    <h3>Drop your tracks here</h3>
+                    <p>or choose files from your device</p>
+                    <button className="ghost-button" type="button" onClick={() => uploadInputRef.current?.click()} disabled={uploading}>
+                      <FolderOpen size={15} /> Browse audio files
+                    </button>
+                    <div className="import-limits"><span>MP3</span><span>FLAC</span><span>M4A</span><span>AAC</span><span>WAV</span><span>OGG</span><span>OPUS</span><span>WEBM</span></div>
+                    <span className="import-limit-caption">Up to 20 files per batch · 250 MB per file</span>
+                  </div>
+
+                  {selectedUploadFiles.length > 0 && (
+                    <div className="upload-queue">
+                      <div className="upload-queue-heading"><strong>Ready to import</strong><span>{selectedUploadFiles.length} {selectedUploadFiles.length === 1 ? "file" : "files"} · {formatBytes(selectedUploadFiles.reduce((total, file) => total + file.size, 0))}</span></div>
+                      <div className="upload-queue-list">
+                        {selectedUploadFiles.map((file, index) => (
+                          <div className="upload-queue-row" key={file.name + "-" + file.size + "-" + index}>
+                            <span className="upload-file-icon"><Music size={17} /></span>
+                            <span className="upload-file-meta"><strong>{file.name}</strong><small>{formatBytes(file.size)}</small></span>
+                            <button className="icon-button" type="button" aria-label={"Remove " + file.name} disabled={uploading} onClick={() => setSelectedUploadFiles((items) => items.filter((_, fileIndex) => fileIndex !== index))}><X size={16} /></button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {uploading && (
+                    <div className="upload-progress-block">
+                      <div className="upload-progress-caption"><span>{uploadProgress < 100 ? "Uploading to your home server…" : "Saving to library…"}</span><strong>{uploadProgress}%</strong></div>
+                      <div className="upload-progress-track"><span style={{ width: uploadProgress + "%" }} /></div>
+                    </div>
+                  )}
+                  {uploadMessage && <div className={"upload-feedback" + (uploadError ? " upload-feedback-error" : "")}><span className="upload-feedback-icon">{uploadError ? <CircleAlert size={17} /> : <Check size={17} />}</span><span>{uploadMessage}</span>{!uploadError && <button type="button" className="text-button" onClick={() => setView("library")}>Open library <ArrowUpRight size={14} /></button>}</div>}
+
+                  <div className="import-actions">
+                    <button className="primary-button" type="button" onClick={uploadSelectedFiles} disabled={uploading || selectedUploadFiles.length === 0 || uploadError}>
+                      {uploading ? <RefreshCw size={16} className="spin" /> : <Upload size={16} />}
+                      {uploading ? "Uploading…" : "Import selected tracks"}
+                    </button>
+                    <button className="text-button" type="button" disabled={uploading || selectedUploadFiles.length === 0} onClick={() => { setSelectedUploadFiles([]); setUploadMessage(""); setUploadError(false); if (uploadInputRef.current) uploadInputRef.current.value = ""; }}>Clear selection</button>
+                  </div>
+                </div>
+
+                <aside className="import-side">
+                  <div className="import-side-card glass-mist-panel">
+                    <span className="settings-icon"><FolderOpen size={18} /></span>
+                    <p className="eyebrow">WHERE FILES GO</p>
+                    <h3>Saved at home</h3>
+                    <p>Every upload is saved to the server's <code>music/Uploads</code> directory. It is then indexed into your music library, ready to stream when you're away from home.</p>
+                    <div className="import-path"><FolderOpen size={15} /> MUSIC_DIR / Uploads</div>
+                  </div>
+                  <div className="import-side-card glass-mist-panel">
+                    <span className="settings-icon settings-icon-blue"><Globe2 size={18} /></span>
+                    <p className="eyebrow">GET MUSIC AS FILES</p>
+                    <h3>Downloads you can keep</h3>
+                    <p>Use stores and artists that explicitly provide downloadable audio, or music published under a license that permits downloading and personal use.</p>
+                    <a className="import-resource-link" href="https://get.bandcamp.help/en/articles/15263100-where-do-i-download-my-purchase" target="_blank" rel="noreferrer">Download purchased music on Bandcamp <ArrowUpRight size={14} /></a>
+                    <a className="import-resource-link" href="https://archivesupport.zendesk.com/hc/en-us/articles/360016398872-Downloading-A-Basic-Guide" target="_blank" rel="noreferrer">Internet Archive download guide <ArrowUpRight size={14} /></a>
+                  </div>
+                  <div className="import-side-note"><ShieldCheck size={17} /><span>Only import music you own or have permission to store. Your upload is protected by your SelfMusic session.</span></div>
+                </aside>
+              </div>
+            </section>
+          )}
+
           {view === "settings" && (
             <section className="page-section settings-page">
               <div className="page-intro">
@@ -764,6 +977,7 @@ function App() {
       <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
         <button className={view === "home" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("home")}><Home size={19} /><span>Home</span></button>
         <button className={view === "library" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("library")}><Library size={19} /><span>Library</span></button>
+        <button className={view === "import" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("import")}><Upload size={19} /><span>Import</span></button>
         <button className={view === "youtube" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("youtube")}><Youtube size={19} /><span>YouTube</span></button>
         <button className={view === "settings" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("settings")}><Settings size={19} /><span>Server</span></button>
       </nav>
