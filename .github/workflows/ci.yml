@@ -39,8 +39,8 @@ jobs:
         run: |
           $files = @("install.ps1", "selfmusic.ps1")
           foreach ($file in $files) {
-            $tokens = $null
-            $errors = $null
+            $parseTokens = $null
+            $parseErrors = $null
             [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file), [ref]$tokens, [ref]$errors) | Out-Null
             if ($errors.Count -gt 0) {
               $errors | ForEach-Object { Write-Error $_ }
