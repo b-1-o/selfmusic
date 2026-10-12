@@ -1,0 +1,16 @@
+services:
+  selfmusic:
+    build: .
+    container_name: selfmusic
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 8787
+      MUSIC_DIR: /music
+    volumes:
+      - ./music:/music:ro
+    ports:
+      # Localhost-only by default; access it through a private network or HTTPS tunnel.
+      - "127.0.0.1:8787:8787"
