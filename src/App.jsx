@@ -847,6 +847,21 @@ function App() {
     return body.playlist;
   }, []);
 
+  const openSmartPlaylist = useCallback(async (kind) => {
+    try {
+      const response = await fetch("/api/playlists/smart/" + encodeURIComponent(kind), { credentials: "same-origin", cache: "no-store" });
+      if (!response.ok) throw new Error(await readMessage(response));
+      const body = await response.json();
+      setSelectedPlaylist(body);
+      setSelectedPlaylistTracks(body.tracks || []);
+      setPlaylistMessage("");
+      setPlaylistError(false);
+    } catch (error) {
+      setPlaylistMessage(error.message || "Could not load smart playlist.");
+      setPlaylistError(true);
+    }
+  }, []);
+
   const openPlaylist = useCallback(async (playlist) => {
     try {
       const response = await fetch("/api/playlists/" + encodeURIComponent(playlist.id), { credentials: "same-origin", cache: "no-store" });
@@ -1229,9 +1244,21 @@ function App() {
     return list;
   }, [tracks, view, favorites, query, libraryFilters]);
 
-  const toggleFavorite = useCallback((id) => {
-    setFavorites((items) => items.includes(id) ? items.filter((item) => item !== id) : [...items, id]);
-  }, []);
+  const toggleFavorite = useCallback(async (id) => {
+    const wasFavorite = favorites.includes(id);
+    try {
+      const response = await fetch("/api/favorites/" + encodeURIComponent(id), {
+        method: wasFavorite ? "DELETE" : "POST",
+        credentials: "same-origin",
+      });
+      if (response.status === 401) { setAuthenticated(false); return; }
+      if (!response.ok) throw new Error(await readMessage(response));
+      setFavorites((items) => wasFavorite ? items.filter((item) => item !== id) : (items.includes(id) ? items : [...items, id]));
+    } catch (error) {
+      setPlaylistMessage(error.message || "Could not update favorites.");
+      setPlaylistError(true);
+    }
+  }, [favorites]);
 
   const handleSelectUploadFiles = useCallback((fileList) => {
     const nextFiles = Array.from(fileList || []);
@@ -1692,6 +1719,22 @@ function App() {
               {playlistMessage && <div className={"upload-feedback" + (playlistError ? " upload-feedback-error" : "")} role={playlistError ? "alert" : "status"}><span className="upload-feedback-icon">{playlistError ? <CircleAlert size={17} /> : <Check size={17} />}</span><span>{playlistMessage}</span></div>}
 
               <div className="section-heading playlist-heading">
+                <div><p className="eyebrow">AUTO-UPDATED</p><h2>Smart playlists</h2></div>
+              </div>
+              <div className="settings-grid smart-playlist-grid">
+                {[
+                  { kind: "recently-added", name: "Recently added", subtitle: "Latest tracks in your library" },
+                  { kind: "frequently-played", name: "Frequently played", subtitle: "Your most-played tracks" },
+                  { kind: "recently-played", name: "Recently played", subtitle: "Your latest listening history" },
+                ].map((item) => (
+                  <button className={"settings-card smart-playlist-card" + (selectedPlaylist?.smartType === item.kind ? " playlist-card-active" : "")} type="button" key={item.kind} onClick={() => openSmartPlaylist(item.kind)}>
+                    <div className="settings-card-head"><span className="settings-icon"><AudioLines size={18} /></span><span className="settings-overline">SMART PLAYLIST</span></div>
+                    <h3>{item.name}</h3><p>{item.subtitle}</p><span className="text-button"><Play size={14} /> Open smart playlist</span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="section-heading playlist-heading">
                 <div><p className="eyebrow">SAVED COLLECTIONS</p><h2>Your playlists</h2></div>
                 <div className="section-heading-actions"><span className="muted-count">{playlists.length} playlists</span><button className="text-button" type="button" onClick={() => refreshPlaylists().catch((error) => { setPlaylistMessage(error.message); setPlaylistError(true); })}><RefreshCw size={14} /> Refresh</button></div>
               </div>
@@ -1725,7 +1768,7 @@ function App() {
                         <button className="track-art" type="button" onClick={() => playTrack(track)} aria-label={"Play " + track.title}><Cover track={track} /></button>
                         <button className="track-identity" type="button" onClick={() => playTrack(track)}><span className="track-title">{track.title}</span><span className="track-subtitle">{track.artist} · {track.album}</span></button>
                         <span className="playlist-track-position">{index + 1}</span>
-                        <button className="icon-button" type="button" title="Move up" aria-label={"Move " + track.title + " up"} disabled={index === 0} onClick={async () => {
+                        {!selectedPlaylist.smartType && (<button className="icon-button" type="button" title="Move up" aria-label={"Move " + track.title + " up"} disabled={index === 0} onClick={async () => {
                           const ids = selectedPlaylistTracks.map((item) => item.id);
                           [ids[index - 1], ids[index]] = [ids[index], ids[index - 1]];
                           try {
@@ -1733,12 +1776,15 @@ function App() {
                             if (!response.ok) throw new Error(await readMessage(response));
                             setSelectedPlaylistTracks(await response.json().then((body) => body.tracks || []));
                           } catch (error) { setPlaylistMessage(error.message); setPlaylistError(true); }
-                        }}><ArrowUpRight size={15} /></button>
-                        <button className="icon-button" type="button" title="Remove track" aria-label={"Remove " + track.title + " from playlist"} onClick={() => removeTrackFromPlaylist(selectedPlaylist.id, track.id).catch((error) => { setPlaylistMessage(error.message); setPlaylistError(true); })}><X size={15} /></button>
+                        }}><ArrowUpRight size={15} /></button> )}
+
+                        {!selectedPlaylist.smartType && (<button className="icon-button" type="button" title="Remove track" aria-label={"Remove " + track.title + " from playlist"} onClick={() => removeTrackFromPlaylist(selectedPlaylist.id, track.id).catch((error) => { setPlaylistMessage(error.message); setPlaylistError(true); })}><X size={15} /></button> )}
+
                       </div>
                     )) : <p className="settings-footnote">This playlist is empty. Add something from your library below.</p>}
                   </div>
 
+                  {!selectedPlaylist.smartType && (
                   <div className="settings-card playlist-track-panel">
                     <h3>Add tracks from your library</h3>
                     <div className="playlist-add-library">
@@ -1751,7 +1797,8 @@ function App() {
                       ))}
                     </div>
                   </div>
-                </section>
+                  )}
+
               )}
             </section>
           )}
