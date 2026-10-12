@@ -1,10 +1,15 @@
 import crypto from "node:crypto";
+import dns from "node:dns/promises";
+import https from "node:https";
+import net from "node:net";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import dotenv from "dotenv";
 import multer from "multer";
+import { Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 dotenv.config({ path: path.join(projectRoot, ".env") });
@@ -35,6 +40,159 @@ const mimeTypes = {
 };
 const artNames = ["cover.webp", "cover.jpg", "cover.jpeg", "cover.png", "folder.webp", "folder.jpg", "folder.jpeg", "folder.png"];
 const loginAttempts = new Map();
+
+const audioMimeToExtension = {
+  "audio/mpeg": ".mp3",
+  "audio/mp4": ".m4a",
+  "audio/aac": ".aac",
+  "audio/flac": ".flac",
+  "audio/x-flac": ".flac",
+  "audio/wav": ".wav",
+  "audio/wave": ".wav",
+  "audio/x-wav": ".wav",
+  "audio/ogg": ".ogg",
+  "audio/opus": ".opus",
+  "audio/webm": ".webm"
+};
+
+function ipv4ToBigInt(address) {
+  const parts = address.split(".");
+  if (parts.length !== 4 || parts.some((part) => !/^\d{1,3}$/.test(part) || Number(part) > 255)) return null;
+  return parts.reduce((value, part) => (value << 8n) + BigInt(Number(part)), 0n);
+}
+
+function ipv6ToBigInt(address) {
+  let input = address.toLowerCase().split("%")[0];
+  if (input.includes(".")) return null;
+  const halves = input.split("::");
+  if (halves.length > 2) return null;
+  const left = halves[0] ? halves[0].split(":") : [];
+  const right = halves.length === 2 && halves[1] ? halves[1].split(":") : [];
+  const missing = 8 - left.length - right.length;
+  if ((halves.length === 1 && missing !== 0) || (halves.length === 2 && missing < 1)) return null;
+  const parts = [...left, ...Array(missing).fill("0"), ...right];
+  if (parts.length !== 8 || parts.some((part) => !/^[0-9a-f]{1,4}$/.test(part))) return null;
+  return parts.reduce((value, part) => (value << 16n) + BigInt("0x" + part), 0n);
+}
+
+function addressIsPublic(address) {
+  const family = net.isIP(address);
+  if (family === 4) {
+    const value = ipv4ToBigInt(address);
+    if (value === null) return false;
+    const blocked = [
+      ["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10],
+      ["127.0.0.0", 8], ["169.254.0.0", 16], ["172.16.0.0", 12],
+      ["192.0.0.0", 24], ["192.0.2.0", 24], ["192.88.99.0", 24],
+      ["192.168.0.0", 16], ["198.18.0.0", 15], ["198.51.100.0", 24],
+      ["203.0.113.0", 24], ["224.0.0.0", 4], ["240.0.0.0", 4]
+    ];
+    return !blocked.some(([network, bits]) => {
+      const base = ipv4ToBigInt(network);
+      return base !== null && (value >> BigInt(32 - bits)) === (base >> BigInt(32 - bits));
+    });
+  }
+
+  if (family === 6) {
+    const value = ipv6ToBigInt(address);
+    if (value === null) return false;
+    // Allow only IPv6 global-unicast space (2000::/3), excluding special-use/documentation ranges.
+    if ((value >> 125n) !== 1n) return false;
+    const prefixMatches = (network, bits) => (value >> BigInt(128 - bits)) === (network >> BigInt(128 - bits));
+    const blocked = [
+      [(0x20010db8000000000000000000000000n), 32], // Documentation: 2001:db8::/32
+      [(0x20010000000000000000000000000000n), 23], // Special-use transition range: 2001::/23
+      [(0x20020000000000000000000000000000n), 16]  // 6to4: 2002::/16
+    ];
+    return !blocked.some(([network, bits]) => prefixMatches(network, bits));
+  }
+  return false;
+}
+
+function validateImportUrl(value) {
+  if (typeof value !== "string" || value.length > 2048) {
+    throw new Error("Paste a direct HTTPS link to an audio file.");
+  }
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("That URL is not valid.");
+  }
+  if (url.protocol !== "https:" || url.username || url.password || url.hash) {
+    throw new Error("For security, import links must use HTTPS and cannot include embedded credentials or fragments.");
+  }
+  if (url.port && url.port !== "443") {
+    throw new Error("Only standard HTTPS links on port 443 are supported.");
+  }
+  const hostname = url.hostname.toLowerCase().replace(/\.$/, "");
+  if (!hostname.includes(".") || hostname === "localhost" || hostname.endsWith(".localhost") ||
+      hostname.endsWith(".local") || hostname.endsWith(".internal") || hostname.endsWith(".test") ||
+      hostname.endsWith(".invalid") || hostname.endsWith(".example") || net.isIP(hostname)) {
+    throw new Error("The link must point to a public internet hostname.");
+  }
+  url.hostname = hostname;
+  return url;
+}
+
+async function lookupPublicAddresses(hostname) {
+  const addresses = await dns.lookup(hostname, { all: true, verbatim: true });
+  if (!addresses.length || addresses.some((entry) => !addressIsPublic(entry.address))) {
+    throw new Error("The link resolves to a private or reserved network address and cannot be imported.");
+  }
+  return addresses;
+}
+
+function requestPublicHttps(url, addresses) {
+  return new Promise((resolve, reject) => {
+    const request = https.request({
+      protocol: "https:",
+      hostname: url.hostname,
+      port: 443,
+      method: "GET",
+      path: url.pathname + url.search,
+      headers: {
+        "User-Agent": "SelfMusic/0.1 (direct audio file importer)",
+        Accept: "audio/*, application/octet-stream;q=0.9, */*;q=0.1"
+      },
+      servername: url.hostname,
+      lookup: (_hostname, _options, callback) => {
+        const preferred = addresses.find((entry) => entry.family === 4) || addresses[0];
+        callback(null, preferred.address, preferred.family);
+      }
+    }, resolve);
+
+    request.setTimeout(20000, () => request.destroy(new Error("The source server timed out.")));
+    request.on("error", reject);
+    request.end();
+  });
+}
+
+function safeUploadedName(input) {
+  let name = path.posix.basename(String(input || "").replace(/\\/g, "/")).normalize("NFKC");
+  name = name.replace(/[\x00-\x1f\x7f<>:"|?*]/g, "").replace(/\s+/g, " ").trim().slice(0, 160);
+  if (!name || name === "." || name === "..") name = "Imported track.mp3";
+  return name;
+}
+
+async function chooseUniqueUploadPath(name) {
+  const extension = path.extname(name).toLowerCase();
+  const stem = path.basename(name, path.extname(name)).slice(0, 140) || "Imported track";
+  let attempt = 1;
+  while (attempt < 10000) {
+    const suffix = attempt === 1 ? "" : " (" + attempt + ")";
+    const candidate = path.join(uploadRoot, stem + suffix + extension);
+    try {
+      await fs.promises.access(candidate);
+      attempt += 1;
+    } catch {
+      return candidate;
+    }
+  }
+  throw new Error("Could not choose a unique filename for this import.");
+}
+
+
 
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
@@ -290,6 +448,128 @@ app.post("/api/upload", requireAuth, (req, res, next) => {
       files: files.map((file) => ({ name: file.filename, bytes: file.size }))
     });
   });
+});
+
+app.post("/api/import-url", requireAuth, async (req, res, next) => {
+  let targetPath = null;
+  let targetCreated = false;
+  try {
+    let url = validateImportUrl(req.body?.url);
+    let response = null;
+    let redirects = 0;
+
+    while (redirects <= 3) {
+      const addresses = await lookupPublicAddresses(url.hostname);
+      response = await requestPublicHttps(url, addresses);
+
+      if ([301, 302, 303, 307, 308].includes(response.statusCode || 0)) {
+        const location = response.headers.location;
+        response.resume();
+        if (!location || redirects === 3) {
+          throw new Error("The source uses too many redirects or supplied an invalid redirect.");
+        }
+        url = validateImportUrl(new URL(location, url).toString());
+        redirects += 1;
+        continue;
+      }
+      break;
+    }
+
+    if (!response) throw new Error("The source did not return a response.");
+    if (response.statusCode !== 200) {
+      response.resume();
+      throw new Error("The source could not provide the file (HTTP " + response.statusCode + "). Use a direct download link.");
+    }
+
+    const contentType = String(response.headers["content-type"] || "").split(";")[0].trim().toLowerCase();
+    const disposition = String(response.headers["content-disposition"] || "");
+    let suggestedName = "";
+    const utf8Filename = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(disposition);
+    const ordinaryFilename = /filename\s*=\s*(?:"([^"]+)"|([^;]+))/i.exec(disposition);
+    if (utf8Filename) {
+      try { suggestedName = decodeURIComponent(utf8Filename[1].trim()); } catch { suggestedName = ""; }
+    } else if (ordinaryFilename) {
+      suggestedName = (ordinaryFilename[1] || ordinaryFilename[2] || "").trim();
+    }
+
+    let urlName = "";
+    try { urlName = decodeURIComponent(path.posix.basename(url.pathname)); } catch { urlName = path.posix.basename(url.pathname); }
+    let filename = safeUploadedName(suggestedName || urlName || "Imported track");
+
+    let extension = path.extname(filename).toLowerCase();
+    if (!supportedExtensions.has(extension)) {
+      const mimeExtension = audioMimeToExtension[contentType];
+      if (!mimeExtension) {
+        response.resume();
+        throw new Error("This link did not return a supported audio file. Paste a direct MP3, FLAC, M4A, AAC, WAV, OGG, OPUS or WebM audio download link.");
+      }
+      filename = path.basename(filename, path.extname(filename)) + mimeExtension;
+      extension = mimeExtension;
+    }
+
+    if (!(contentType.startsWith("audio/") || contentType === "application/octet-stream" ||
+          contentType === "binary/octet-stream" || contentType === "application/force-download" || contentType === "")) {
+      response.resume();
+      throw new Error("The URL points to a webpage or unsupported content, not an audio file. Use a direct audio download URL.");
+    }
+
+    const contentLength = Number(response.headers["content-length"]);
+    if (Number.isFinite(contentLength) && contentLength > maxUploadBytes) {
+      response.resume();
+      throw new Error("This file is larger than the 250 MB limit.");
+    }
+
+    await fs.promises.mkdir(uploadRoot, { recursive: true });
+    targetPath = await chooseUniqueUploadPath(filename);
+
+    let bytesReceived = 0;
+    const limiter = new Transform({
+      transform(chunk, _encoding, callback) {
+        bytesReceived += chunk.length;
+        if (bytesReceived > maxUploadBytes) {
+          callback(new Error("This file is larger than the 250 MB limit."));
+        } else {
+          callback(null, chunk);
+        }
+      }
+    });
+
+    try {
+      await pipeline(response, limiter, fs.createWriteStream(targetPath, { flags: "wx" }));
+      targetCreated = true;
+    } catch (error) {
+      await fs.promises.unlink(targetPath).catch(() => {});
+      throw error;
+    }
+
+    if (bytesReceived === 0) {
+      await fs.promises.unlink(targetPath).catch(() => {});
+      throw new Error("The source returned an empty file.");
+    }
+
+    res.setHeader("Cache-Control", "no-store");
+    res.status(201).json({
+      imported: true,
+      name: path.basename(targetPath),
+      bytes: bytesReceived,
+      destination: "Uploads"
+    });
+  } catch (error) {
+    if (targetPath && !targetCreated) await fs.promises.unlink(targetPath).catch(() => {});
+    if (["The source server timed out.", "This file is larger than the 250 MB limit."].includes(error.message) ||
+        error.message.startsWith("Paste a direct") ||
+        error.message.startsWith("That URL") ||
+        error.message.startsWith("For security") ||
+        error.message.startsWith("Only standard") ||
+        error.message.startsWith("The link") ||
+        error.message.startsWith("This link") ||
+        error.message.startsWith("The URL") ||
+        error.message.startsWith("The source") ||
+        error.message.startsWith("Could not choose")) {
+      return res.status(400).json({ error: "url_import_failed", message: error.message });
+    }
+    next(error);
+  }
 });
 
 app.get("/api/tracks", requireAuth, async (_req, res, next) => {
