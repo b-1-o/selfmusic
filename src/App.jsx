@@ -7,12 +7,14 @@ import {
   Cloud,
   Copy,
   Disc3,
+  Download,
   FolderOpen,
   Globe2,
   Headphones,
   Heart,
   Home,
   Library,
+  Link2,
   ListMusic,
   LockKeyhole,
   LogOut,
@@ -226,6 +228,10 @@ function App() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadMessage, setUploadMessage] = useState("");
   const [uploadError, setUploadError] = useState(false);
+  const [audioUrl, setAudioUrl] = useState("");
+  const [importingUrl, setImportingUrl] = useState(false);
+  const [urlImportMessage, setUrlImportMessage] = useState("");
+  const [urlImportError, setUrlImportError] = useState(false);
 
   const currentTrack = tracks.find((track) => track.id === currentTrackId) || null;
 
@@ -557,6 +563,35 @@ function App() {
       setUploading(false);
     }
   }, [selectedUploadFiles, uploading, loadTracks]);
+
+  const importFromUrl = useCallback(async () => {
+    const url = audioUrl.trim();
+    if (!url || importingUrl) return;
+    setImportingUrl(true);
+    setUrlImportMessage("");
+    setUrlImportError(false);
+    try {
+      const response = await fetch("/api/import-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (response.status === 401) setAuthenticated(false);
+        throw new Error(payload.message || "Could not import this link.");
+      }
+      setUrlImportMessage("Saved " + payload.name + " to music/Uploads (" + formatBytes(payload.bytes) + ").");
+      setUrlImportError(false);
+      setAudioUrl("");
+      await loadTracks();
+    } catch (error) {
+      setUrlImportError(true);
+      setUrlImportMessage(error.message || "Import failed. Make sure this is a direct HTTPS audio download link.");
+    } finally {
+      setImportingUrl(false);
+    }
+  }, [audioUrl, importingUrl, loadTracks]);
 
   const copyText = useCallback(async (text) => {
     try {
@@ -891,6 +926,34 @@ function App() {
                     </div>
                   )}
                   {uploadMessage && <div className={"upload-feedback" + (uploadError ? " upload-feedback-error" : "")}><span className="upload-feedback-icon">{uploadError ? <CircleAlert size={17} /> : <Check size={17} />}</span><span>{uploadMessage}</span>{!uploadError && <button type="button" className="text-button" onClick={() => setView("library")}>Open library <ArrowUpRight size={14} /></button>}</div>}
+
+                  <div className="url-import-divider"><span>OR IMPORT FROM A DOWNLOAD LINK</span></div>
+                  <form className="url-import-block" onSubmit={(event) => { event.preventDefault(); importFromUrl(); }}>
+                    <label htmlFor="audio-import-url">Direct audio file URL</label>
+                    <div className="url-import-row">
+                      <div className="url-import-input-wrap">
+                        <Link2 size={17} />
+                        <input
+                          id="audio-import-url"
+                          type="url"
+                          inputMode="url"
+                          autoComplete="url"
+                          placeholder="https://example.com/music/track.mp3"
+                          value={audioUrl}
+                          onChange={(event) => { setAudioUrl(event.target.value); setUrlImportMessage(""); setUrlImportError(false); }}
+                          maxLength={2048}
+                          required
+                          disabled={importingUrl}
+                        />
+                      </div>
+                      <button className="primary-button" type="submit" disabled={importingUrl || !audioUrl.trim()}>
+                        {importingUrl ? <RefreshCw size={15} className="spin" /> : <Download size={15} />}
+                        {importingUrl ? "Importing…" : "Import URL"}
+                      </button>
+                    </div>
+                    <p className="url-import-hint">Use a direct HTTPS download link to an audio file you are allowed to save — not a YouTube watch page or a webpage with a download button.</p>
+                    {urlImportMessage && <div className={"upload-feedback" + (urlImportError ? " upload-feedback-error" : "")}><span className="upload-feedback-icon">{urlImportError ? <CircleAlert size={17} /> : <Check size={17} />}</span><span>{urlImportMessage}</span>{!urlImportError && <button className="text-button" type="button" onClick={() => setView("library")}>Open library <ArrowUpRight size={14} /></button>}</div>}
+                  </form>
 
                   <div className="import-actions">
                     <button className="primary-button" type="button" onClick={uploadSelectedFiles} disabled={uploading || selectedUploadFiles.length === 0 || uploadError}>
