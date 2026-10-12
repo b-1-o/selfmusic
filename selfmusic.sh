@@ -220,7 +220,7 @@ case "$ACTION" in
   update)
     check_git_clean
     git pull --ff-only
-    npm install
+    npm install --no-save --package-lock=false --no-audit --no-fund
     npm run build
     stop_server || true
     start_server
