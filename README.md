@@ -22,7 +22,7 @@ from any device on your network or through a tunnel you control.
 
 ### Linux and macOS
 
-1. Install Node.js 20.19+ and npm. On CachyOS / Arch, for example: `sudo pacman -S nodejs npm`.
+1. Install Node.js 22.13+ and npm. On CachyOS / Arch, for example: `sudo pacman -S nodejs npm`.
 2. Clone the repository (or extract its ZIP), open a terminal in the project directory, and run:
 
    ~~~~bash
@@ -48,7 +48,7 @@ Useful commands:
 
 ### Windows
 
-1. Install Node.js 20.19+ from <https://nodejs.org/> and reopen PowerShell.
+1. Install Node.js 22.13+ from <https://nodejs.org/> and reopen PowerShell.
 2. In the repository directory, run:
 
    ~~~~powershell
@@ -155,11 +155,17 @@ Use this section when developing the app or when you prefer to start Node.js man
 
 ## Requirements
 
-* **Node.js** 20.19 or later for native installation.
+* **Node.js** 22.13 or later for native installation.
 * **npm** (included with Node.js).
 * A music folder on the same machine as the server.
 * For **YouTube → MP3 downloads**: `yt-dlp` and `ffmpeg` installed on the
   server (see the YouTube section below).
+
+## Database and metadata index
+
+SelfMusic stores the scanned library and application state in SQLite at `DATABASE_PATH` (default: `./data/selfmusic.sqlite`). Schema changes are versioned and applied automatically at startup. Docker keeps the database and generated cover/transcode cache under the mounted `./data` directory; back up that directory along with your music.
+
+Audio tags are read with Python Mutagen for MP3, FLAC, OGG, M4A, OPUS and WAV files. The Docker image installs Mutagen. For a native setup, install Python 3 and Mutagen (`python -m pip install mutagen` or `python3 -m pip install mutagen`). If the helper is unavailable, SelfMusic falls back to filenames and folder names instead of failing to scan the library. Embedded artwork is cached under `COVER_CACHE_DIR`.
 
 ## Music folder layout
 
@@ -277,8 +283,7 @@ YouTube sometimes requires a signed-in session. To handle those cases:
 
 **Legal note**
 
-Only download content you are allowed to keep. Respect YouTube's Terms of
-Service and local copyright law.
+Download YouTube content only when you own the rights or have explicit permission from the rights holder. The user is responsible for ensuring each download complies with YouTube's Terms of Service and applicable copyright law.
 
 ## Remote access with Tailscale
 
