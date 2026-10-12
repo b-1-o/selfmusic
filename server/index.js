@@ -16,6 +16,7 @@ import { createDatabase } from "./database.js";
 import { getTracks as readTracks, getTrackRow, listAlbums, listArtists, scanLibrary } from "./library.js";
 import { mountCollectionRoutes } from "./collections.js";
 import { getTranscodedFile, originalSupportsFormat, parseTranscodeOptions, transcodingEnabled } from "./transcoder.js";
+import { encryptSecret } from "./secret.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 dotenv.config({ path: path.join(projectRoot, ".env") });
@@ -577,7 +578,13 @@ app.post("/api/auth/register", requireAuth, (req, res) => {
   }
   try {
     const id = crypto.randomUUID();
-    db.prepare("INSERT INTO users(id, username, password_hash, role) VALUES (?, ?, ?, ?)").run(id, username, hashPassword(password), role);
+    let encryptedPassword;
+    try {
+      encryptedPassword = encryptSecret(password);
+    } catch (error) {
+      return res.status(503).json({ error: "secret_encryption_unavailable", message: error.message });
+    }
+    db.prepare("INSERT INTO users(id, username, password_hash, subsonic_secret, role) VALUES (?, ?, ?, ?, ?)").run(id, username, hashPassword(password), encryptedPassword, role);
     console.info("[SelfMusic] account created", JSON.stringify({ id, role }));
     res.status(201).json({ user: { id, username, role } });
   } catch (error) {
