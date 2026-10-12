@@ -13,7 +13,7 @@ import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { create as createYoutubeDl } from "youtube-dl-exec";
 import { createDatabase } from "./database.js";
-import { getTracks as readTracks, getTrackRow, listAlbums, listArtists, scanLibrary } from "./library.js";
+import { getTracks as readTracks, getTrackRow, hashFile, listAlbums, listArtists, scanLibrary } from "./library.js";
 import { mountCollectionRoutes } from "./collections.js";
 import { getTranscodedFile, originalSupportsFormat, parseTranscodeOptions, transcodingEnabled } from "./transcoder.js";
 import { encryptSecret } from "./secret.js";
@@ -720,7 +720,12 @@ const audioUpload = multer({
   }
 });
 
-app.post("/api/upload", requireAuth, requireAdmin, (req, res, next) => {
+app.post("/api/upload", requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    await findTracks();
+  } catch (error) {
+    return next(error);
+  }
   audioUpload.array("files", 20)(req, res, async (error) => {
     if (error) {
       const receivedFiles = Array.isArray(req.files) ? req.files : [];
@@ -752,11 +757,43 @@ app.post("/api/upload", requireAuth, requireAdmin, (req, res, next) => {
       });
     }
 
+    const duplicateStrategy = ["skip", "keep", "ask"].includes(String(process.env.DUPLICATE_STRATEGY || "keep").toLowerCase())
+      ? String(process.env.DUPLICATE_STRATEGY || "keep").toLowerCase()
+      : "keep";
+    const accepted = [];
+    const skipped = [];
+    const duplicateMatches = [];
+    for (const file of files) {
+      let sha256;
+      try { sha256 = await hashFile(file.path); }
+      catch (error) {
+        await Promise.all(files.map((item) => fs.promises.unlink(item.path).catch(() => {})));
+        return next(error);
+      }
+      const existing = db.prepare("SELECT id, title, artist, album FROM tracks WHERE sha256 = ? LIMIT 10").all(sha256);
+      if (existing.length && duplicateStrategy === "skip") {
+        await fs.promises.unlink(file.path).catch(() => {});
+        skipped.push({ name: file.filename, reason: "duplicate", matches: existing });
+        continue;
+      }
+      if (existing.length) duplicateMatches.push({ name: file.filename, sha256, strategy: duplicateStrategy, matches: existing });
+      accepted.push(file);
+    }
+    try {
+      await findTracks();
+    } catch (error) {
+      console.error("[SelfMusic] uploaded files could not be indexed immediately:", error.message);
+    }
+
     res.setHeader("Cache-Control", "no-store");
     res.status(201).json({
-      uploaded: files.length,
+      uploaded: accepted.length,
+      skipped: skipped.length,
+      duplicateStrategy,
+      duplicates: duplicateMatches,
       destination: "Uploads",
-      files: files.map((file) => ({ name: file.filename, bytes: file.size }))
+      files: accepted.map((file) => ({ name: file.filename, bytes: file.size })),
+      skippedFiles: skipped
     });
   });
 });
