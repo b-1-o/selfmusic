@@ -155,6 +155,19 @@ const migrations = [
     sql: `
       ALTER TABLE users ADD COLUMN subsonic_secret TEXT;
     `
+  },
+  {
+    version: 5,
+    name: "lastfm_auth_state",
+    sql: `
+      CREATE TABLE lastfm_pending_auth (
+        user_id TEXT PRIMARY KEY,
+        token TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        expires_at TEXT NOT NULL
+      );
+      CREATE INDEX lastfm_pending_expiry_idx ON lastfm_pending_auth(expires_at);
+    `
   }
 ];
 
