@@ -1284,6 +1284,11 @@ function App() {
               <div className="remote-wizard-step"><span>2</span><div><strong>Install it on your phone</strong><p>Open the official download page, install the app, and sign in to the same account as your computer.</p><a href={TAILSCALE_DOWNLOAD_URL} target="_blank" rel="noreferrer">Open phone download page <ArrowUpRight size={14} /></a></div></div>
               <div className="remote-wizard-step"><span>3</span><div><strong>Enable private HTTPS</strong><p>On the computer, run <code>selfmusic remote</code>. Tailscale may ask you to enable MagicDNS and HTTPS certificates.</p><button className="text-button wizard-copy-command" type="button" onClick={() => copyText("selfmusic remote")}><Copy size={14} /> Copy command</button></div></div>
             </div>
+            <div className="remote-wizard-qr-card">
+              <img src={TAILSCALE_QR_URL} alt="QR code linking to the official Tailscale download page" width="144" height="144" loading="lazy" />
+              <div><strong>Scan with your phone</strong><span>QR contains only the public Tailscale download link, not your private server address.</span></div>
+              <a href={TAILSCALE_DOWNLOAD_URL} target="_blank" rel="noreferrer">Open download page <ArrowUpRight size={14} /></a>
+            </div>
             <div className="remote-wizard-addresses">
               <div className="remote-address-title"><div><strong>Your connection addresses</strong><span>Refresh after Tailscale connects</span></div><button className="ghost-button" type="button" onClick={refreshNetworkAddresses} disabled={networkLoading}>{networkLoading ? <RefreshCw size={14} className="spin" /> : <RefreshCw size={14} />} Check connection</button></div>
               {networkError && <p className="remote-address-error">{networkError}</p>}
