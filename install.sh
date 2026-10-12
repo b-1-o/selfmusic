@@ -114,7 +114,7 @@ if command -v fish >/dev/null 2>&1; then
   fish -c 'fish_add_path -U "$HOME/.local/bin"' >/dev/null 2>&1 || true
 fi
 PROFILE_FILE="$HOME/.profile"
-if [ -f "$PROFILE_FILE" ] && ! grep -Fq '# SelfMusic user-bin PATH' "$PROFILE_FILE"; then
+if ! grep -Fq '# SelfMusic user-bin PATH' "$PROFILE_FILE" 2>/dev/null; then
   printf '\n# SelfMusic user-bin PATH\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$PROFILE_FILE"
 fi
 
