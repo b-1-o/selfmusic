@@ -60,15 +60,15 @@ needs_value() {
 }
 
 password="$(env_value SELF_MUSIC_PASSWORD)"
-if [ -z "$password" ] || needs_value "$password" 12; then
+if [ -z "$password" ] || needs_value "$password" 8; then
   while :; do
-    printf 'Choose a SelfMusic password (12+ characters; input hidden): '
+    printf 'Choose a SelfMusic password (8+ characters; input hidden): '
     IFS= read -r -s password
     printf '\nConfirm password: '
     IFS= read -r -s password_confirm
     printf '\n'
     [ "$password" = "$password_confirm" ] || { yellow "Passwords did not match; try again."; continue; }
-    [ "${#password}" -ge 12 ] || { yellow "Use at least 12 characters."; continue; }
+    [ "${#password}" -ge 8 ] || { yellow "Use at least 8 characters."; continue; }
     break
   done
   write_env_value SELF_MUSIC_PASSWORD "$password"
