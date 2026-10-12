@@ -1663,7 +1663,7 @@ function App() {
             setCurrentTime(nextTime);
           }
         }}
-        onLoadedMetadata={(event) => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)
+        onLoadedMetadata={(event) => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
         onEnded={() => {
           if (repeatMode === "one" && audioRef.current) {
             audioRef.current.currentTime = 0;
