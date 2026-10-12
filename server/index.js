@@ -261,6 +261,7 @@ app.use((req, res, next) => {
   res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   next();
 });
+app.use("/api", enforceSameOriginMutation);
 
 function isConfigured() {
   return typeof process.env.SELF_MUSIC_PASSWORD === "string" && process.env.SELF_MUSIC_PASSWORD.length >= 8 && !process.env.SELF_MUSIC_PASSWORD.toLowerCase().includes("replace-with");
@@ -278,19 +279,26 @@ function createSessionToken() {
   return expiresAt + "." + signature;
 }
 
-function hasValidSession(req) {
+function getSessionStatus(req) {
   const cookies = String(req.headers.cookie || "").split(";").map((part) => part.trim());
   const entry = cookies.find((part) => part.startsWith(sessionCookie + "="));
-  if (!entry) return false;
+  if (!entry) return "missing";
 
   const token = entry.slice(sessionCookie.length + 1);
   const [expiresAt, signature] = token.split(".");
-  if (!expiresAt || !signature || Number(expiresAt) <= Math.floor(Date.now() / 1000)) return false;
+  const expiresAtNumber = Number(expiresAt);
+  if (!expiresAt || !signature || !Number.isSafeInteger(expiresAtNumber) || expiresAtNumber <= Math.floor(Date.now() / 1000)) {
+    return "invalid";
+  }
   const expected = crypto.createHmac("sha256", sessionSecret).update(expiresAt).digest("base64url");
-  return constantTimeTextCompare(signature, expected);
+  return constantTimeTextCompare(signature, expected) ? "valid" : "invalid";
 }
 
-function setSessionCookie(req, res, value, maxAge = sessionLifetimeSeconds) {
+function hasValidSession(req) {
+  return getSessionStatus(req) === "valid";
+}
+
+function sessionRequestIsSecure(req) {
   const forwardedProtocol = String(req.get("x-forwarded-proto") || "").split(",")[0].trim().toLowerCase();
   let originIsHttps = false;
   try {
@@ -298,10 +306,44 @@ function setSessionCookie(req, res, value, maxAge = sessionLifetimeSeconds) {
   } catch {
     // Requests without a valid Origin header can still use req.secure or proxy headers.
   }
-  const secure = Boolean(req.secure || forwardedProtocol === "https" || originIsHttps || process.env.NODE_ENV === "production");
-  const flags = ["Path=/", "HttpOnly", "SameSite=Lax", "Max-Age=" + maxAge];
+  return Boolean(req.secure || forwardedProtocol === "https" || originIsHttps || process.env.NODE_ENV === "production");
+}
+
+function setSessionCookie(req, res, value, maxAge = sessionLifetimeSeconds) {
+  const secure = sessionRequestIsSecure(req);
+  // WebKit has had SameSite=Lax propagation bugs for same-origin JavaScript fetches.
+  // On HTTPS, use None + Secure as a compatibility workaround.
+  const flags = ["Path=/", "HttpOnly", "SameSite=" + (secure ? "None" : "Lax"), "Max-Age=" + maxAge];
   if (secure) flags.push("Secure");
   res.setHeader("Set-Cookie", sessionCookie + "=" + value + "; " + flags.join("; "));
+}
+
+function enforceSameOriginMutation(req, res, next) {
+  if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return next();
+
+  const origin = req.get("origin");
+  const fetchSite = String(req.get("sec-fetch-site") || "").toLowerCase();
+  if (!origin) {
+    if (fetchSite === "cross-site") {
+      return res.status(403).json({ error: "cross_origin_request", message: "Cross-origin requests are not allowed." });
+    }
+    return next();
+  }
+
+  let originUrl;
+  try {
+    originUrl = new URL(origin);
+  } catch {
+    return res.status(403).json({ error: "invalid_origin", message: "The request origin could not be validated." });
+  }
+
+  // Tailscale Serve forwards the browser host while proxying to localhost.
+  const forwardedHost = String(req.get("x-forwarded-host") || "").split(",")[0].trim();
+  const expectedHost = forwardedHost || req.get("host") || "";
+  if (originUrl.host.toLowerCase() !== expectedHost.toLowerCase()) {
+    return res.status(403).json({ error: "cross_origin_request", message: "Cross-origin requests are not allowed." });
+  }
+  next();
 }
 
 function requireAuth(req, res, next) {
@@ -389,10 +431,19 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.get("/api/auth/session", (req, res) => {
-  res.json({ configured: isConfigured(), authenticated: isConfigured() && hasValidSession(req) });
+  res.setHeader("Cache-Control", "no-store, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Vary", "Cookie");
+  const sessionStatus = getSessionStatus(req);
+  res.json({
+    configured: isConfigured(),
+    authenticated: isConfigured() && sessionStatus === "valid",
+    sessionStatus,
+  });
 });
 
 app.post("/api/auth/login", (req, res) => {
+  res.setHeader("Cache-Control", "no-store, max-age=0");
   if (!isConfigured()) {
     return res.status(503).json({
       error: "server_not_configured",
@@ -422,8 +473,9 @@ app.post("/api/auth/login", (req, res) => {
   res.json({ authenticated: true });
 });
 
-app.post("/api/auth/logout", (_req, res) => {
-  res.setHeader("Set-Cookie", sessionCookie + "=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
+app.post("/api/auth/logout", (req, res) => {
+  res.setHeader("Cache-Control", "no-store, max-age=0");
+  setSessionCookie(req, res, "", 0);
   res.status(204).end();
 });
 
