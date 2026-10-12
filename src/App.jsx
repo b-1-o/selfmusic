@@ -397,6 +397,11 @@ function App() {
   const [youtubeLoading, setYoutubeLoading] = useState(false);
   const [youtubeError, setYoutubeError] = useState("");
   const [selectedYoutube, setSelectedYoutube] = useState(null);
+  const [youtubeJob, setYoutubeJob] = useState(null);
+  const [youtubeJobSource, setYoutubeJobSource] = useState("import");
+  const [youtubeJobStarting, setYoutubeJobStarting] = useState(false);
+  const youtubeJobRef = useRef(null);
+
   const [view, setView] = useState("home");
   const contentWrapRef = useRef(null);
   const [favorites, setFavorites] = useState([]);
@@ -1313,9 +1318,54 @@ function App() {
     }
   }, [selectedUploadFiles, uploading, loadTracks]);
 
+  const startYoutubeDownload = useCallback(async (input, source = "import") => {
+    if (youtubeJobRef.current) {
+      const status = youtubeJobRef.current.status;
+      if (status === "queued" || status === "running") {
+        const message = "A YouTube download is already in progress. Wait for it to finish first.";
+        if (source === "import") { setUrlImportError(true); setUrlImportMessage(message); }
+        else setYoutubeError(message);
+        return;
+      }
+    }
+    setYoutubeJobStarting(true);
+    setYoutubeJobSource(source);
+    setUrlImportError(false);
+    if (source === "import") setUrlImportMessage("Adding the download to the queue…");
+    else setYoutubeError("");
+    try {
+      const response = await fetch("/api/youtube/download", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...input, async: true, bitrate: streamBitrate }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (response.status === 401) setAuthenticated(false);
+        throw new Error(payload.message || "Could not queue this YouTube download.");
+      }
+      const job = payload.job || payload;
+      youtubeJobRef.current = job;
+      setYoutubeJob(job);
+      if (source === "import") setUrlImportMessage("Queued “" + (job.title || "YouTube audio") + "”. Progress will appear here.");
+      else setYoutubeError("");
+    } catch (error) {
+      const message = error.message || "YouTube download failed. Check the URL and try again.";
+      if (source === "import") {
+        setUrlImportError(true);
+        setUrlImportMessage(message);
+      } else {
+        setYoutubeError(message);
+      }
+    } finally {
+      setYoutubeJobStarting(false);
+    }
+  }, [streamBitrate]);
+
   const downloadFromYoutube = useCallback(async () => {
     const url = audioUrl.trim();
-    if (!url || importingUrl) return;
+    if (!url || importingUrl || youtubeJobStarting) return;
     if (!parseYoutubeVideoId(url)) {
       setUrlImportError(true);
       setUrlImportMessage("That is not a valid YouTube video link.");
@@ -1325,27 +1375,50 @@ function App() {
     setUrlImportMessage("");
     setUrlImportError(false);
     try {
-      const response = await fetch("/api/youtube/download", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        if (response.status === 401) setAuthenticated(false);
-        throw new Error(payload.message || "Could not download from YouTube.");
-      }
-      setUrlImportMessage("Saved " + payload.name + (payload.artwork ? " with cover" : "") + " to music/Uploads (" + formatBytes(payload.bytes) + ").");
-      setUrlImportError(false);
-      setAudioUrl("");
-      await loadTracks();
-    } catch (error) {
-      setUrlImportError(true);
-      setUrlImportMessage(error.message || "YouTube download failed. Check the link and try again.");
+      await startYoutubeDownload({ url }, "import");
     } finally {
       setImportingUrl(false);
     }
-  }, [audioUrl, importingUrl, loadTracks]);
+  }, [audioUrl, importingUrl, youtubeJobStarting, startYoutubeDownload]);
+
+  useEffect(() => {
+    const jobId = youtubeJob?.id;
+    if (!authenticated || !jobId || !["queued", "running"].includes(youtubeJob.status)) return undefined;
+    const stream = new EventSource("/api/youtube/status/" + encodeURIComponent(jobId), { withCredentials: true });
+    stream.addEventListener("status", (event) => {
+      let status;
+      try { status = JSON.parse(event.data); } catch { return; }
+      youtubeJobRef.current = status;
+      setYoutubeJob(status);
+      if (status.status === "completed") {
+        stream.close();
+        const result = status.result || {};
+        const message = "Saved " + (result.name || status.title || "YouTube audio") + " to music/Uploads (" + formatBytes(result.bytes || 0) + ").";
+        if (youtubeJobSource === "import") {
+          setUrlImportMessage(message);
+          setUrlImportError(false);
+          setAudioUrl("");
+        } else {
+          setYoutubeError("");
+        }
+        loadTracks().catch(() => {});
+      } else if (status.status === "failed" || status.status === "cancelled") {
+        stream.close();
+        const message = status.error?.message || "YouTube download failed.";
+        if (youtubeJobSource === "import") {
+          setUrlImportMessage(message);
+          setUrlImportError(true);
+        } else {
+          setYoutubeError(message);
+        }
+      }
+    });
+    stream.onerror = () => {
+      // EventSource reconnects automatically while the job is active.
+    };
+    return () => stream.close();
+  }, [authenticated, youtubeJob?.id, youtubeJob?.status, youtubeJobSource, loadTracks]);
+
 
   const copyText = useCallback(async (text) => {
     try {
