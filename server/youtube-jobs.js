@@ -34,7 +34,7 @@ function normalizeVideoUrl(body) {
   }
   const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
   if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.port ||
-      !(host === "youtu.be" || host === "youtube.com" || host.endsWith(".youtube.com"))) {
+      !(host === "youtu.be" || ["youtube.com", "m.youtube.com", "music.youtube.com"].includes(host))) {
     const error = new Error("Only HTTPS URLs from youtube.com and youtu.be are supported.");
     error.code = "INVALID_YOUTUBE_URL";
     throw error;
