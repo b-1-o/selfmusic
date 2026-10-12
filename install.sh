@@ -1,40 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-cd "$ROOT_DIR"
+ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="$ROOT_DIR/.env"
+BIN_DIR="$HOME/.local/bin"
 
 green() { printf '\033[1;32m%s\033[0m\n' "$1"; }
 yellow() { printf '\033[1;33m%s\033[0m\n' "$1"; }
 red() { printf '\033[1;31mERROR: %s\033[0m\n' "$1" >&2; }
 
-detect_os() {
-  case "$(uname -s 2>/dev/null || printf unknown)" in
-    Linux*)
-      if grep -qi microsoft /proc/version 2>/dev/null; then printf 'Windows via WSL';
-      else printf 'Linux'; fi ;;
-    Darwin*) printf 'macOS' ;;
-    MINGW*|MSYS*|CYGWIN*) printf 'Windows via Git Bash' ;;
-    *) printf 'unknown OS' ;;
+if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+  red "Node.js 20.19+ and npm are required for native installation."
+  case "$(uname -s 2>/dev/null || true)" in
+    Darwin*) printf 'Install Node.js from https://nodejs.org/ or with Homebrew.\n' ;;
+    *) printf 'CachyOS / Arch: sudo pacman -S nodejs npm\n'; printf 'Other Linux: https://nodejs.org/en/download\n' ;;
   esac
-}
+  exit 1
+fi
 
-docker_help() {
-  red "Docker with the Compose plugin is required."
-  case "$(detect_os)" in
-    Linux|*"WSL"*) printf 'Install Docker Engine: https://docs.docker.com/engine/install/\n' ;;
-    macOS|*"Git Bash"*) printf 'Install Docker Desktop: https://www.docker.com/products/docker-desktop/\n' ;;
-    *) printf 'Docker install guide: https://docs.docker.com/get-docker/\n' ;;
-  esac
-  printf 'Compose installation guide: https://docs.docker.com/compose/install/\n'
-}
-
-command -v docker >/dev/null 2>&1 || { docker_help; exit 1; }
-docker compose version >/dev/null 2>&1 || { docker_help; exit 1; }
-
-os_name="$(detect_os)"
-green "SelfMusic setup — $os_name"
+if ! node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 20 || (major === 20 && minor >= 19) ? 0 : 1)'; then
+  red "Detected Node.js $(node --version); SelfMusic requires Node.js 20.19 or later."
+  exit 1
+fi
 
 if [ ! -f "$ENV_FILE" ]; then
   [ -f "$ROOT_DIR/.env.example" ] || { red ".env.example is missing."; exit 1; }
@@ -42,18 +29,17 @@ if [ ! -f "$ENV_FILE" ]; then
   chmod 600 "$ENV_FILE" 2>/dev/null || true
   green "Created .env from .env.example"
 else
-  printf 'Found existing .env; valid settings will be preserved.\n'
+  printf 'Found existing .env; existing settings will be preserved.\n'
 fi
 
 env_value() {
-  key="$1"
-  grep -m 1 "^$key=" "$ENV_FILE" 2>/dev/null | cut -d '=' -f 2- || true
+  local key="$1"
+  grep -m 1 "^${key}=" "$ENV_FILE" 2>/dev/null | cut -d '=' -f 2- | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//" || true
 }
 
 write_env_value() {
-  key="$1"
-  value="$2"
-  tmp_file="$ENV_FILE.tmp.$$"
+  local key="$1" value="$2" tmp_file
+  tmp_file="$(mktemp)"
   awk -v key="$key" -v value="$value" '
     BEGIN { written = 0 }
     index($0, key "=") == 1 {
@@ -63,18 +49,18 @@ write_env_value() {
     { print }
     END { if (!written) print key "=" value }
   ' "$ENV_FILE" > "$tmp_file"
-  mv "$tmp_file" "$ENV_FILE"
+  cat "$tmp_file" > "$ENV_FILE"
+  rm -f "$tmp_file"
   chmod 600 "$ENV_FILE" 2>/dev/null || true
 }
 
 needs_value() {
-  value="$1"
-  min_len="$2"
+  local value="$1" min_len="$2"
   [ "${#value}" -lt "$min_len" ] || printf '%s' "$value" | grep -qi 'replace-with'
 }
 
 password="$(env_value SELF_MUSIC_PASSWORD)"
-if needs_value "$password" 12 || [ -z "$password" ]; then
+if [ -z "$password" ] || needs_value "$password" 12; then
   while :; do
     printf 'Choose a SelfMusic password (12+ characters; input hidden): '
     IFS= read -r -s password
@@ -92,7 +78,7 @@ else
 fi
 
 session_secret="$(env_value SESSION_SECRET)"
-if needs_value "$session_secret" 32 || [ -z "$session_secret" ]; then
+if [ -z "$session_secret" ] || needs_value "$session_secret" 32; then
   if command -v openssl >/dev/null 2>&1; then
     session_secret="$(openssl rand -hex 32)"
   else
@@ -106,57 +92,77 @@ else
   green "Keeping the existing SESSION_SECRET."
 fi
 
-ts_key="$(env_value TS_AUTHKEY)"
-if [ -z "$ts_key" ] || printf '%s' "$ts_key" | grep -qi 'replace-with'; then
-  printf '\nCreate a reusable Tailscale auth key at:\nhttps://login.tailscale.com/admin/settings/keys\n'
-  printf 'Allow tag:selfmusic in your tailnet policy. Paste the key (input hidden): '
-  IFS= read -r -s ts_key
-  printf '\n'
-  if [ -z "$ts_key" ]; then
-    red "TS_AUTHKEY is required for remote access. Re-run this script after creating a key."
-    exit 1
-  fi
-  write_env_value TS_AUTHKEY "$ts_key"
-  unset ts_key
-else
-  green "Keeping the existing Tailscale auth key."
-fi
-
-music_host_dir="$(env_value MUSIC_HOST_DIR)"
-[ -n "$music_host_dir" ] || music_host_dir="./music"
-case "$music_host_dir" in
-  /*) mkdir -p "$music_host_dir" ;;
-  *) mkdir -p "$ROOT_DIR/$music_host_dir" ;;
+music_dir="$(env_value MUSIC_DIR)"
+[ -n "$music_dir" ] || { music_dir="./music"; write_env_value MUSIC_DIR "$music_dir"; }
+case "$music_dir" in
+  /*) mkdir -p "$music_dir" ;;
+  *) mkdir -p "$ROOT_DIR/$music_dir" ;;
 esac
 mkdir -p "$ROOT_DIR/data"
 
-printf '\nBuilding and starting SelfMusic + Tailscale…\n'
-docker compose up -d --build
+printf '\nInstalling Node dependencies...\n'
+cd "$ROOT_DIR"
+npm install
+printf '\nBuilding SelfMusic...\n'
+npm run build
 
-printf '\n'
-green "SelfMusic containers started."
-printf 'Install Tailscale on your phone and sign in to the same tailnet:\n'
-printf 'https://tailscale.com/download\n'
-printf '\n'
-printf 'Waiting for the Tailscale address'
-ts_ip=""
-attempt=0
-while [ "$attempt" -lt 8 ]; do
-  ts_ip="$(docker compose exec -T tailscale tailscale ip -4 2>/dev/null | head -n 1 || true)"
-  [ -n "$ts_ip" ] && break
-  printf '.'
-  sleep 2
-  attempt=$((attempt + 1))
-done
-printf '\n'
-if [ -n "$ts_ip" ]; then
-  printf 'Open on your phone: http://%s:8787\n' "$ts_ip"
-  printf 'Or, if MagicDNS is enabled: http://selfmusic:8787\n'
-else
-  yellow "Tailscale is still connecting. Check status with: ./selfmusic.sh status"
-  printf 'Logs: docker compose logs -f tailscale\n'
+mkdir -p "$BIN_DIR"
+printf '#!/usr/bin/env bash\nexec /bin/bash %q/selfmusic.sh "$@"\n' "$ROOT_DIR" > "$BIN_DIR/selfmusic"
+chmod 755 "$BIN_DIR/selfmusic"
+
+if command -v fish >/dev/null 2>&1; then
+  fish -c 'fish_add_path -U "$HOME/.local/bin"' >/dev/null 2>&1 || true
 fi
-printf 'Optional: enable HTTPS/PWA support with: docker compose exec tailscale tailscale serve --bg 8787\n'
-printf 'Then inspect its URL with: docker compose exec tailscale tailscale serve status\n'
-printf 'Sign in with the SelfMusic password you set above. Keep this computer running for remote playback.\n'
-printf 'To add the app: open the address in your phone browser, then choose Add to Home Screen / Install app.\n'
+PROFILE_FILE="$HOME/.profile"
+if [ -f "$PROFILE_FILE" ] && ! grep -Fq '# SelfMusic user-bin PATH' "$PROFILE_FILE"; then
+  printf '\n# SelfMusic user-bin PATH\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$PROFILE_FILE"
+fi
+
+APP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+mkdir -p "$APP_DIR"
+APP_ENTRY="$APP_DIR/selfmusic.desktop"
+cat > "$APP_ENTRY" <<EOF
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=SelfMusic
+Comment=Start your personal music server
+Exec=/bin/bash "$ROOT_DIR/selfmusic.sh" start
+Icon=audio-x-generic
+Terminal=true
+Categories=AudioVideo;Audio;Player;
+EOF
+chmod 755 "$APP_ENTRY"
+
+DESKTOP_DIR=""
+if command -v xdg-user-dir >/dev/null 2>&1; then
+  DESKTOP_DIR="$(xdg-user-dir DESKTOP 2>/dev/null || true)"
+fi
+[ -n "$DESKTOP_DIR" ] || DESKTOP_DIR="$HOME/Desktop"
+if [ -d "$DESKTOP_DIR" ]; then
+  cp "$APP_ENTRY" "$DESKTOP_DIR/SelfMusic.desktop"
+  chmod 755 "$DESKTOP_DIR/SelfMusic.desktop"
+  green "Created a SelfMusic desktop shortcut."
+fi
+
+green "Native SelfMusic setup completed. Docker is not required."
+printf '\nDaily use:\n'
+printf '  selfmusic         Start SelfMusic and open the browser\n'
+printf '  selfmusic stop    Stop the server\n'
+printf '  selfmusic status  Show status and connection addresses\n'
+printf '  selfmusic logs    Follow server logs\n'
+printf '  selfmusic remote  Configure private HTTPS access through Tailscale\n'
+
+if command -v tailscale >/dev/null 2>&1; then
+  printf '\nTailscale CLI detected. To allow remote access, sign this computer and your phone into the same tailnet.\n'
+  printf 'Run "selfmusic remote" after starting the server to try enabling HTTPS Serve.\n'
+else
+  printf '\nRemote access is optional. Install Tailscale on this computer and your phone, then sign in to the same account:\n'
+  printf 'https://tailscale.com/download\n'
+fi
+
+if ! command -v yt-dlp >/dev/null 2>&1 || ! command -v ffmpeg >/dev/null 2>&1; then
+  yellow "YouTube-to-MP3 imports need yt-dlp and ffmpeg. On CachyOS / Arch: sudo pacman -S yt-dlp ffmpeg"
+fi
+
+printf '\nStart now with: selfmusic\n'
