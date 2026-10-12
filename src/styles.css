@@ -1944,3 +1944,160 @@ button:focus-visible, a:focus-visible, input:focus-visible {
 html, body, #root {
   touch-action: pan-x pan-y;
 }
+
+
+/* Dynamic accent bloom: color all ambient glows, raised surfaces, and interactive shadows from the selected picker color. */
+.app-shell[data-accent],
+.login-shell[data-accent] {
+  --user-glow-xs: color-mix(in srgb, var(--user-accent) 9%, transparent);
+  --user-glow-sm: color-mix(in srgb, var(--user-accent) 14%, transparent);
+  --user-glow-md: color-mix(in srgb, var(--user-accent) 22%, transparent);
+  --user-glow-lg: color-mix(in srgb, var(--user-accent) 32%, transparent);
+  --user-focus-ring: color-mix(in srgb, var(--user-accent) 25%, transparent);
+}
+.app-shell[data-accent] {
+  background-color: #09090c;
+  background-image:
+    radial-gradient(ellipse at 8% 0%, color-mix(in srgb, var(--user-accent) 10%, transparent), transparent 46%),
+    radial-gradient(ellipse at 92% 88%, color-mix(in srgb, var(--user-accent) 7%, transparent), transparent 43%);
+}
+.login-shell[data-accent] {
+  background:
+    radial-gradient(ellipse at 50% 8%, color-mix(in srgb, var(--user-accent) 16%, #17121a), transparent 49%),
+    radial-gradient(ellipse at 90% 90%, color-mix(in srgb, var(--user-accent) 8%, transparent), transparent 38%),
+    #08080b;
+}
+
+/* Main actions, playback controls and navigation receive a coordinated tinted shadow. */
+.app-shell[data-accent] .primary-button,
+.app-shell[data-accent] .url-import-row > .primary-button,
+.app-shell[data-accent] .youtube-search-form .primary-button,
+.app-shell[data-accent] .main-play,
+.app-shell[data-accent] .settings-action,
+.login-shell[data-accent] .primary-button {
+  box-shadow: 0 7px 24px var(--user-glow-md), 0 0 0 1px color-mix(in srgb, var(--user-accent) 10%, transparent), inset 0 1px 0 rgba(255,255,255,.22);
+}
+.app-shell[data-accent] .primary-button:hover:not(:disabled),
+.app-shell[data-accent] .url-import-row > .primary-button:hover:not(:disabled),
+.app-shell[data-accent] .youtube-search-form .primary-button:hover:not(:disabled),
+.app-shell[data-accent] .main-play:hover:not(:disabled),
+.app-shell[data-accent] .settings-action:hover,
+.login-shell[data-accent] .primary-button:hover:not(:disabled) {
+  box-shadow: 0 10px 30px var(--user-glow-lg), 0 0 0 1px color-mix(in srgb, var(--user-accent) 18%, transparent), inset 0 1px 0 rgba(255,255,255,.25);
+}
+.app-shell[data-accent] .brand-mark,
+.login-shell[data-accent] .brand-mark {
+  box-shadow: 0 5px 22px var(--user-glow-md), 0 0 38px var(--user-glow-xs), inset 0 1px 0 rgba(255,255,255,.24);
+}
+.app-shell[data-accent] .nav-item.nav-active,
+.app-shell[data-accent] .mobile-nav-item.nav-active {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 5px 20px var(--user-glow-xs);
+}
+.app-shell[data-accent] .track-row-active {
+  box-shadow: inset 2px 0 0 var(--user-accent), 0 0 24px color-mix(in srgb, var(--user-accent) 5%, transparent);
+}
+.app-shell[data-accent] .range-input::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px var(--user-glow-sm), 0 0 14px var(--user-glow-md);
+}
+
+/* Glass surfaces retain their dark depth while picking up an accent-colored edge glow. */
+.app-shell[data-accent] .hero-panel,
+.app-shell[data-accent] .stat-card,
+.app-shell[data-accent] .track-table,
+.app-shell[data-accent] .settings-card,
+.app-shell[data-accent] .settings-status-card,
+.app-shell[data-accent] .glass-mist-panel,
+.app-shell[data-accent] .upload-queue,
+.app-shell[data-accent] .import-dropzone,
+.app-shell[data-accent] .youtube-hero,
+.app-shell[data-accent] .youtube-player-frame,
+.app-shell[data-accent] .visual-chip,
+.app-shell[data-accent] .remote-wizard,
+.login-shell[data-accent] .login-card {
+  box-shadow:
+    0 22px 58px rgba(0,0,0,.2),
+    0 0 32px var(--user-glow-xs),
+    inset 0 1px 0 rgba(255,255,255,.055);
+}
+.app-shell[data-accent] .stat-card:hover,
+.app-shell[data-accent] .settings-card:hover,
+.app-shell[data-accent] .settings-status-card:hover,
+.app-shell[data-accent] .youtube-result:hover,
+.app-shell[data-accent] .track-row:hover {
+  box-shadow: 0 16px 38px rgba(0,0,0,.18), 0 0 26px var(--user-glow-sm), inset 0 1px 0 rgba(255,255,255,.045);
+}
+.app-shell[data-accent] .hero-panel::before {
+  background:
+    radial-gradient(ellipse at 73% 44%, var(--user-glow-lg), transparent 38%),
+    radial-gradient(ellipse at 15% 0%, var(--user-glow-sm), transparent 42%);
+}
+.app-shell[data-accent] .visual-disc {
+  box-shadow:
+    0 0 0 17px var(--user-glow-xs),
+    0 0 0 38px color-mix(in srgb, var(--user-accent) 4%, transparent),
+    0 25px 58px rgba(0,0,0,.34),
+    inset 0 0 35px rgba(0,0,0,.65);
+}
+.app-shell[data-accent] .disc-label,
+.app-shell[data-accent] .youtube-orb-core,
+.app-shell[data-accent] .import-drop-icon,
+.app-shell[data-accent] .settings-icon,
+.app-shell[data-accent] .intro-icon,
+.app-shell[data-accent] .stat-icon {
+  box-shadow: 0 9px 28px var(--user-glow-sm), inset 0 1px 0 rgba(255,255,255,.12);
+}
+.app-shell[data-accent] .youtube-orb-core { box-shadow: 0 0 75px var(--user-glow-md), 0 12px 35px var(--user-glow-xs), inset 0 1px 0 rgba(255,255,255,.15); }
+.app-shell[data-accent] .youtube-orb-core svg { filter: drop-shadow(0 0 12px var(--user-glow-md)); }
+.app-shell[data-accent] .youtube-hero-orb { box-shadow: 0 0 85px var(--user-glow-sm), inset 0 1px 0 rgba(255,255,255,.05); }
+.app-shell[data-accent] .youtube-result-active { box-shadow: inset 0 0 0 1px var(--user-glow-sm), 0 10px 28px var(--user-glow-xs); }
+.app-shell[data-accent] .youtube-search-field:focus-within,
+.app-shell[data-accent] .youtube-url-field:focus-within,
+.app-shell[data-accent] .url-import-input-wrap:focus-within,
+.app-shell[data-accent] .search-box:focus-within {
+  box-shadow: 0 0 0 3px var(--user-focus-ring), 0 8px 28px var(--user-glow-xs), inset 0 1px 0 rgba(255,255,255,.03);
+  border-color: color-mix(in srgb, var(--user-accent) 48%, transparent);
+}
+.app-shell[data-accent] .upload-progress-track span {
+  background: linear-gradient(90deg, var(--user-accent-strong), var(--user-accent));
+  box-shadow: 0 0 18px var(--user-glow-md);
+}
+.app-shell[data-accent] .mobile-player-expanded::before {
+  background: radial-gradient(ellipse at 50% 0, var(--user-glow-md), transparent 70%);
+}
+.app-shell[data-accent] .playerbar,
+.app-shell[data-accent] .mobile-bottom-nav {
+  box-shadow: 0 -14px 42px rgba(0,0,0,.22), 0 -5px 30px var(--user-glow-xs), inset 0 1px 0 rgba(255,255,255,.035);
+}
+.app-shell[data-accent] .track-delete:hover:not(:disabled),
+.app-shell[data-accent] .track-heart.is-favorite,
+.app-shell[data-accent] .player-like.is-favorite {
+  color: var(--user-accent);
+}
+.app-shell[data-accent] .track-delete:hover:not(:disabled) {
+  background: var(--user-glow-sm);
+  box-shadow: 0 0 18px var(--user-glow-sm);
+}
+.login-shell[data-accent] .login-orb {
+  background: radial-gradient(circle, var(--user-glow-lg), transparent 72%);
+  filter: blur(2px);
+}
+.login-shell[data-accent] .art-center {
+  background:
+    radial-gradient(circle at 30% 10%, var(--user-glow-md), var(--user-glow-xs) 70%),
+    rgba(20,15,23,.55);
+  box-shadow: 0 0 45px var(--user-glow-sm), inset 0 1px 0 rgba(255,255,255,.08);
+}
+.login-shell[data-accent] .art-ring { border-color: color-mix(in srgb, var(--user-accent) 23%, transparent); }
+.login-shell[data-accent] .art-dot { background: var(--user-accent); box-shadow: 0 0 15px var(--user-glow-lg); }
+.login-shell[data-accent] .password-wrap:focus-within {
+  border-color: color-mix(in srgb, var(--user-accent) 52%, transparent);
+  box-shadow: 0 0 0 3px var(--user-focus-ring), 0 8px 24px var(--user-glow-xs);
+}
+.app-shell[data-accent] .settings-control input:focus-visible,
+.app-shell[data-accent] input:focus-visible,
+.app-shell[data-accent] button:focus-visible,
+.login-shell[data-accent] input:focus-visible,
+.login-shell[data-accent] button:focus-visible {
+  outline-color: var(--user-accent);
+  outline-offset: 3px;
+}
