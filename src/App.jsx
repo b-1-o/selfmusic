@@ -298,7 +298,7 @@ function LoginScreen({ configured, checking, onLogin, error, serverUnavailable, 
   const [showPassword, setShowPassword] = useState(false);
 
   return (
-    <div className="login-shell" data-accent={appearance.accent} data-glass={appearance.glass} style={{ "--user-accent": appearance.accentColor, "--user-accent-strong": darkenAccent(appearance.accentColor) }}>
+    <div className="login-shell" data-theme={appearance.theme} data-accent={appearance.accent} data-glass={appearance.glass} style={{ "--user-accent": appearance.accentColor, "--user-accent-strong": darkenAccent(appearance.accentColor) }}>
       <div className="login-orb login-orb-one" />
       <div className="login-orb login-orb-two" />
       <div className="login-card">
@@ -396,7 +396,7 @@ function App() {
   const [selectedYoutube, setSelectedYoutube] = useState(null);
   const [view, setView] = useState("home");
   const contentWrapRef = useRef(null);
-  const [favorites, setFavorites] = useState(() => readLocalJson(FAVORITES_KEY, []));
+  const [favorites, setFavorites] = useState([]);
   const [profile, setProfile] = useState({ id: "legacy", username: "owner", role: "admin", legacy: true });
   const [playlists, setPlaylists] = useState([]);
   const [selectedPlaylist, setSelectedPlaylist] = useState(null);
@@ -457,6 +457,7 @@ function App() {
       saturation: Number.isFinite(saved?.saturation) ? clampNumber(saved.saturation, 0, 100) : colorState.saturation,
       value: Number.isFinite(saved?.value) ? clampNumber(saved.value, 0, 100) : colorState.value,
       glass: ["liquid", "soft", "solid"].includes(saved?.glass) ? saved.glass : "liquid",
+      theme: ["dark", "light"].includes(saved?.theme) ? saved.theme : "dark",
     };
   });
   const [networkAddresses, setNetworkAddresses] = useState({ local: [], tailscale: [] });
@@ -1131,14 +1132,31 @@ function App() {
   const filteredTracks = useMemo(() => {
     let list = tracks;
     if (view === "favorites") list = list.filter((track) => favorites.includes(track.id));
+    if (view === "library") {
+      if (libraryFilters.artist) list = list.filter((track) => track.artist === libraryFilters.artist);
+      if (libraryFilters.album) list = list.filter((track) => track.album === libraryFilters.album);
+      if (libraryFilters.year) list = list.filter((track) => String(track.year || "") === libraryFilters.year);
+      if (libraryFilters.genre) list = list.filter((track) => track.genre === libraryFilters.genre);
+      if (libraryFilters.duration === "short") list = list.filter((track) => Number(track.duration || 0) > 0 && Number(track.duration) < 180);
+      if (libraryFilters.duration === "medium") list = list.filter((track) => Number(track.duration || 0) >= 180 && Number(track.duration) <= 300);
+      if (libraryFilters.duration === "long") list = list.filter((track) => Number(track.duration || 0) > 300);
+    }
     const normalized = query.trim().toLowerCase();
     if (normalized) {
       list = list.filter((track) =>
-        (track.title + " " + track.artist + " " + track.album).toLowerCase().includes(normalized),
+        (track.title + " " + track.artist + " " + track.album + " " + (track.albumArtist || "") + " " + (track.genre || "") + " " + (track.year || "")).toLowerCase().includes(normalized),
       );
     }
+    list = [...list];
+    const compare = (a, b, key) => String(a[key] || "").localeCompare(String(b[key] || ""), undefined, { numeric: true, sensitivity: "base" });
+    if (libraryFilters.sort === "title") list.sort((a, b) => compare(a, b, "title"));
+    else if (libraryFilters.sort === "album") list.sort((a, b) => compare(a, b, "album") || compare(a, b, "trackNumber") || compare(a, b, "title"));
+    else if (libraryFilters.sort === "year") list.sort((a, b) => Number(b.year || 0) - Number(a.year || 0) || compare(a, b, "title"));
+    else if (libraryFilters.sort === "duration") list.sort((a, b) => Number(a.duration || 0) - Number(b.duration || 0));
+    else if (libraryFilters.sort === "recent") list.sort((a, b) => String(b.addedAt || "").localeCompare(String(a.addedAt || "")));
+    else list.sort((a, b) => compare(a, "artist") || compare(a, b, "album") || compare(a, b, "trackNumber") || compare(a, b, "title"));
     return list;
-  }, [tracks, view, favorites, query]);
+  }, [tracks, view, favorites, query, libraryFilters]);
 
   const toggleFavorite = useCallback((id) => {
     setFavorites((items) => items.includes(id) ? items.filter((item) => item !== id) : [...items, id]);
@@ -1289,7 +1307,7 @@ function App() {
   const pageTitle = view === "home" ? "Listen now" : view === "library" ? "Your library" : view === "favorites" ? "Liked tracks" : view === "playlists" ? "Playlists" : view === "youtube" ? "Explore YouTube" : view === "import" ? "Import music" : "Server settings";
 
   return (
-    <div className="app-shell" data-accent={appearance.accent} data-glass={appearance.glass} style={{ "--user-accent": appearance.accentColor, "--user-accent-strong": darkenAccent(appearance.accentColor) }}>
+    <div className="app-shell" data-theme={appearance.theme} data-accent={appearance.accent} data-glass={appearance.glass} style={{ "--user-accent": appearance.accentColor, "--user-accent-strong": darkenAccent(appearance.accentColor) }}>
       <aside className={"sidebar" + (mobileMenuOpen ? " sidebar-open" : "")}>
         <div className="brand">
           <span className="brand-mark"><AudioLines size={22} strokeWidth={2.2} /></span>
@@ -1351,10 +1369,13 @@ function App() {
           <div className="topbar-right">
             <label className="search-box">
               <Search size={17} />
-              <input ref={searchInputRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search your music" aria-label="Search music" />
+              <input ref={searchInputRef} list="music-search-suggestions" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search your music" aria-label="Search music" />
               {query && <button className="search-clear" onClick={() => setQuery("")} aria-label="Clear search"><X size={14} /></button>}
               <kbd>⌘ K</kbd>
             </label>
+            <datalist id="music-search-suggestions">
+              {Array.from(new Set(tracks.slice(0, 500).flatMap((track) => [track.title, track.artist, track.album, track.genre, track.year && String(track.year)]).filter(Boolean))).slice(0, 250).map((value) => <option key={value} value={value} />)}
+            </datalist>
             <div className="avatar-pill"><span className="avatar-glyph">{String(profile.username || "S").slice(0, 1).toUpperCase()}</span><span>{profile.username || "My server"}</span></div>
           </div>
         </header>
@@ -1433,6 +1454,17 @@ function App() {
                 <button className="primary-button" onClick={() => filteredTracks.length && playTrack(filteredTracks[0])} disabled={!filteredTracks.length}><Play size={16} fill="currentColor" /> Play all</button>
                 <button className="ghost-button" onClick={loadTracks}><RefreshCw size={15} className={loadingTracks ? "spin" : ""} /> Refresh</button>
               </div>
+              {view === "library" && (
+                <div className="library-filter-row" aria-label="Library filters">
+                  <label>Artist<select value={libraryFilters.artist} onChange={(event) => setLibraryFilters((value) => ({ ...value, artist: event.target.value }))}><option value="">All artists</option>{Array.from(new Set(tracks.map((track) => track.artist).filter(Boolean))).sort().map((artist) => <option key={artist} value={artist}>{artist}</option>)}</select></label>
+                  <label>Album<select value={libraryFilters.album} onChange={(event) => setLibraryFilters((value) => ({ ...value, album: event.target.value }))}><option value="">All albums</option>{Array.from(new Set(tracks.filter((track) => !libraryFilters.artist || track.artist === libraryFilters.artist).map((track) => track.album).filter(Boolean))).sort().map((album) => <option key={album} value={album}>{album}</option>)}</select></label>
+                  <label>Year<select value={libraryFilters.year} onChange={(event) => setLibraryFilters((value) => ({ ...value, year: event.target.value }))}><option value="">All years</option>{Array.from(new Set(tracks.map((track) => track.year).filter(Boolean))).sort((a, b) => Number(b) - Number(a)).map((year) => <option key={year} value={year}>{year}</option>)}</select></label>
+                  <label>Genre<select value={libraryFilters.genre} onChange={(event) => setLibraryFilters((value) => ({ ...value, genre: event.target.value }))}><option value="">All genres</option>{Array.from(new Set(tracks.map((track) => track.genre).filter(Boolean))).sort().map((genre) => <option key={genre} value={genre}>{genre}</option>)}</select></label>
+                  <label>Length<select value={libraryFilters.duration} onChange={(event) => setLibraryFilters((value) => ({ ...value, duration: event.target.value }))}><option value="all">Any length</option><option value="short">Under 3 min</option><option value="medium">3–5 min</option><option value="long">Over 5 min</option></select></label>
+                  <label>Sort<select value={libraryFilters.sort} onChange={(event) => setLibraryFilters((value) => ({ ...value, sort: event.target.value }))}><option value="artist">Artist</option><option value="title">Title</option><option value="album">Album</option><option value="year">Year</option><option value="duration">Duration</option><option value="recent">Recently added</option></select></label>
+                  <button className="text-button" type="button" onClick={() => setLibraryFilters({ artist: "", album: "", year: "", genre: "", duration: "all", sort: "artist" })}>Reset filters</button>
+                </div>
+              )}
               <TrackList
                 tracks={filteredTracks}
                 loading={loadingTracks}
@@ -2023,7 +2055,7 @@ function App() {
                       ))}
                     </div>
                   </div>
-                  <button className="text-button appearance-reset" type="button" onClick={() => setAppearance({ accent: "rose", accentColor: ACCENT_PRESETS[0].color, ...hexToHsv(ACCENT_PRESETS[0].color), glass: "liquid" })}>Reset appearance</button>
+                  <button className="text-button appearance-reset" type="button" onClick={() => setAppearance({ accent: "rose", accentColor: ACCENT_PRESETS[0].color, ...hexToHsv(ACCENT_PRESETS[0].color), glass: "liquid", theme: "dark" })}>Reset appearance</button>
                 </div>
 
                 <div className="settings-card settings-card-wide">
