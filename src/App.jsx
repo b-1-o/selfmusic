@@ -406,6 +406,14 @@ function App() {
   const [playlistError, setPlaylistError] = useState(false);
   const [lastFmStatus, setLastFmStatus] = useState({ configured: false, connected: false, account: null });
   const [lastFmMessage, setLastFmMessage] = useState("");
+  const [adminUsers, setAdminUsers] = useState([]);
+  const [newAccountUsername, setNewAccountUsername] = useState("");
+  const [newAccountPassword, setNewAccountPassword] = useState("");
+  const [newAccountRole, setNewAccountRole] = useState("user");
+  const [accountMessage, setAccountMessage] = useState("");
+  const [accountMessageError, setAccountMessageError] = useState(false);
+  const [libraryFilters, setLibraryFilters] = useState({ artist: "", album: "", year: "", genre: "", duration: "all", sort: "artist" });
+
   const [playerSettings, setPlayerSettings] = useState({ transcodingEnabled: false, formats: ["original"], defaultBitrate: "192k", bitrates: ["128k", "192k"] });
   const [streamFormat, setStreamFormat] = useState(() => readLocalJson("selfmusic:stream-quality:v1", {}).format || "original");
   const [streamBitrate, setStreamBitrate] = useState(() => readLocalJson("selfmusic:stream-quality:v1", {}).bitrate || "192k");
@@ -671,6 +679,15 @@ function App() {
         const profileBody = await profileResponse.json();
         const user = profileBody.user || { id: "legacy", username: "owner", role: "admin", legacy: true };
         if (active) setProfile(user);
+        if (user.role === "admin") {
+          const usersResponse = await fetch("/api/admin/users", { credentials: "same-origin", cache: "no-store" });
+          if (active && usersResponse.ok) {
+            const usersBody = await usersResponse.json();
+            setAdminUsers(usersBody.users || []);
+          }
+        } else if (active) {
+          setAdminUsers([]);
+        }
 
         let favoriteResponse = await fetch("/api/favorites", { credentials: "same-origin", cache: "no-store" });
         let favoriteBody = favoriteResponse.ok ? await favoriteResponse.json() : { tracks: [] };
@@ -886,6 +903,58 @@ function App() {
     setLastFmStatus({ configured: Boolean(lastFmStatus.configured), connected: false, account: null });
     setLastFmMessage("Last.fm disconnected.");
   }, [lastFmStatus.configured]);
+
+  const createAccount = useCallback(async (event) => {
+    event.preventDefault();
+    setAccountMessage("");
+    try {
+      const response = await fetch("/api/auth/register", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: newAccountUsername, password: newAccountPassword, role: newAccountRole }),
+      });
+      if (!response.ok) throw new Error(await readMessage(response));
+      const body = await response.json();
+      setAdminUsers((items) => [...items, body.user]);
+      setNewAccountUsername("");
+      setNewAccountPassword("");
+      setNewAccountRole("user");
+      setAccountMessage("Created account " + body.user.username + ".");
+      setAccountMessageError(false);
+    } catch (error) {
+      setAccountMessage(error.message || "Could not create account.");
+      setAccountMessageError(true);
+    }
+  }, [newAccountUsername, newAccountPassword, newAccountRole]);
+
+  const changeAccountRole = useCallback(async (user, role) => {
+    try {
+      const response = await fetch("/api/admin/users/" + encodeURIComponent(user.id), {
+        method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role }),
+      });
+      if (!response.ok) throw new Error(await readMessage(response));
+      setAdminUsers((items) => items.map((item) => item.id === user.id ? { ...item, role } : item));
+    } catch (error) {
+      setAccountMessage(error.message || "Could not update account role.");
+      setAccountMessageError(true);
+    }
+  }, []);
+
+  const deleteAccount = useCallback(async (user) => {
+    if (!window.confirm("Delete account " + user.username + "? This removes that account's playlists, favorites, and history.")) return;
+    try {
+      const response = await fetch("/api/admin/users/" + encodeURIComponent(user.id), { method: "DELETE", credentials: "same-origin" });
+      if (!response.ok) throw new Error(await readMessage(response));
+      setAdminUsers((items) => items.filter((item) => item.id !== user.id));
+      setAccountMessage("Deleted account " + user.username + ".");
+      setAccountMessageError(false);
+    } catch (error) {
+      setAccountMessage(error.message || "Could not delete account.");
+      setAccountMessageError(true);
+    }
+  }, []);
 
   const playTrack = useCallback((track) => {
     if (!track || !audioRef.current) return;
