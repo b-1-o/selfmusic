@@ -6,3 +6,7 @@ music/
 .DS_Store
 *.log
 cookies.txt
+!.env.example
+data/
+backups/
+tailscale-state/

@@ -4,5 +4,15 @@ dist
 .env
 .env.*
 !.env.example
-music
+cookies.txt
+music/
+data/
+backups/
+tailscale-state/
 *.log
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
