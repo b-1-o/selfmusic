@@ -2632,3 +2632,27 @@ html, body, #root {
   .playlist-add-library .playlist-track-row { grid-template-columns: 36px minmax(0,1fr) 30px; }
   .playlist-card-actions .ghost-button { flex: 1 1 auto; }
 }
+
+
+/* Duplicate review */
+.duplicate-toolbar { display:flex; align-items:center; justify-content:space-between; gap:14px; margin:14px 0; }
+.duplicate-refresh { width:auto; margin-top:0; padding:0 12px; }
+.duplicate-groups { display:grid; gap:13px; margin-top:12px; }
+.duplicate-group { min-width:0; padding:13px; border:1px solid var(--line); border-radius:13px; background:rgba(255,255,255,.012); }
+.duplicate-group-heading { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:2px 0 10px; }
+.duplicate-group-heading strong, .duplicate-group-heading small { display:block; }
+.duplicate-group-heading strong { font-size:12px; }
+.duplicate-group-heading small { margin-top:4px; color:var(--quiet); font:9px "DM Mono",monospace; overflow-wrap:anywhere; }
+.duplicate-group-heading .primary-button { min-height:33px; padding:0 10px; font-size:10px; white-space:nowrap; }
+.duplicate-track-row { grid-template-columns:minmax(0,1fr) 100px 34px; gap:10px; }
+.duplicate-track-row small { overflow-wrap:anywhere; line-height:1.45; }
+.duplicate-size { color:var(--muted); text-align:right; font:10px "DM Mono",monospace; }
+.duplicate-retained { display:flex; justify-self:end; align-items:center; gap:4px; color:#89d6ad; font-size:10px; }
+.app-shell[data-theme="light"] .duplicate-group { background:rgba(20,22,40,.018); }
+@media (max-width:760px) {
+  .duplicate-toolbar { align-items:stretch; flex-direction:column; }
+  .duplicate-refresh { justify-content:center; }
+  .duplicate-group-heading { align-items:flex-start; flex-direction:column; }
+  .duplicate-track-row { grid-template-columns:minmax(0,1fr) 67px 30px; gap:7px; }
+  .duplicate-group-heading small { max-width:100%; }
+}
