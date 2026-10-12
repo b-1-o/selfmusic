@@ -18,6 +18,7 @@ import { mountCollectionRoutes } from "./collections.js";
 import { getTranscodedFile, originalSupportsFormat, parseTranscodeOptions, transcodingEnabled } from "./transcoder.js";
 import { encryptSecret } from "./secret.js";
 import { mountSubsonicRoutes } from "./subsonic.js";
+import { flushQueue as flushLastFmQueue, mountLastFmRoutes } from "./lastfm.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 dotenv.config({ path: path.join(projectRoot, ".env") });
@@ -482,6 +483,7 @@ async function findTracks(query = {}, options = {}) {
 }
 mountCollectionRoutes(app, { db, requireAuth, findTracks });
 mountSubsonicRoutes(app, { db, musicRoot, requireFindTracks: findTracks, resolveTrackFile });
+mountLastFmRoutes(app, { db, requireAuth });
 async function resolveTrackFile(id) {
   if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,2048}$/.test(id)) return null;
   const filePath = safeTrackPath(id);
@@ -1519,6 +1521,11 @@ fs.promises.mkdir(musicRoot, { recursive: true }).then(() => {
       console.warn("Set a random SESSION_SECRET of at least 32 characters in production so sessions remain valid after restarts.");
     }
   });
+}).then(() => {
+  const lastFmTimer = setInterval(() => {
+    flushLastFmQueue(db).catch((error) => console.warn("[SelfMusic] Last.fm queue worker failed", error.message));
+  }, 60000);
+  lastFmTimer.unref();
 }).catch((error) => {
   console.error("Could not prepare music directory:", error.message);
   process.exitCode = 1;
