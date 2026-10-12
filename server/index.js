@@ -214,6 +214,72 @@ app.get("/api/tracks", requireAuth, async (_req, res, next) => {
   }
 });
 
+app.get("/api/youtube/search", requireAuth, async (req, res, next) => {
+  try {
+    const apiKey = process.env.YOUTUBE_API_KEY;
+    if (!apiKey) {
+      return res.status(503).json({
+        error: "youtube_not_configured",
+        message: "Set YOUTUBE_API_KEY in .env and restart SelfMusic to enable YouTube search."
+      });
+    }
+
+    const query = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    if (query.length < 2 || query.length > 100) {
+      return res.status(400).json({
+        error: "invalid_query",
+        message: "Enter a search with 2–100 characters."
+      });
+    }
+
+    const url = new URL("https://www.googleapis.com/youtube/v3/search");
+    url.searchParams.set("key", apiKey);
+    url.searchParams.set("part", "snippet");
+    url.searchParams.set("type", "video");
+    url.searchParams.set("videoEmbeddable", "true");
+    url.searchParams.set("videoSyndicated", "true");
+    url.searchParams.set("safeSearch", "moderate");
+    url.searchParams.set("maxResults", "18");
+    url.searchParams.set("q", query);
+
+    const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    const payload = await response.json();
+
+    if (!response.ok) {
+      const reason = payload?.error?.errors?.[0]?.reason || "";
+      if (reason === "quotaExceeded" || reason === "dailyLimitExceeded") {
+        return res.status(429).json({
+          error: "youtube_quota_exceeded",
+          message: "YouTube search quota has been used up for today. Try again later."
+        });
+      }
+      console.warn("[SelfMusic] YouTube API request failed:", payload?.error?.message || response.status);
+      return res.status(502).json({
+        error: "youtube_api_error",
+        message: "YouTube search is unavailable. Check the API key and YouTube Data API v3 settings."
+      });
+    }
+
+    const items = (Array.isArray(payload.items) ? payload.items : [])
+      .filter((item) => /^[A-Za-z0-9_-]{11}$/.test(String(item?.id?.videoId || "")))
+      .map((item) => ({
+        videoId: item.id.videoId,
+        title: String(item.snippet?.title || "Untitled video"),
+        channelTitle: String(item.snippet?.channelTitle || "YouTube"),
+        description: String(item.snippet?.description || ""),
+        thumbnail: String(item.snippet?.thumbnails?.medium?.url || item.snippet?.thumbnails?.default?.url || "")
+      }));
+
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ items, totalResults: payload.pageInfo?.totalResults || items.length });
+  } catch (error) {
+    if (error.name === "TimeoutError" || error.name === "AbortError") {
+      return res.status(504).json({ error: "youtube_timeout", message: "YouTube search took too long. Try again." });
+    }
+    next(error);
+  }
+});
+
 app.get("/api/artwork/:id", requireAuth, async (req, res, next) => {
   try {
     const track = await resolveTrackFile(req.params.id);
