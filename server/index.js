@@ -564,7 +564,7 @@ app.post("/api/auth/login", (req, res) => {
 
 app.get("/api/auth/profile", requireAuth, (req, res) => {
   res.setHeader("Cache-Control", "no-store");
-  res.json({ user: { id: req.authUser.id, username: req.authUser.username, role: req.authUser.role } });
+  res.json({ user: { id: req.authUser.id, username: req.authUser.username, role: req.authUser.role, legacy: Boolean(req.authUser.legacy) } });
 });
 
 app.post("/api/auth/register", requireAuth, (req, res) => {
