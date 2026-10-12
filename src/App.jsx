@@ -58,6 +58,28 @@ function formatTime(value) {
   return minutes + ":" + seconds;
 }
 
+function parseYoutubeVideoId(value) {
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== "https:") return "";
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    let videoId = "";
+
+    if (host === "youtu.be") {
+      videoId = url.pathname.split("/").filter(Boolean)[0] || "";
+    } else if (["youtube.com", "m.youtube.com", "music.youtube.com", "youtube-nocookie.com"].includes(host)) {
+      videoId =
+        url.searchParams.get("v") ||
+        url.pathname.match(/^\/(?:embed|shorts|live)\/([A-Za-z0-9_-]{11})(?:\/|$)/)?.[1] ||
+        "";
+    }
+
+    return /^[A-Za-z0-9_-]{11}$/.test(videoId) ? videoId : "";
+  } catch {
+    return "";
+  }
+}
+
 function formatBytes(value) {
   if (!Number.isFinite(value) || value < 0) return "0 B";
   if (value < 1024) return value + " B";
@@ -206,6 +228,8 @@ function App() {
   const [query, setQuery] = useState("");
   const searchInputRef = useRef(null);
   const [youtubeQuery, setYoutubeQuery] = useState("");
+  const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [youtubeUrlError, setYoutubeUrlError] = useState("");
   const [youtubeResults, setYoutubeResults] = useState([]);
   const [youtubeLoading, setYoutubeLoading] = useState(false);
   const [youtubeError, setYoutubeError] = useState("");
@@ -790,6 +814,48 @@ function App() {
                       {youtubeLoading ? <RefreshCw className="spin" size={16} /> : <Search size={16} />}
                       {youtubeLoading ? "Searching" : "Search YouTube"}
                     </button>
+                  </form>
+                  <form
+                    className="youtube-url-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      const videoId = parseYoutubeVideoId(youtubeUrl);
+                      if (!videoId) {
+                        setYoutubeUrlError("Enter a valid HTTPS link to a YouTube video.");
+                        return;
+                      }
+                      const item = {
+                        videoId,
+                        title: "Video opened from link",
+                        channelTitle: "YouTube",
+                        thumbnail: "https://i.ytimg.com/vi/" + videoId + "/hqdefault.jpg",
+                      };
+                      setYoutubeUrlError("");
+                      setYoutubeResults((items) => [item, ...items.filter((result) => result.videoId !== videoId)]);
+                      selectYoutubeVideo(item);
+                    }}
+                  >
+                    <div className="youtube-url-caption"><span>ALREADY HAVE A LINK?</span><span>OPEN IN OFFICIAL PLAYER</span></div>
+                    <div className="youtube-url-row">
+                      <label className="youtube-url-field">
+                        <Link2 size={16} />
+                        <input
+                          type="url"
+                          inputMode="url"
+                          autoComplete="url"
+                          value={youtubeUrl}
+                          onChange={(event) => { setYoutubeUrl(event.target.value); setYoutubeUrlError(""); }}
+                          placeholder="https://youtu.be/…"
+                          aria-label="YouTube video URL"
+                          maxLength={2048}
+                          required
+                        />
+                      </label>
+                      <button className="ghost-button youtube-url-button" type="submit">
+                        <Play size={14} fill="currentColor" /> Open video
+                      </button>
+                    </div>
+                    {youtubeUrlError && <p className="youtube-url-error" role="alert">{youtubeUrlError}</p>}
                   </form>
                   <div className="youtube-privacy-line"><ShieldCheck size={14} /> The API key stays on your server. Search results are not saved.</div>
                 </div>
