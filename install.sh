@@ -40,8 +40,8 @@ env_value() {
 write_env_value() {
   local key="$1" value="$2" tmp_file
   tmp_file="$(mktemp)"
-  awk -v key="$key" -v value="$value" '
-    BEGIN { written = 0 }
+  ENV_VALUE_TO_WRITE="$value" awk -v key="$key" '
+    BEGIN { value = ENVIRON["ENV_VALUE_TO_WRITE"]; written = 0 }
     index($0, key "=") == 1 {
       if (!written) { print key "=" value; written = 1 }
       next
@@ -102,7 +102,7 @@ mkdir -p "$ROOT_DIR/data"
 
 printf '\nInstalling Node dependencies...\n'
 cd "$ROOT_DIR"
-npm install
+npm install --no-save --package-lock=false --no-audit --no-fund
 printf '\nBuilding SelfMusic...\n'
 npm run build
 
