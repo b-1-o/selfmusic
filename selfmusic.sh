@@ -62,7 +62,7 @@ get_pid() {
 }
 
 health_ok() {
-  command -v curl >/dev/null 2>&1 && curl -fsS --max-time 2 "$LOCAL_URL/api/health" >/dev/null 2>&1
+  node -e 'fetch("http://127.0.0.1:" + process.argv[1] + "/api/health").then(async response => { if (!response.ok || (await response.json()).app !== "SelfMusic") process.exit(1); }).catch(() => process.exit(1))' "$PORT" >/dev/null 2>&1
 }
 
 show_addresses() {
@@ -78,7 +78,7 @@ show_addresses() {
         printf 'Tailscale HTTPS address: %s\n' "$https_url"
       fi
     else
-      yellow "Tailscale is installed but not connected. Run: sudo tailscale up"
+      yellow "Tailscale is installed but not connected. Run: sudo systemctl start tailscaled && sudo tailscale up"
     fi
   fi
   printf 'Do not port-forward this app directly to the public internet.\n'
