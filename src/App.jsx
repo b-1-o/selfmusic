@@ -133,6 +133,12 @@ function LoginScreen({ configured, checking, onLogin, error, serverUnavailable }
 
         {checking ? (
           <div className="state-note"><RefreshCw size={17} className="spin" /> Checking your server…</div>
+        ) : serverUnavailable ? (
+          <div className="setup-notice">
+            <div className="notice-heading"><CircleAlert size={18} /> Server could not be reached</div>
+            <p>Make sure SelfMusic is running on your home computer and that the address or remote tunnel is available.</p>
+            <a className="text-link" href="https://github.com/b-1-o/selfmusic#run-the-home-server" target="_blank" rel="noreferrer">Open setup guide <ArrowUpRight size={15} /></a>
+          </div>
         ) : !configured ? (
           <div className="setup-notice">
             <div className="notice-heading"><CircleAlert size={18} /> The server needs setup</div>
@@ -178,6 +184,7 @@ function App() {
   const [loadError, setLoadError] = useState("");
   const [loadingTracks, setLoadingTracks] = useState(false);
   const [query, setQuery] = useState("");
+  const searchInputRef = useRef(null);
   const [view, setView] = useState("home");
   const [favorites, setFavorites] = useState(() => readLocalJson(FAVORITES_KEY, []));
   const [currentTrackId, setCurrentTrackId] = useState(() => localStorage.getItem(LAST_TRACK_KEY) || "");
@@ -212,6 +219,17 @@ function App() {
     } finally {
       setLoadingTracks(false);
     }
+  }, []);
+
+  useEffect(() => {
+    const handleSearchShortcut = (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", handleSearchShortcut);
+    return () => window.removeEventListener("keydown", handleSearchShortcut);
   }, []);
 
   useEffect(() => {
@@ -350,8 +368,8 @@ function App() {
           artist: currentTrack.artist,
           album: currentTrack.album,
           artwork: [
-            { src: currentTrack.artworkUrl, sizes: "512x512", type: "image/svg+xml" },
-            { src: "/icon.svg", sizes: "any", type: "image/svg+xml" },
+            { src: currentTrack.artworkUrl, sizes: "512x512" },
+            { src: "/icon.svg", sizes: "any" },
           ],
         });
       }
@@ -468,7 +486,7 @@ function App() {
           <div className="topbar-right">
             <label className="search-box">
               <Search size={17} />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search your music" aria-label="Search music" />
+              <input ref={searchInputRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search your music" aria-label="Search music" />
               {query && <button className="search-clear" onClick={() => setQuery("")} aria-label="Clear search"><X size={14} /></button>}
               <kbd>⌘ K</kbd>
             </label>
