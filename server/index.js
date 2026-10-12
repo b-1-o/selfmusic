@@ -275,6 +275,31 @@ app.use((req, res, next) => {
 });
 app.use("/api", enforceSameOriginMutation);
 
+const genericRateLimitBuckets = new Map();
+function rateLimitApi(req, res, next) {
+  const windowMs = Math.max(10000, Number.parseInt(process.env.API_RATE_LIMIT_WINDOW_MS || "60000", 10) || 60000);
+  const max = Math.max(10, Number.parseInt(process.env.API_RATE_LIMIT_MAX || "60", 10) || 60);
+  const ip = req.ip || req.socket.remoteAddress || "unknown";
+  const normalizedPath = String(req.path || "/").replace(/\/[A-Za-z0-9_-]{24,}(?=\/|$)/g, "/:id");
+  const key = ip + ":" + normalizedPath;
+  const now = Date.now();
+  let bucket = genericRateLimitBuckets.get(key);
+  if (!bucket || now - bucket.startedAt >= windowMs) bucket = { startedAt: now, count: 0 };
+  bucket.count += 1;
+  genericRateLimitBuckets.set(key, bucket);
+  if (genericRateLimitBuckets.size > 10000) {
+    for (const [entryKey, entry] of genericRateLimitBuckets) {
+      if (now - entry.startedAt >= windowMs * 2) genericRateLimitBuckets.delete(entryKey);
+    }
+  }
+  if (bucket.count > max) {
+    res.setHeader("Retry-After", String(Math.ceil((windowMs - (now - bucket.startedAt)) / 1000)));
+    return res.status(429).json({ error: "rate_limited", message: "Too many API requests. Try again shortly." });
+  }
+  next();
+}
+app.use("/api", rateLimitApi);
+
 const rateLimitBuckets = new Map();
 function rateLimitHeavyApi(req, res, next) {
   const requestPath = String(req.originalUrl || req.url || "").split("?")[0];
@@ -315,7 +340,16 @@ app.use((req, res, next) => {
 });
 
 function isConfigured() {
-  return typeof process.env.SELF_MUSIC_PASSWORD === "string" && process.env.SELF_MUSIC_PASSWORD.length >= 8 && !process.env.SELF_MUSIC_PASSWORD.toLowerCase().includes("replace-with");
+  const legacyPasswordConfigured =
+    typeof process.env.SELF_MUSIC_PASSWORD === "string" &&
+    process.env.SELF_MUSIC_PASSWORD.length >= 8 &&
+    !process.env.SELF_MUSIC_PASSWORD.toLowerCase().includes("replace-with");
+  if (legacyPasswordConfigured) return true;
+  try {
+    return Number(db.prepare("SELECT COUNT(*) AS count FROM users").get().count) > 0;
+  } catch {
+    return false;
+  }
 }
 
 function constantTimeTextCompare(left, right) {
@@ -1511,7 +1545,27 @@ app.use((error, _req, res, _next) => {
   res.status(500).json({ error: "internal_error", message: "SelfMusic hit an unexpected error." });
 });
 
+function bootstrapAdminAccount() {
+  const username = String(process.env.BOOTSTRAP_ADMIN_USERNAME || "admin").trim();
+  const password = String(process.env.BOOTSTRAP_ADMIN_PASSWORD || "");
+  if (!password) return;
+  if (!/^[A-Za-z0-9._-]{3,32}$/.test(username) || password.length < 12 || password.length > 128) {
+    console.error("[SelfMusic] BOOTSTRAP_ADMIN_USERNAME must be 3–32 safe characters and BOOTSTRAP_ADMIN_PASSWORD must be 12–128 characters.");
+    return;
+  }
+  if (Number(db.prepare("SELECT COUNT(*) AS count FROM users").get().count) > 0) return;
+  try {
+    db.prepare("INSERT INTO users(id, username, password_hash, subsonic_secret, role) VALUES (?, ?, ?, ?, 'admin')").run(
+      crypto.randomUUID(), username, hashPassword(password), encryptSecret(password)
+    );
+    console.info("[SelfMusic] bootstrap administrator created", JSON.stringify({ username }));
+  } catch (error) {
+    console.error("[SelfMusic] could not create bootstrap administrator:", error.message);
+  }
+}
+
 fs.promises.mkdir(musicRoot, { recursive: true }).then(() => {
+  bootstrapAdminAccount();
   app.listen(port, "0.0.0.0", () => {
     console.log("SelfMusic server listening on http://localhost:" + port);
     console.log("Music folder: " + musicRoot);
