@@ -156,5 +156,7 @@ else
   yellow "Tailscale is still connecting. Check status with: ./selfmusic.sh status"
   printf 'Logs: docker compose logs -f tailscale\n'
 fi
+printf 'Optional: enable HTTPS/PWA support with: docker compose exec tailscale tailscale serve --bg 8787\n'
+printf 'Then inspect its URL with: docker compose exec tailscale tailscale serve status\n'
 printf 'Sign in with the SelfMusic password you set above. Keep this computer running for remote playback.\n'
 printf 'To add the app: open the address in your phone browser, then choose Add to Home Screen / Install app.\n'

@@ -242,6 +242,15 @@ Service and local copyright law.
 2. Install Tailscale on your phone and sign in to the same Tailscale account / tailnet.
 3. Get the address with `docker compose exec tailscale tailscale ip -4`, or use the installer output. Open `http://<tailscale-ip>:8787` on your phone. If MagicDNS is enabled, `http://selfmusic:8787` should also resolve.
 
+For full HTTPS and installable-PWA/service-worker support, you can enable Tailscale Serve after the node is connected:
+
+```bash
+docker compose exec tailscale tailscale serve --bg 8787
+docker compose exec tailscale tailscale serve status
+```
+
+If prompted, enable HTTPS certificates for your tailnet in the Tailscale admin console. Open the HTTPS URL printed by Serve (the hostname normally ends in `.ts.net`). The HTTP IP URL remains available for normal playback, but browsers may restrict service-worker/PWA features on non-secure origins.
+
 Keep the `tailscale-state` volume: it stores the node's identity, so ordinary restarts do not require re-authenticating the node. Do not publish port 8787 publicly, and keep the SelfMusic password enabled as a second layer.
 
 ## Security notes

@@ -119,5 +119,7 @@ if ($TailIp) {
 } else {
     Write-Host "Tailscale is still connecting. Run .\selfmusic.sh status or docker compose logs -f tailscale" -ForegroundColor Yellow
 }
+Write-Host "Optional HTTPS/PWA support: docker compose exec tailscale tailscale serve --bg 8787"
+Write-Host "Check the HTTPS URL with: docker compose exec tailscale tailscale serve status"
 Write-Host "Sign in with your SelfMusic password. Keep this computer running for remote playback."
 Write-Host "For an app-like experience, open the address on your phone and choose Add to Home Screen / Install app."

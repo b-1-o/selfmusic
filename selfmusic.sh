@@ -20,7 +20,8 @@ copy_tree() {
   fi
 }
 
-action="$1"
+action=""
+if [ "$#" -gt 0 ]; then action="$1"; fi
 case "$action" in
   start) docker compose up -d ;;
   stop) docker compose down ;;

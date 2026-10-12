@@ -23,7 +23,9 @@ services:
     env_file:
       - .env
     environment:
-      NODE_ENV: production
+      # The app bundle is already built for production. The server must support the requested HTTP-over-tailnet URL.
+      # For Secure cookies and a fully installable PWA, optionally enable Tailscale Serve HTTPS (see README).
+      NODE_ENV: development
       PORT: "8787"
       MUSIC_DIR: /app/music
     volumes:
