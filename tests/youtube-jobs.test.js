@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { closeDatabase, createDatabase } from "../server/database.js";
-import { createYoutubeJob } from "../server/youtube-jobs.js";
+import { createYoutubeJob, getDuplicateStrategy } from "../server/youtube-jobs.js";
 
 test("creates durable YouTube jobs and sanitizes metadata overrides", () => {
   const db = createDatabase(":memory:");
@@ -58,3 +58,18 @@ test("limits the number of active download jobs", () => {
     closeDatabase(db);
   }
 });
+test("uses a safe default for configurable duplicate strategy", () => {
+  const previous = process.env.DUPLICATE_STRATEGY;
+  try {
+    process.env.DUPLICATE_STRATEGY = "skip";
+    assert.equal(getDuplicateStrategy(), "skip");
+    process.env.DUPLICATE_STRATEGY = "ask";
+    assert.equal(getDuplicateStrategy(), "ask");
+    process.env.DUPLICATE_STRATEGY = "invalid";
+    assert.equal(getDuplicateStrategy(), "keep");
+  } finally {
+    if (previous === undefined) delete process.env.DUPLICATE_STRATEGY;
+    else process.env.DUPLICATE_STRATEGY = previous;
+  }
+});
+
