@@ -655,13 +655,13 @@ app.get("/api/network/addresses", requireAuth, (_req, res) => {
   const interfaces = os.networkInterfaces();
 
   for (const [interfaceName, entries] of Object.entries(interfaces)) {
-    if (/^(docker|br-|veth|podman|cni|virbr)/i.test(interfaceName)) continue;
+    if (/^(docker|br-|veth|podman|cni|virbr|vEthernet)/i.test(interfaceName)) continue;
     for (const entry of entries || []) {
       if (entry.internal || (entry.family !== 4 && entry.family !== "IPv4")) continue;
       const address = String(entry.address || "");
       if (/^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(address)) {
         tailscale.add(address);
-      } else if (/^10\./.test(address) || /^192\.168\./.test(address)) {
+      } else if (/^10\./.test(address) || /^192\.168\./.test(address) || /^172\.(1[6-9]|2\d|3[01])\./.test(address)) {
         local.add(address);
       }
     }
