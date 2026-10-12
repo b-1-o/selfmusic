@@ -14,6 +14,7 @@ import {
   Library,
   Link2,
   ListMusic,
+  Plus,
   LockKeyhole,
   LogOut,
   Menu,
@@ -1214,7 +1215,7 @@ function App() {
     );
   }
 
-  const pageTitle = view === "home" ? "Listen now" : view === "library" ? "Your library" : view === "favorites" ? "Liked tracks" : view === "youtube" ? "Explore YouTube" : view === "import" ? "Import music" : "Server settings";
+  const pageTitle = view === "home" ? "Listen now" : view === "library" ? "Your library" : view === "favorites" ? "Liked tracks" : view === "playlists" ? "Playlists" : view === "youtube" ? "Explore YouTube" : view === "import" ? "Import music" : "Server settings";
 
   return (
     <div className="app-shell" data-accent={appearance.accent} data-glass={appearance.glass} style={{ "--user-accent": appearance.accentColor, "--user-accent-strong": darkenAccent(appearance.accentColor) }}>
@@ -1239,6 +1240,9 @@ function App() {
             </button>
             <button className={view === "favorites" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("favorites"); setMobileMenuOpen(false); }}>
               <SectionGlyph kind="liked" size={19} /> <span>Liked tracks</span>
+            </button>
+            <button className={view === "playlists" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("playlists"); setMobileMenuOpen(false); }}>
+              <ListMusic size={19} /> <span>Playlists</span><span className="nav-count">{playlists.length}</span>
             </button>
             <button className={view === "youtube" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("youtube"); setMobileMenuOpen(false); }}>
               <SectionGlyph kind="youtube" size={19} /> <span>Explore YouTube</span>
@@ -1377,6 +1381,128 @@ function App() {
                 emptyCopy={view === "favorites" ? "Tap the heart beside any track to keep it here." : "Add audio files to your server's music folder, then refresh."}
                 onSettings={() => setView("settings")}
               />
+            </section>
+          )}
+
+          {view === "playlists" && (
+            <section className="page-section playlist-page">
+              <div className="page-intro">
+                <div className="intro-icon"><ListMusic size={29} /></div>
+                <p className="eyebrow">YOUR MUSIC, YOUR ORDER</p>
+                <h1>Playlists</h1>
+                <p>Create persistent collections, reorder tracks, and export or import M3U files.</p>
+              </div>
+
+              <div className="settings-grid">
+                <div className="settings-card">
+                  <div className="settings-card-head"><span className="settings-icon"><Plus size={19} /></span><span className="settings-overline">NEW COLLECTION</span></div>
+                  <h3>Create a playlist</h3>
+                  <form className="url-import-block" onSubmit={async (event) => {
+                    event.preventDefault();
+                    try { await createPlaylist(playlistName); }
+                    catch (error) { setPlaylistMessage(error.message || "Could not create playlist."); setPlaylistError(true); }
+                  }}>
+                    <label htmlFor="playlist-name">Playlist name</label>
+                    <div className="url-import-row">
+                      <input id="playlist-name" type="text" value={playlistName} maxLength={100} placeholder="Late night listening" onChange={(event) => setPlaylistName(event.target.value)} required />
+                      <button className="primary-button" type="submit" disabled={!playlistName.trim()}><Plus size={15} /> Create</button>
+                    </div>
+                  </form>
+                  <div className="settings-footnote">Playlists and track order are saved to the SelfMusic database and follow your signed-in account.</div>
+                </div>
+
+                <div className="settings-card">
+                  <div className="settings-card-head"><span className="settings-icon settings-icon-blue"><FolderOpen size={19} /></span><span className="settings-overline">M3U EXCHANGE</span></div>
+                  <h3>Import an M3U playlist</h3>
+                  <p>Import an existing .m3u file. Entries are matched against files already indexed in your library; external paths are never opened.</p>
+                  <label className="settings-action" htmlFor="m3u-import-file"><Upload size={15} /> Choose M3U file <input id="m3u-import-file" type="file" accept=".m3u,.m3u8,audio/x-mpegurl,application/vnd.apple.mpegurl" onChange={async (event) => {
+                    const file = event.target.files?.[0];
+                    if (!file) return;
+                    try {
+                      if (file.size > 1024 * 1024) throw new Error("M3U files must be 1 MB or smaller.");
+                      const content = await file.text();
+                      const name = playlistName.trim() || file.name.replace(/\.m3u8?$/i, "") || "Imported playlist";
+                      const response = await fetch("/api/playlists/import.m3u", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, content }) });
+                      if (!response.ok) throw new Error(await readMessage(response));
+                      const body = await response.json();
+                      await refreshPlaylists();
+                      setPlaylistMessage("Imported " + body.importedTracks + " tracks.");
+                      setPlaylistError(false);
+                    } catch (error) {
+                      setPlaylistMessage(error.message || "Could not import this playlist.");
+                      setPlaylistError(true);
+                    } finally {
+                      event.target.value = "";
+                    }
+                  }} /></label>
+                  <div className="settings-footnote">M3U exports include relative library paths and can be downloaded from each playlist below.</div>
+                </div>
+              </div>
+
+              {playlistMessage && <div className={"upload-feedback" + (playlistError ? " upload-feedback-error" : "")} role={playlistError ? "alert" : "status"}><span className="upload-feedback-icon">{playlistError ? <CircleAlert size={17} /> : <Check size={17} />}</span><span>{playlistMessage}</span></div>}
+
+              <div className="section-heading playlist-heading">
+                <div><p className="eyebrow">SAVED COLLECTIONS</p><h2>Your playlists</h2></div>
+                <div className="section-heading-actions"><span className="muted-count">{playlists.length} playlists</span><button className="text-button" type="button" onClick={() => refreshPlaylists().catch((error) => { setPlaylistMessage(error.message); setPlaylistError(true); })}><RefreshCw size={14} /> Refresh</button></div>
+              </div>
+              {playlists.length ? (
+                <div className="settings-grid playlist-grid">
+                  {playlists.map((playlist) => (
+                    <div className={"settings-card playlist-card" + (selectedPlaylist?.id === playlist.id ? " playlist-card-active" : "")} key={playlist.id}>
+                      <div className="settings-card-head"><span className="settings-icon"><ListMusic size={18} /></span><span className="settings-overline">PLAYLIST</span></div>
+                      <h3>{playlist.name}</h3>
+                      <p>{playlist.trackCount || 0} tracks · Updated {new Date(playlist.updatedAt || playlist.createdAt).toLocaleDateString()}</p>
+                      <div className="playlist-card-actions">
+                        <button className="primary-button" type="button" onClick={() => openPlaylist(playlist)}><ListMusic size={15} /> Open</button>
+                        <a className="ghost-button" href={"/api/playlists/" + encodeURIComponent(playlist.id) + "/export.m3u"} download><Download size={15} /> Export M3U</a>
+                        <button className="icon-button" type="button" title="Delete playlist" aria-label={"Delete playlist " + playlist.name} onClick={() => deletePlaylist(playlist.id).catch((error) => { setPlaylistMessage(error.message); setPlaylistError(true); })}><Trash2 size={15} /></button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : <div className="empty-state"><ListMusic size={24} /><h3>No playlists yet</h3><p>Create one above, then add tracks from your library.</p></div>}
+
+              {selectedPlaylist && (
+                <section className="section-block selected-playlist">
+                  <div className="section-heading">
+                    <div><p className="eyebrow">NOW EDITING</p><h2>{selectedPlaylist.name}</h2><p className="muted-count">{selectedPlaylistTracks.length} tracks</p></div>
+                    <div className="section-heading-actions"><button className="ghost-button" type="button" onClick={() => setSelectedPlaylist(null)}>Close</button></div>
+                  </div>
+                  <div className="settings-card playlist-track-panel">
+                    <h3>Tracks in this playlist</h3>
+                    {selectedPlaylistTracks.length ? selectedPlaylistTracks.map((track, index) => (
+                      <div className="playlist-track-row" key={track.id}>
+                        <button className="track-art" type="button" onClick={() => playTrack(track)} aria-label={"Play " + track.title}><Cover track={track} /></button>
+                        <button className="track-identity" type="button" onClick={() => playTrack(track)}><span className="track-title">{track.title}</span><span className="track-subtitle">{track.artist} · {track.album}</span></button>
+                        <span className="playlist-track-position">{index + 1}</span>
+                        <button className="icon-button" type="button" title="Move up" aria-label={"Move " + track.title + " up"} disabled={index === 0} onClick={async () => {
+                          const ids = selectedPlaylistTracks.map((item) => item.id);
+                          [ids[index - 1], ids[index]] = [ids[index], ids[index - 1]];
+                          try {
+                            const response = await fetch("/api/playlists/" + encodeURIComponent(selectedPlaylist.id) + "/tracks/order", { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trackIds: ids }) });
+                            if (!response.ok) throw new Error(await readMessage(response));
+                            setSelectedPlaylistTracks(await response.json().then((body) => body.tracks || []));
+                          } catch (error) { setPlaylistMessage(error.message); setPlaylistError(true); }
+                        }}><ArrowUpRight size={15} /></button>
+                        <button className="icon-button" type="button" title="Remove track" aria-label={"Remove " + track.title + " from playlist"} onClick={() => removeTrackFromPlaylist(selectedPlaylist.id, track.id).catch((error) => { setPlaylistMessage(error.message); setPlaylistError(true); })}><X size={15} /></button>
+                      </div>
+                    )) : <p className="settings-footnote">This playlist is empty. Add something from your library below.</p>}
+                  </div>
+
+                  <div className="settings-card playlist-track-panel">
+                    <h3>Add tracks from your library</h3>
+                    <div className="playlist-add-library">
+                      {tracks.filter((track) => !selectedPlaylistTracks.some((item) => item.id === track.id) && (!query.trim() || (track.title + " " + track.artist + " " + track.album).toLowerCase().includes(query.trim().toLowerCase()))).slice(0, 100).map((track) => (
+                        <div className="playlist-track-row" key={track.id}>
+                          <button className="track-art" type="button" onClick={() => playTrack(track)} aria-label={"Play " + track.title}><Cover track={track} /></button>
+                          <button className="track-identity" type="button" onClick={() => playTrack(track)}><span className="track-title">{track.title}</span><span className="track-subtitle">{track.artist} · {track.album}</span></button>
+                          <button className="icon-button" type="button" title="Add to playlist" aria-label={"Add " + track.title + " to playlist"} onClick={() => addTrackToPlaylist(selectedPlaylist.id, track.id).catch((error) => { setPlaylistMessage(error.message); setPlaylistError(true); })}><Plus size={16} /></button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </section>
+              )}
             </section>
           )}
 
