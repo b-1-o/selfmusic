@@ -148,6 +148,13 @@ const migrations = [
         UNIQUE (track_id, format, bitrate)
       );
     `
+  },
+  {
+    version: 4,
+    name: "encrypted_integration_credentials",
+    sql: `
+      ALTER TABLE users ADD COLUMN subsonic_secret TEXT;
+    `
   }
 ];
 
