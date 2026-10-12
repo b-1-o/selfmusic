@@ -2260,7 +2260,7 @@ html, body, #root {
   background: radial-gradient(ellipse at 0 0, color-mix(in srgb, var(--user-accent) 11%, transparent), transparent 48%), linear-gradient(150deg, rgba(27,24,33,.97), rgba(12,11,17,.99));
   border-color: color-mix(in srgb, var(--user-accent) 20%, rgba(255,255,255,.1));
   box-shadow: 0 35px 90px rgba(0,0,0,.46), 0 0 35px color-mix(in srgb, var(--user-accent) 7%, transparent), inset 0 1px 0 rgba(255,255,255,.055);
-  contain: layout paint;
+  contain: layout;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
@@ -2367,4 +2367,14 @@ html, body, #root {
     filter: none !important;
     transform: none !important;
   }
+}
+
+
+/* The animated YouTube glow also follows the selected accent instead of a fixed rose keyframe. */
+.app-shell[data-accent] .youtube-hero-orb {
+  animation: selfmusic-accent-orb-breathe 9s ease-in-out infinite;
+}
+@keyframes selfmusic-accent-orb-breathe {
+  0%, 100% { box-shadow: 0 0 65px color-mix(in srgb, var(--user-accent) 7%, transparent); }
+  50% { box-shadow: 0 0 95px color-mix(in srgb, var(--user-accent) 15%, transparent); }
 }
