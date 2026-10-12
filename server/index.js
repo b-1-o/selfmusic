@@ -221,8 +221,8 @@ const audioUpload = multer({
 
       let stem = path.basename(originalName, path.extname(originalName))
         .normalize("NFKC")
-        .replace(/[\\u0000-\\u001f\\u007f<>:"/\\\\|?*]/g, "")
-        .replace(/\\s+/g, " ")
+        .replace(/[\x00-\x1F\x7F<>:"|?*]/g, "")
+        .replace(/\s+/g, " ")
         .trim()
         .slice(0, 140);
       if (!stem || stem === "." || stem === "..") stem = "Track";
