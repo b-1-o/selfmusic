@@ -498,6 +498,13 @@ function App() {
     if (tracks[previousIndex]) playTrack(tracks[previousIndex]);
   }, [tracks, currentTrackId, repeatMode, playTrack]);
 
+  const playPreviousTrack = useCallback(() => {
+    if (!tracks.length) return;
+    const index = tracks.findIndex((track) => track.id === currentTrackId);
+    const previousIndex = index <= 0 ? (repeatMode === "all" ? tracks.length - 1 : 0) : index - 1;
+    if (tracks[previousIndex]) playTrack(tracks[previousIndex]);
+  }, [tracks, currentTrackId, repeatMode, playTrack]);
+
   const togglePlayback = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -1327,6 +1334,7 @@ function App() {
         repeatMode={repeatMode}
         onToggle={togglePlayback}
         onPrevious={playPrevious}
+        onSwitchPrevious={playPreviousTrack}
         onNext={playNext}
         onSeek={(value) => { if (audioRef.current) audioRef.current.currentTime = value; setCurrentTime(value); }}
         onVolume={(value) => { setVolume(value); setMuted(false); }}
@@ -1421,6 +1429,7 @@ function PlayerBar({
   repeatMode,
   onToggle,
   onPrevious,
+  onSwitchPrevious,
   onNext,
   onSeek,
   onVolume,
@@ -1442,7 +1451,7 @@ function PlayerBar({
         setExpanded(false);
       } else if (event.key === "ArrowLeft" && !["INPUT", "TEXTAREA"].includes(event.target?.tagName)) {
         event.preventDefault();
-        onPrevious();
+        onSwitchPrevious();
       } else if (event.key === "ArrowRight" && !["INPUT", "TEXTAREA"].includes(event.target?.tagName)) {
         event.preventDefault();
         onNext();
@@ -1450,7 +1459,7 @@ function PlayerBar({
     };
     window.addEventListener("keydown", handleExpandedKeys);
     return () => window.removeEventListener("keydown", handleExpandedKeys);
-  }, [expanded, onPrevious, onNext]);
+  }, [expanded, onSwitchPrevious, onNext]);
 
   const handleExpandedTouchStart = (event) => {
     if (event.target.closest("button, input, a")) return;
@@ -1468,7 +1477,7 @@ function PlayerBar({
     const dy = touch.clientY - start.y;
     if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.25) return;
     if (dx < 0) onNext();
-    else onPrevious();
+    else onSwitchPrevious();
   };
 
   return (
