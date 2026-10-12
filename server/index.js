@@ -17,6 +17,7 @@ import { getTracks as readTracks, getTrackRow, listAlbums, listArtists, scanLibr
 import { mountCollectionRoutes } from "./collections.js";
 import { getTranscodedFile, originalSupportsFormat, parseTranscodeOptions, transcodingEnabled } from "./transcoder.js";
 import { encryptSecret } from "./secret.js";
+import { mountSubsonicRoutes } from "./subsonic.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 dotenv.config({ path: path.join(projectRoot, ".env") });
@@ -480,6 +481,7 @@ async function findTracks(query = {}, options = {}) {
   return readTracks(db, query);
 }
 mountCollectionRoutes(app, { db, requireAuth, findTracks });
+mountSubsonicRoutes(app, { db, musicRoot, requireFindTracks: findTracks, resolveTrackFile });
 async function resolveTrackFile(id) {
   if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,2048}$/.test(id)) return null;
   const filePath = safeTrackPath(id);
