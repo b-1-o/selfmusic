@@ -1824,7 +1824,7 @@ function App() {
                     </div>
                     {youtubeUrlError && <p className="youtube-url-error" role="alert">{youtubeUrlError}</p>}
                   </form>
-                  <div className="youtube-privacy-line"><ShieldCheck size={14} /> The API key stays on your server. Search results are not saved.</div>
+                  <div className="youtube-privacy-line"><ShieldCheck size={14} /> The API key stays on your server. Search results are cached briefly.</div>
                 </div>
                 <div className="youtube-hero-orb" aria-hidden="true"><div className="youtube-orb-core"><Youtube size={37} /></div><div className="youtube-orb-ring ring-one" /><div className="youtube-orb-ring ring-two" /></div>
               </div>
@@ -1855,6 +1855,7 @@ function App() {
                           </span>
                           <span className="youtube-result-title">{item.title}</span>
                           <span className="youtube-result-channel">{item.channelTitle}</span>
+                          {item.duration != null && <span className="youtube-result-duration">{Math.floor(item.duration / 60)}:{String(Math.floor(item.duration % 60)).padStart(2, "0")}</span>}
                         </button>
                       ))}
                     </div>
@@ -1878,6 +1879,13 @@ function App() {
                       </div>
                       <div className="youtube-selected-meta"><strong>{selectedYoutube.title}</strong><span>{selectedYoutube.channelTitle}</span></div>
                       <a className="youtube-watch-link" href={"https://www.youtube.com/watch?v=" + selectedYoutube.videoId} target="_blank" rel="noreferrer"><Youtube size={15} /> Watch on YouTube <ArrowUpRight size={15} /></a>
+                      {profile.role === "admin" && (
+                        <button className="youtube-download-button" type="button" disabled={youtubeJobStarting || ["queued", "running"].includes(youtubeJob?.status)} onClick={() => startYoutubeDownload({ videoId: selectedYoutube.videoId, metadata: { title: selectedYoutube.title, artist: selectedYoutube.channelTitle } }, "explore")}>
+                          {youtubeJobStarting || ["queued", "running"].includes(youtubeJob?.status) ? <RefreshCw size={15} className="spin" /> : <Download size={15} />}
+                          <span>{youtubeJobStarting ? "Queueing…" : ["queued", "running"].includes(youtubeJob?.status) ? "Download in progress" : "Download MP3"}</span>
+                        </button>
+                      )}
+
                     </>
                   ) : (
                     <div className="youtube-player-empty"><div className="youtube-player-art"><Youtube size={35} /></div><strong>Pick a video to play</strong><span>Your selection appears here inside the official YouTube player.</span></div>
@@ -1960,6 +1968,17 @@ function App() {
                   )}
                   {uploadMessage && <div className={"upload-feedback" + (uploadError ? " upload-feedback-error" : "")}><span className="upload-feedback-icon">{uploadError ? <CircleAlert size={17} /> : <Check size={17} />}</span><span>{uploadMessage}</span>{!uploadError && <button type="button" className="text-button" onClick={() => setView("library")}>Open library <ArrowUpRight size={14} /></button>}</div>}
 
+                  {youtubeJob && (
+                    <div className={"youtube-job-progress" + (youtubeJob.status === "failed" ? " youtube-job-failed" : "")} role="status">
+                      <div className="youtube-job-progress-head">
+                        <span className="youtube-job-icon">{youtubeJob.status === "completed" ? <Check size={16} /> : youtubeJob.status === "failed" ? <CircleAlert size={16} /> : <Download size={16} />}</span>
+                        <div><strong>{youtubeJob.status === "queued" ? "Queued for download" : youtubeJob.status === "running" ? "Downloading and converting" : youtubeJob.status === "completed" ? "Download complete" : "Download failed"}</strong><small>{youtubeJob.title || "YouTube audio"}</small></div>
+                        <b>{Math.round(youtubeJob.progress || 0)}%</b>
+                      </div>
+                      <div className="upload-progress-track"><span style={{ width: Math.max(0, Math.min(100, Number(youtubeJob.progress) || 0)) + "%" }} /></div>
+                      {youtubeJob.status === "failed" && youtubeJob.error?.message && <p className="form-error">{youtubeJob.error.message}</p>}
+                    </div>
+                  )}
                   <div className="url-import-divider"><span>OR DOWNLOAD FROM YOUTUBE</span></div>
                   <form className="url-import-block" onSubmit={(event) => { event.preventDefault(); downloadFromYoutube(); }}>
                     <label htmlFor="audio-import-url">YouTube video URL</label>
