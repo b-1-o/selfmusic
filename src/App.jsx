@@ -1209,6 +1209,46 @@ function App() {
                   {networkAddresses.tailscale.length > 0 && <div className="info-note"><ShieldCheck size={16} /><span>Tailscale detected: {networkAddresses.tailscale[0]}</span></div>}
                 </div>
 
+                <div className="settings-card settings-card-wide appearance-settings-card">
+                  <div className="settings-card-head"><span className="settings-icon"><Palette size={19} /></span><span className="settings-overline">PERSONALIZE YOUR PLAYER</span></div>
+                  <h3>Make SelfMusic yours</h3>
+                  <p>Your appearance is saved in this browser. It changes the interface, not your music files or server settings.</p>
+                  <div className="appearance-control">
+                    <div className="appearance-control-label"><strong>Accent color</strong><span>Choose the interface highlight</span></div>
+                    <div className="appearance-swatches" role="group" aria-label="Accent color">
+                      {[
+                        { id: "rose", label: "Rose", color: "#f1a0ba" },
+                        { id: "ocean", label: "Ocean", color: "#87d7ee" },
+                        { id: "violet", label: "Violet", color: "#c5a9ff" },
+                        { id: "amber", label: "Amber", color: "#f4c27a" },
+                        { id: "mint", label: "Mint", color: "#8fe0bf" },
+                      ].map((choice) => (
+                        <button key={choice.id} type="button" className={"appearance-swatch" + (appearance.accent === choice.id ? " appearance-swatch-active" : "")} style={{ "--swatch-color": choice.color }} onClick={() => setAppearance((value) => ({ ...value, accent: choice.id }))} aria-label={choice.label} aria-pressed={appearance.accent === choice.id}>
+                          <span />
+                          <small>{choice.label}</small>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="appearance-control">
+                    <div className="appearance-control-label"><strong>Glass effect</strong><span>Change blur and panel opacity</span></div>
+                    <div className="appearance-glass-options" role="group" aria-label="Glass effect">
+                      {[
+                        { id: "liquid", label: "Liquid glass", description: "Rich blur and highlights" },
+                        { id: "soft", label: "Soft glass", description: "Lighter translucency" },
+                        { id: "solid", label: "Solid", description: "Minimal blur, opaque panels" },
+                      ].map((choice) => (
+                        <button key={choice.id} type="button" className={"appearance-glass-option" + (appearance.glass === choice.id ? " appearance-glass-option-active" : "")} onClick={() => setAppearance((value) => ({ ...value, glass: choice.id }))} aria-pressed={appearance.glass === choice.id}>
+                          <span className={"glass-preview glass-preview-" + choice.id} />
+                          <strong>{choice.label}</strong>
+                          <small>{choice.description}</small>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <button className="text-button appearance-reset" type="button" onClick={() => setAppearance({ accent: "rose", glass: "liquid" })}>Reset appearance</button>
+                </div>
+
                 <div className="settings-card settings-card-wide">
                   <div className="settings-card-head"><span className="settings-icon"><LockKeyhole size={19} /></span><span className="settings-overline">SECURITY CHECKLIST</span></div>
                   <h3>Before you use it remotely</h3>
