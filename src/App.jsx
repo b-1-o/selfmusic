@@ -276,6 +276,42 @@ function App() {
 
   const currentTrack = tracks.find((track) => track.id === currentTrackId) || null;
 
+  const refreshNetworkAddresses = useCallback(async () => {
+    setNetworkLoading(true);
+    setNetworkError("");
+    try {
+      const response = await fetch("/api/network/addresses");
+      if (response.status === 401) {
+        setAuthenticated(false);
+        return;
+      }
+      if (!response.ok) throw new Error(await readMessage(response));
+      const addresses = await response.json();
+      setNetworkAddresses({
+        local: Array.isArray(addresses.local) ? addresses.local : [],
+        tailscale: Array.isArray(addresses.tailscale) ? addresses.tailscale : [],
+      });
+    } catch (error) {
+      setNetworkError(error.message || "Couldn't check this computer's network addresses.");
+    } finally {
+      setNetworkLoading(false);
+    }
+  }, []);
+
+  const closeRemoteWizard = useCallback(() => {
+    setRemoteWizardOpen(false);
+    localStorage.setItem(REMOTE_WIZARD_KEY, "1");
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(APPEARANCE_KEY, JSON.stringify(appearance));
+  }, [appearance]);
+
+  useEffect(() => {
+    if (!authenticated) return;
+    refreshNetworkAddresses();
+  }, [authenticated, refreshNetworkAddresses]);
+
   const loadTracks = useCallback(async () => {
     setLoadingTracks(true);
     setLoadError("");
