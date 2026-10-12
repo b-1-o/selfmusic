@@ -19,6 +19,7 @@ import { getTranscodedFile, originalSupportsFormat, parseTranscodeOptions, trans
 import { encryptSecret } from "./secret.js";
 import { mountSubsonicRoutes } from "./subsonic.js";
 import { flushQueue as flushLastFmQueue, mountLastFmRoutes } from "./lastfm.js";
+import { createYoutubeJob, mountYoutubeJobRoutes } from "./youtube-jobs.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 dotenv.config({ path: path.join(projectRoot, ".env") });
@@ -519,6 +520,7 @@ async function findTracks(query = {}, options = {}) {
 mountCollectionRoutes(app, { db, requireAuth, findTracks });
 mountSubsonicRoutes(app, { db, musicRoot, requireFindTracks: findTracks, resolveTrackFile });
 mountLastFmRoutes(app, { db, requireAuth });
+mountYoutubeJobRoutes(app, { db, requireAuth, requireAdmin, projectRoot, musicRoot, coverCacheDir, workDir: path.join(projectRoot, "data") });
 async function resolveTrackFile(id) {
   if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,2048}$/.test(id)) return null;
   const filePath = safeTrackPath(id);
@@ -1288,7 +1290,23 @@ async function ensureYoutubeArtwork(info, targetPath) {
 app.post("/api/youtube/download", requireAuth, requireAdmin, async (req, res, next) => {
   let targetPath = null;
   try {
+    if (req.body?.async === true || String(req.query.async || "").toLowerCase() === "true") {
+      try {
+        const job = createYoutubeJob(db, {
+          projectRoot,
+          musicRoot,
+          coverCacheDir,
+          workDir: path.join(projectRoot, "data")
+        }, req.authUser.id, req.body || {});
+        res.setHeader("Cache-Control", "no-store");
+        return res.status(202).json({ queued: true, job });
+      } catch (error) {
+        const status = error.code === "INVALID_YOUTUBE_URL" || error.code === "INVALID_YOUTUBE_BITRATE" ? 400 : error.code === "YOUTUBE_QUEUE_FULL" ? 429 : 500;
+        return res.status(status).json({ error: String(error.code || "youtube_job_failed").toLowerCase(), message: error.message || "Could not queue this download." });
+      }
+    }
     const rawUrl = typeof req.body?.url === "string" ? req.body.url.trim() : "";
+
     if (!rawUrl || rawUrl.length > 2048) {
       return res.status(400).json({
         error: "invalid_youtube_url",
