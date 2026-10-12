@@ -40,30 +40,28 @@ npm install
 
 ### 2. Create your configuration
 
-On Linux/macOS:
+Create a file named **.env** in the project root using your editor (for example, `zed .env` on Linux/macOS or `notepad .env` on Windows). Put these settings in the file, then replace both placeholder values before starting the server:
 
-~~~sh
-cp .env.example .env
+~~~dotenv
+SELF_MUSIC_PASSWORD=replace-this-with-your-own-unique-password
+SESSION_SECRET=replace-this-with-a-random-secret
+MUSIC_DIR=./music
+PORT=8787
+NODE_ENV=development
+YOUTUBE_API_KEY=
 ~~~
 
-On Windows PowerShell:
-
-~~~powershell
-Copy-Item .env.example .env
-~~~
-
-Edit the new **.env** file. At a minimum, change these values:
-
-- **SELF_MUSIC_PASSWORD:** a unique password of at least 12 characters.
-- **SESSION_SECRET:** a long random secret. Generate one with Node.js:
+- **SELF_MUSIC_PASSWORD:** use your own unique password of at least 12 characters.
+- **SESSION_SECRET:** generate a random secret with Node.js, then paste the output after `SESSION_SECRET=`:
 
 ~~~sh
 node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 ~~~
 
 - **MUSIC_DIR:** the folder containing your music. By default it is **./music** inside the project.
+- **YOUTUBE_API_KEY:** optional; leave it empty unless you enable YouTube search.
 
-Do not commit **.env** or put secrets in client-side code. The repository ignores **.env** and the default **music/** folder.
+Do not commit **.env** or put secrets in client-side code. The repository ignores local environment files and the default **music/** folder.
 
 ### 3. Add music and build
 
@@ -83,13 +81,12 @@ To develop the UI locally instead, use **npm run dev**. Vite serves the client a
 If Docker Desktop (Windows/macOS) or Docker Engine (Linux) is already installed, you can run the server as a container. Keep the host port loopback-only unless you have deliberately configured a private network or firewall rule.
 
 ~~~sh
-cp .env.example .env
 mkdir -p music
-# Edit .env and set SELF_MUSIC_PASSWORD and SESSION_SECRET.
+# Make sure .env exists and has your own SELF_MUSIC_PASSWORD and SESSION_SECRET.
 docker compose up --build -d
 ~~~
 
-On Windows PowerShell, make the config with `Copy-Item .env.example .env`; create the music folder in File Explorer if needed. Then open **http://localhost:8787**. Use `docker compose logs -f selfmusic` to inspect startup logs and `docker compose down` to stop the container. The provided Compose file binds the port to localhost by default, so a tunnel running on that same host can reach it.
+On Windows PowerShell, create **.env** as described in step 2 and create the music folder in File Explorer if needed. Then open **http://localhost:8787**. Use `docker compose logs -f selfmusic` to inspect startup logs and `docker compose down` to stop the container. The provided Compose file binds the port to localhost by default, so a tunnel running on that same host can reach it.
 
 ## Listen away from home
 
