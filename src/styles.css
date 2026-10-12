@@ -2101,3 +2101,280 @@ html, body, #root {
   outline-color: var(--user-accent);
   outline-offset: 3px;
 }
+
+/* Full accent sweep — all colored surfaces derive from the selected custom or preset color. */
+.app-shell[data-accent] {
+  background-image:
+    radial-gradient(ellipse at 9% 0%, color-mix(in srgb, var(--user-accent) 11%, transparent), transparent 44%),
+    radial-gradient(ellipse at 92% 87%, color-mix(in srgb, var(--user-accent) 8%, transparent), transparent 44%);
+}
+.app-shell[data-accent] .sidebar {
+  background: radial-gradient(ellipse at 0 0, color-mix(in srgb, var(--user-accent) 11%, transparent), transparent 52%), rgba(10,10,14,.96) !important;
+}
+.app-shell[data-accent] .topbar {
+  background: linear-gradient(100deg, color-mix(in srgb, var(--user-accent) 5%, transparent), transparent 60%), rgba(9,8,13,.82);
+  border-bottom-color: color-mix(in srgb, var(--user-accent) 12%, transparent);
+}
+.app-shell[data-accent] .nav-item:hover,
+.app-shell[data-accent] .collection-card:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--user-accent) 7%, transparent);
+  border-color: color-mix(in srgb, var(--user-accent) 16%, transparent);
+}
+.app-shell[data-accent] .nav-item.nav-active {
+  color: #fff;
+  background: linear-gradient(105deg, color-mix(in srgb, var(--user-accent) 20%, transparent), color-mix(in srgb, var(--user-accent) 6%, transparent));
+  border-color: color-mix(in srgb, var(--user-accent) 23%, transparent);
+  box-shadow: inset 2px 0 0 var(--user-accent), 0 5px 20px color-mix(in srgb, var(--user-accent) 6%, transparent);
+}
+.app-shell[data-accent] .nav-active > svg { color: var(--user-accent); }
+.app-shell[data-accent] .collection-art {
+  color: var(--user-accent);
+  border-color: color-mix(in srgb, var(--user-accent) 28%, transparent);
+  background: linear-gradient(145deg, color-mix(in srgb, var(--user-accent) 19%, #18131c), rgba(17,15,21,.9));
+  box-shadow: 0 7px 22px color-mix(in srgb, var(--user-accent) 11%, transparent);
+}
+.app-shell[data-accent] .hero-kicker-dot,
+.app-shell[data-accent] .settings-status-icon .status-pip {
+  background: var(--user-accent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--user-accent) 42%, transparent);
+}
+.app-shell[data-accent] .hero-footer span svg,
+.app-shell[data-accent] .hero-panel h1 span,
+.app-shell[data-accent] .section-heading .eyebrow,
+.app-shell[data-accent] .page-intro .eyebrow,
+.app-shell[data-accent] .youtube-kicker,
+.app-shell[data-accent] .youtube-hero h1 span,
+.app-shell[data-accent] .import-panel-heading .eyebrow,
+.app-shell[data-accent] .settings-overline {
+  color: color-mix(in srgb, var(--user-accent) 76%, white);
+}
+.app-shell[data-accent] .stat-icon,
+.app-shell[data-accent] .stat-icon-warm,
+.app-shell[data-accent] .stat-icon-cool,
+.app-shell[data-accent] .intro-icon,
+.app-shell[data-accent] .settings-icon,
+.app-shell[data-accent] .settings-icon-blue,
+.app-shell[data-accent] .import-drop-icon,
+.app-shell[data-accent] .youtube-empty-icon {
+  color: var(--user-accent) !important;
+  border-color: color-mix(in srgb, var(--user-accent) 27%, transparent) !important;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--user-accent) 14%, transparent), rgba(255,255,255,.018)) !important;
+  box-shadow: 0 9px 28px color-mix(in srgb, var(--user-accent) 12%, transparent), inset 0 1px 0 rgba(255,255,255,.08);
+}
+.app-shell[data-accent] .section-glyph {
+  display: block;
+  flex: 0 0 auto;
+  filter: drop-shadow(0 4px 12px color-mix(in srgb, var(--user-accent) 18%, transparent));
+  transition: filter .22s ease, color .22s ease, transform .22s ease;
+}
+.app-shell[data-accent] .stat-icon .section-glyph { width: 29px; height: 29px; }
+.app-shell[data-accent] .intro-icon .section-glyph { width: 30px; height: 30px; }
+.app-shell[data-accent] .collection-art .section-glyph { width: 30px; height: 30px; }
+.app-shell[data-accent] .nav-item:hover .section-glyph,
+.app-shell[data-accent] .mobile-nav-item:hover .section-glyph,
+.app-shell[data-accent] .collection-card:hover .section-glyph {
+  transform: translateY(-1px) scale(1.045);
+  filter: drop-shadow(0 5px 14px color-mix(in srgb, var(--user-accent) 28%, transparent));
+}
+.app-shell[data-accent] .youtube-hero {
+  background: radial-gradient(ellipse at 9% 2%, color-mix(in srgb, var(--user-accent) 12%, transparent), transparent 42%), radial-gradient(ellipse at 92% 95%, color-mix(in srgb, var(--user-accent) 7%, transparent), transparent 35%), linear-gradient(145deg, rgba(25,22,32,.93), rgba(12,12,17,.92)) !important;
+  border-color: color-mix(in srgb, var(--user-accent) 17%, rgba(255,255,255,.1));
+  box-shadow: 0 22px 58px rgba(0,0,0,.2), 0 0 35px color-mix(in srgb, var(--user-accent) 8%, transparent), inset 0 1px 0 rgba(255,255,255,.055);
+}
+.app-shell[data-accent] .youtube-fog-one,
+.app-shell[data-accent] .youtube-fog-two { background: radial-gradient(ellipse, color-mix(in srgb, var(--user-accent) 14%, transparent), transparent 72%) !important; }
+.app-shell[data-accent] .youtube-hero-orb {
+  background: radial-gradient(circle, color-mix(in srgb, var(--user-accent) 13%, transparent), color-mix(in srgb, var(--user-accent) 3%, transparent) 64%, transparent 70%);
+  box-shadow: 0 0 85px color-mix(in srgb, var(--user-accent) 10%, transparent);
+}
+.app-shell[data-accent] .youtube-orb-core {
+  color: color-mix(in srgb, var(--user-accent) 78%, white);
+  background: linear-gradient(145deg, color-mix(in srgb, var(--user-accent) 20%, #19131e), color-mix(in srgb, var(--user-accent) 8%, #100e16));
+  border-color: color-mix(in srgb, var(--user-accent) 40%, transparent);
+  box-shadow: 0 0 55px color-mix(in srgb, var(--user-accent) 18%, transparent), inset 0 1px 0 rgba(255,255,255,.11);
+}
+.app-shell[data-accent] .youtube-result-active {
+  border-color: color-mix(in srgb, var(--user-accent) 44%, transparent);
+  background: color-mix(in srgb, var(--user-accent) 9%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--user-accent) 8%, transparent), 0 10px 28px color-mix(in srgb, var(--user-accent) 7%, transparent);
+}
+.app-shell[data-accent] .youtube-search-field:focus-within,
+.app-shell[data-accent] .youtube-url-field:focus-within,
+.app-shell[data-accent] .url-import-input-wrap:focus-within,
+.app-shell[data-accent] .search-box:focus-within {
+  border-color: color-mix(in srgb, var(--user-accent) 48%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--user-accent) 17%, transparent), 0 8px 24px color-mix(in srgb, var(--user-accent) 7%, transparent);
+}
+.app-shell[data-accent] .import-main-panel,
+.app-shell[data-accent] .import-side-card {
+  background: radial-gradient(ellipse at 10% 0%, color-mix(in srgb, var(--user-accent) 8%, transparent), transparent 50%), rgba(19,17,24,.68);
+  border-color: color-mix(in srgb, var(--user-accent) 15%, rgba(255,255,255,.09));
+  box-shadow: 0 20px 54px rgba(0,0,0,.19), 0 0 26px color-mix(in srgb, var(--user-accent) 6%, transparent), inset 0 1px 0 rgba(255,255,255,.045);
+}
+.app-shell[data-accent] .import-dropzone {
+  border-color: color-mix(in srgb, var(--user-accent) 26%, transparent);
+  background: radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--user-accent) 10%, transparent), transparent 65%), rgba(255,255,255,.012);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.035);
+}
+.app-shell[data-accent] .import-dropzone.is-dragging,
+.app-shell[data-accent] .import-dropzone:hover {
+  border-color: color-mix(in srgb, var(--user-accent) 62%, transparent);
+  background: color-mix(in srgb, var(--user-accent) 8%, rgba(255,255,255,.015));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--user-accent) 10%, transparent), 0 0 30px color-mix(in srgb, var(--user-accent) 10%, transparent);
+}
+.app-shell[data-accent] .import-folder-tag,
+.app-shell[data-accent] .import-limits span,
+.app-shell[data-accent] .import-side-card code,
+.app-shell[data-accent] .settings-card code,
+.app-shell[data-accent] .settings-footnote code,
+.app-shell[data-accent] .import-path {
+  color: color-mix(in srgb, var(--user-accent) 72%, white);
+  border-color: color-mix(in srgb, var(--user-accent) 20%, transparent);
+  background: color-mix(in srgb, var(--user-accent) 5%, transparent);
+}
+.app-shell[data-accent] .import-resource-link,
+.app-shell[data-accent] .upload-feedback:not(.upload-feedback-error) .text-button { color: var(--user-accent); }
+.app-shell[data-accent] .upload-progress-track span {
+  background: linear-gradient(90deg, var(--user-accent-strong), var(--user-accent));
+  box-shadow: 0 0 17px color-mix(in srgb, var(--user-accent) 25%, transparent);
+}
+.app-shell[data-accent] .import-side-note svg { color: var(--user-accent); }
+.app-shell[data-accent] .settings-status-card,
+.app-shell[data-accent] .settings-card {
+  border-color: color-mix(in srgb, var(--user-accent) 15%, rgba(255,255,255,.1));
+  box-shadow: 0 20px 55px rgba(0,0,0,.18), 0 0 27px color-mix(in srgb, var(--user-accent) 6%, transparent), inset 0 1px 0 rgba(255,255,255,.05);
+}
+.app-shell[data-accent] .settings-status-icon {
+  border-color: color-mix(in srgb, var(--user-accent) 25%, transparent);
+  background: color-mix(in srgb, var(--user-accent) 7%, transparent);
+}
+.app-shell[data-accent] .status-badge { color: color-mix(in srgb, var(--user-accent) 72%, white); border-color: color-mix(in srgb, var(--user-accent) 18%, transparent); background: color-mix(in srgb, var(--user-accent) 6%, transparent); }
+.app-shell[data-accent] .settings-action:hover { background: color-mix(in srgb, var(--user-accent) 8%, transparent); box-shadow: 0 8px 26px color-mix(in srgb, var(--user-accent) 12%, transparent); }
+.app-shell[data-accent] .remote-wizard-overlay {
+  background: color-mix(in srgb, #050408 94%, var(--user-accent) 6%);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.app-shell[data-accent] .remote-wizard {
+  background: radial-gradient(ellipse at 0 0, color-mix(in srgb, var(--user-accent) 11%, transparent), transparent 48%), linear-gradient(150deg, rgba(27,24,33,.97), rgba(12,11,17,.99));
+  border-color: color-mix(in srgb, var(--user-accent) 20%, rgba(255,255,255,.1));
+  box-shadow: 0 35px 90px rgba(0,0,0,.46), 0 0 35px color-mix(in srgb, var(--user-accent) 7%, transparent), inset 0 1px 0 rgba(255,255,255,.055);
+  contain: layout;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.app-shell[data-accent] .remote-wizard h2 { color: #fff; }
+.app-shell[data-accent] .remote-wizard-brand,
+.app-shell[data-accent] .remote-wizard-step strong,
+.app-shell[data-accent] .remote-wizard-qr-card strong,
+.app-shell[data-accent] .remote-address-title strong { color: var(--text); }
+.app-shell[data-accent] .remote-wizard-addresses { border-color: color-mix(in srgb, var(--user-accent) 15%, transparent); }
+.app-shell[data-accent] .remote-wizard-step>span {
+  color: #fff;
+  background: linear-gradient(145deg, var(--user-accent), var(--user-accent-strong));
+  box-shadow: 0 5px 16px color-mix(in srgb, var(--user-accent) 22%, transparent);
+}
+.app-shell[data-accent] .remote-address-error { color: #ffb4bf; }
+
+/* Avoid accidental second grid row on compact phones: keep expand in the player row. */
+@media (max-width: 720px) {
+  .app-shell[data-accent] .playerbar {
+    grid-template-columns: minmax(0,1fr) auto auto !important;
+    align-items: center;
+    gap: 6px;
+    padding-right: max(10px, env(safe-area-inset-right));
+    padding-left: max(10px, env(safe-area-inset-left));
+  }
+  .app-shell[data-accent] .now-playing,
+  .app-shell[data-accent] .now-playing-meta { min-width: 0; }
+  .app-shell[data-accent] .now-playing-meta strong,
+  .app-shell[data-accent] .now-playing-meta span { max-width: min(37vw, 180px); }
+  .app-shell[data-accent] .player-center { grid-column: 2; justify-self: end; align-self: center; }
+  .app-shell[data-accent] .player-extras { grid-column: 3; grid-row: 1; align-items: center; justify-self: end; align-self: center; gap: 0; }
+  .app-shell[data-accent] .mobile-expand {
+    width: 37px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    margin: 0;
+    color: var(--user-accent);
+    border: 1px solid color-mix(in srgb, var(--user-accent) 17%, transparent);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--user-accent) 6%, transparent);
+    box-shadow: 0 4px 16px color-mix(in srgb, var(--user-accent) 8%, transparent);
+  }
+}
+@media (max-width: 360px) {
+  .app-shell[data-accent] .playerbar { grid-template-columns: minmax(0,1fr) auto auto !important; gap: 3px; padding-right: 7px; padding-left: 7px; }
+  .app-shell[data-accent] .now-playing { gap: 6px; }
+  .app-shell[data-accent] .player-cover { width: 38px; height: 38px; }
+  .app-shell[data-accent] .now-playing-meta strong,
+  .app-shell[data-accent] .now-playing-meta span { max-width: 31vw; }
+  .app-shell[data-accent] .player-controls { gap: 4px; }
+  .app-shell[data-accent] .mobile-expand { width: 34px; }
+}
+
+/* GPU-light transitions between main sections without animating the fixed player. */
+@keyframes selfmusic-view-enter {
+  from { opacity: 0; transform: translate3d(0, 10px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+.app-shell[data-accent] .content-wrap.view-entering > * {
+  animation: selfmusic-view-enter .32s cubic-bezier(.2,.75,.25,1) both;
+}
+.app-shell[data-accent] .content-wrap.view-entering > *:nth-child(2) { animation-delay: 35ms; }
+.app-shell[data-accent] .content-wrap.view-entering > *:nth-child(3) { animation-delay: 65ms; }
+.app-shell[data-accent] .nav-item,
+.app-shell[data-accent] .mobile-nav-item,
+.app-shell[data-accent] .settings-card,
+.app-shell[data-accent] .stat-card,
+.app-shell[data-accent] .track-row {
+  transition: color .2s ease, background-color .2s ease, border-color .2s ease, box-shadow .24s ease, transform .22s cubic-bezier(.2,.8,.2,1);
+}
+.app-shell[data-accent] .stat-card:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--user-accent) 22%, transparent); }
+.app-shell[data-accent] .icon-button:hover { color: var(--user-accent); border-color: color-mix(in srgb, var(--user-accent) 15%, transparent); background: color-mix(in srgb, var(--user-accent) 7%, transparent); }
+.app-shell[data-accent] .playerbar {
+  box-shadow: 0 -14px 42px rgba(0,0,0,.22), 0 -5px 30px color-mix(in srgb, var(--user-accent) 8%, transparent), inset 0 1px 0 rgba(255,255,255,.035);
+}
+.app-shell[data-accent] .mobile-bottom-nav {
+  border-top-color: color-mix(in srgb, var(--user-accent) 20%, rgba(255,255,255,.1));
+  box-shadow: 0 -12px 36px rgba(0,0,0,.2), 0 -4px 24px color-mix(in srgb, var(--user-accent) 7%, transparent);
+}
+.app-shell[data-accent] .mobile-nav-item.nav-active {
+  color: var(--user-accent);
+  background: color-mix(in srgb, var(--user-accent) 10%, transparent);
+  box-shadow: 0 5px 20px color-mix(in srgb, var(--user-accent) 5%, transparent);
+}
+.app-shell[data-accent] .mobile-player-expanded {
+  background: radial-gradient(ellipse at 50% 8%, color-mix(in srgb, var(--user-accent) 28%, transparent), transparent 72%), linear-gradient(160deg,#1b151f 0%,#0b0a0f 72%);
+}
+.app-shell[data-accent] .mobile-player-expanded::before { background: radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--user-accent) 16%, transparent), transparent 72%); }
+.app-shell[data-accent] .expanded-meta strong { color: #fff; }
+.app-shell[data-accent] .expanded-close { color: var(--user-accent); border-color: color-mix(in srgb, var(--user-accent) 22%, transparent); }
+.app-shell[data-accent] .login-button,
+.login-shell[data-accent] .primary-button { box-shadow: 0 7px 24px color-mix(in srgb, var(--user-accent) 18%, transparent), inset 0 1px 0 rgba(255,255,255,.2); }
+@media (prefers-reduced-motion: reduce) {
+  .app-shell[data-accent] .content-wrap.view-entering > *,
+  .app-shell[data-accent] .nav-item,
+  .app-shell[data-accent] .mobile-nav-item,
+  .app-shell[data-accent] .settings-card,
+  .app-shell[data-accent] .stat-card,
+  .app-shell[data-accent] .track-row,
+  .app-shell[data-accent] .section-glyph {
+    animation: none !important;
+    transition: none !important;
+    filter: none !important;
+    transform: none !important;
+  }
+}
+
+
+/* The animated YouTube glow also follows the selected accent instead of a fixed rose keyframe. */
+.app-shell[data-accent] .youtube-hero-orb {
+  animation: selfmusic-accent-orb-breathe 9s ease-in-out infinite;
+}
+@keyframes selfmusic-accent-orb-breathe {
+  0%, 100% { box-shadow: 0 0 65px color-mix(in srgb, var(--user-accent) 7%, transparent); }
+  50% { box-shadow: 0 0 95px color-mix(in srgb, var(--user-accent) 15%, transparent); }
+}
