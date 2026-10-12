@@ -416,6 +416,11 @@ function App() {
   const [accountMessage, setAccountMessage] = useState("");
   const [accountMessageError, setAccountMessageError] = useState(false);
   const [libraryFilters, setLibraryFilters] = useState({ artist: "", album: "", year: "", genre: "", duration: "all", sort: "artist" });
+  const [duplicateGroups, setDuplicateGroups] = useState([]);
+  const [duplicateLoading, setDuplicateLoading] = useState(false);
+  const [duplicateMessage, setDuplicateMessage] = useState("");
+  const [duplicateMessageError, setDuplicateMessageError] = useState(false);
+
 
   const [playerSettings, setPlayerSettings] = useState({ transcodingEnabled: false, formats: ["original"], defaultBitrate: "192k", bitrates: ["128k", "192k"] });
   const [streamFormat, setStreamFormat] = useState(() => readLocalJson("selfmusic:stream-quality:v1", {}).format || "original");
@@ -692,6 +697,12 @@ function App() {
         } else if (active) {
           setAdminUsers([]);
         }
+        if (user.role === "admin") {
+          const duplicatesResponse = await fetch("/api/duplicates", { credentials: "same-origin", cache: "no-store" });
+          if (active && duplicatesResponse.ok) setDuplicateGroups((await duplicatesResponse.json()).groups || []);
+        } else if (active) {
+          setDuplicateGroups([]);
+        }
 
         let favoriteResponse = await fetch("/api/favorites", { credentials: "same-origin", cache: "no-store" });
         let favoriteBody = favoriteResponse.ok ? await favoriteResponse.json() : { tracks: [] };
@@ -907,6 +918,58 @@ function App() {
     setLastFmStatus({ configured: Boolean(lastFmStatus.configured), connected: false, account: null });
     setLastFmMessage("Last.fm disconnected.");
   }, [lastFmStatus.configured]);
+
+  const refreshDuplicates = useCallback(async () => {
+    setDuplicateLoading(true);
+    setDuplicateMessage("");
+    try {
+      const response = await fetch("/api/duplicates", { credentials: "same-origin", cache: "no-store" });
+      if (!response.ok) throw new Error(await readMessage(response));
+      const body = await response.json();
+      setDuplicateGroups(body.groups || []);
+    } catch (error) {
+      setDuplicateMessage(error.message || "Could not scan for duplicates.");
+      setDuplicateMessageError(true);
+    } finally {
+      setDuplicateLoading(false);
+    }
+  }, []);
+
+  const mergeDuplicateGroup = useCallback(async (group) => {
+    if (!group.tracks || group.tracks.length < 2) return;
+    const keeper = group.tracks[0];
+    if (!window.confirm("Keep “" + keeper.title + "” and remove " + (group.tracks.length - 1) + " identical files? Favorites, playlists, and listening history will be moved to the retained track.")) return;
+    setDuplicateMessage("");
+    try {
+      const response = await fetch("/api/duplicates/merge", {
+        method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ keepId: keeper.id, duplicateIds: group.tracks.slice(1).map((track) => track.id) }),
+      });
+      if (!response.ok) throw new Error(await readMessage(response));
+      const body = await response.json();
+      setDuplicateMessage("Merged " + body.removed + " duplicate files.");
+      setDuplicateMessageError(false);
+      await Promise.all([refreshDuplicates(), loadTracks()]);
+    } catch (error) {
+      setDuplicateMessage(error.message || "Could not merge these duplicates.");
+      setDuplicateMessageError(true);
+    }
+  }, [loadTracks, refreshDuplicates]);
+
+  const deleteDuplicate = useCallback(async (track) => {
+    if (!window.confirm("Permanently delete “" + track.title + "” from disk? This cannot be undone.")) return;
+    setDuplicateMessage("");
+    try {
+      const response = await fetch("/api/duplicates/" + encodeURIComponent(track.id), { method: "DELETE", credentials: "same-origin" });
+      if (!response.ok) throw new Error(await readMessage(response));
+      setDuplicateMessage("Deleted duplicate file.");
+      setDuplicateMessageError(false);
+      await Promise.all([refreshDuplicates(), loadTracks()]);
+    } catch (error) {
+      setDuplicateMessage(error.message || "Could not delete this file.");
+      setDuplicateMessageError(true);
+    }
+  }, [loadTracks, refreshDuplicates]);
 
   const createAccount = useCallback(async (event) => {
     event.preventDefault();
@@ -1938,6 +2001,39 @@ function App() {
                   )}
                   {!lastFmStatus.configured && <p className="settings-footnote">The server owner must set <code>LASTFM_API_KEY</code>, <code>LASTFM_API_SECRET</code>, and a callback URL in <code>.env</code>.</p>}
                 </div>
+
+                {profile.role === "admin" && (
+                  <div className="settings-card settings-card-wide duplicate-manager">
+                    <div className="settings-card-head"><span className="settings-icon"><Copy size={19} /></span><span className="settings-overline">LIBRARY INTEGRITY</span></div>
+                    <h3>Duplicate audio files</h3>
+                    <p>Files are grouped only when their SHA-256 hashes match exactly. Merging transfers favorites, playlists and history to the retained track before deleting duplicate files.</p>
+                    <div className="duplicate-toolbar">
+                      <span className="settings-footnote">{duplicateGroups.length} duplicate groups</span>
+                      <button className="settings-action duplicate-refresh" type="button" disabled={duplicateLoading} onClick={refreshDuplicates}><RefreshCw size={15} className={duplicateLoading ? "spin" : ""} /> Scan for duplicates</button>
+                    </div>
+                    {duplicateMessage && <p className={duplicateMessageError ? "form-error" : "settings-footnote"} role="status">{duplicateMessage}</p>}
+                    {duplicateGroups.length ? (
+                      <div className="duplicate-groups">
+                        {duplicateGroups.map((group) => (
+                          <div className="duplicate-group" key={group.sha256}>
+                            <div className="duplicate-group-heading">
+                              <div><strong>{group.count} identical files</strong><small>SHA-256: {group.sha256}</small></div>
+                              <button className="primary-button" type="button" onClick={() => mergeDuplicateGroup(group)}><Copy size={14} /> Keep first, merge</button>
+                            </div>
+                            {group.tracks.map((track, index) => (
+                              <div className="admin-user-row duplicate-track-row" key={track.id}>
+                                <div><strong>{track.title}</strong><small>{track.artist} · {track.album} · {track.path}</small></div>
+                                <span className="duplicate-size">{index === 0 ? "Keep" : (Number(track.bytes) / 1024 / 1024).toFixed(1) + " MB"}</span>
+                                {index > 0 && <button className="icon-button" type="button" title="Delete this duplicate" aria-label={"Delete duplicate " + track.title} onClick={() => deleteDuplicate(track)}><Trash2 size={15} /></button>}
+                                {index === 0 && <span className="duplicate-retained"><Check size={14} /> Primary</span>}
+                              </div>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    ) : <p className="settings-footnote">No identical files found in the indexed library. Run a scan after importing music to update the result.</p>}
+                  </div>
+                )}
 
                 {profile.role === "admin" && (
                   <div className="settings-card settings-card-wide">
