@@ -204,7 +204,7 @@ case "$ACTION" in
       exit 1
     fi
     if ! tailscale ip -4 >/dev/null 2>&1; then
-      yellow "Connect this computer to Tailscale first with: sudo tailscale up"
+      yellow "Start/connect Tailscale first: sudo systemctl start tailscaled && sudo tailscale up"
       exit 1
     fi
     if ! health_ok; then start_server; fi
