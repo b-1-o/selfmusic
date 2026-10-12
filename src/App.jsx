@@ -253,7 +253,7 @@ function Cover({ track, large = false }) {
   );
 }
 
-const TrackRow = React.memo(function TrackRow({ track, index, active, playing, favorite, onPlay, onFavorite, onDelete, deleting }) {
+const TrackRow = React.memo(function TrackRow({ track, index, active, playing, favorite, onPlay, onFavorite, onDelete, deleting, canManage = true }) {
   return (
     <div className={"track-row" + (active ? " track-row-active" : "")}>
       <button className="track-index" aria-label={"Play " + track.title} onClick={() => onPlay(track)}>
@@ -275,16 +275,18 @@ const TrackRow = React.memo(function TrackRow({ track, index, active, playing, f
       >
         <Heart size={17} fill={favorite ? "currentColor" : "none"} />
       </button>
-      <button
-        className="icon-button track-delete"
-        type="button"
-        disabled={deleting}
-        aria-label={"Delete " + track.title + " from the server"}
-        title="Permanently delete this audio file from the server"
-        onClick={() => onDelete(track)}
-      >
-        {deleting ? <RefreshCw size={16} className="spin" /> : <Trash2 size={16} />}
-      </button>
+      {canManage && (
+        <button
+          className="icon-button track-delete"
+          type="button"
+          disabled={deleting}
+          aria-label={"Delete " + track.title + " from the server"}
+          title="Permanently delete this audio file from the server"
+          onClick={() => onDelete(track)}
+        >
+          {deleting ? <RefreshCw size={16} className="spin" /> : <Trash2 size={16} />}
+        </button>
+      )}
       <span className="track-duration">—:—</span>
     </div>
   );
@@ -1235,9 +1237,11 @@ function App() {
             <button className={view === "library" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("library"); setMobileMenuOpen(false); }}>
               <SectionGlyph kind="library" size={19} /> <span>Library</span><span className="nav-count">{tracks.length}</span>
             </button>
-            <button className={view === "import" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("import"); setMobileMenuOpen(false); }}>
-              <SectionGlyph kind="import" size={19} /> <span>Import music</span>
-            </button>
+            {profile.role === "admin" && (
+              <button className={view === "import" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("import"); setMobileMenuOpen(false); }}>
+                <SectionGlyph kind="import" size={19} /> <span>Import music</span>
+              </button>
+            )}
             <button className={view === "favorites" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("favorites"); setMobileMenuOpen(false); }}>
               <SectionGlyph kind="liked" size={19} /> <span>Liked tracks</span>
             </button>
@@ -1282,7 +1286,7 @@ function App() {
               {query && <button className="search-clear" onClick={() => setQuery("")} aria-label="Clear search"><X size={14} /></button>}
               <kbd>⌘ K</kbd>
             </label>
-            <div className="avatar-pill"><span className="avatar-glyph">S</span><span>My server</span></div>
+            <div className="avatar-pill"><span className="avatar-glyph">{String(profile.username || "S").slice(0, 1).toUpperCase()}</span><span>{profile.username || "My server"}</span></div>
           </div>
         </header>
 
@@ -1341,6 +1345,7 @@ function App() {
                   emptyTitle={query ? "No matches found" : "Your first track is waiting"}
                   emptyCopy={query ? "Try another title, artist, or album name." : "Put your own music files in the server's music folder, then refresh the library."}
                   onSettings={() => setView("settings")}
+                  canManage={profile.role === "admin"}
                 />
               </section>
             </>
@@ -1380,6 +1385,7 @@ function App() {
                 emptyTitle={view === "favorites" ? "Nothing liked yet" : query ? "No matches found" : "Your library is empty"}
                 emptyCopy={view === "favorites" ? "Tap the heart beside any track to keep it here." : "Add audio files to your server's music folder, then refresh."}
                 onSettings={() => setView("settings")}
+                canManage={profile.role === "admin"}
               />
             </section>
           )}
@@ -1638,7 +1644,7 @@ function App() {
             </section>
           )}
 
-          {view === "import" && (
+          {view === "import" && profile.role === "admin" && (
             <section className="page-section import-page">
               <div className="page-intro">
                 <div className="intro-icon"><SectionGlyph kind="import" size={29} /></div>
@@ -2015,6 +2021,7 @@ function TrackList({
   emptyTitle,
   emptyCopy,
   onSettings,
+  canManage = true,
 }) {
   if (loading && !tracks.length) {
     return <div className="empty-state"><RefreshCw size={23} className="spin" /><h3>Finding your music</h3><p>Scanning the library on your home server.</p></div>;
@@ -2052,6 +2059,7 @@ function TrackList({
           onFavorite={onFavorite}
           onDelete={onDelete}
           deleting={deletingTrackId === track.id}
+          canManage={canManage}
         />
       ))}
     </div>
