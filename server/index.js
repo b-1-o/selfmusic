@@ -47,7 +47,7 @@ app.use((req, res, next) => {
 });
 
 function isConfigured() {
-  return typeof process.env.SELF_MUSIC_PASSWORD === "string" && process.env.SELF_MUSIC_PASSWORD.length >= 12;
+  return typeof process.env.SELF_MUSIC_PASSWORD === "string" && process.env.SELF_MUSIC_PASSWORD.length >= 12 && !process.env.SELF_MUSIC_PASSWORD.toLowerCase().includes("replace-with");
 }
 
 function constantTimeTextCompare(left, right) {
