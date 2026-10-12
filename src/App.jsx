@@ -1204,9 +1204,9 @@ function App() {
                 <div className="settings-card">
                   <div className="settings-card-head"><span className="settings-icon settings-icon-blue"><Globe2 size={19} /></span><span className="settings-overline">REMOTE ACCESS</span></div>
                   <h3>Listen outside your Wi-Fi</h3>
-                  <p>Use an HTTPS tunnel and add an access policy. Do not expose this server directly to the public internet or forward its port on your router.</p>
-                  <a className="settings-action settings-link" href="https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/" target="_blank" rel="noreferrer">Cloudflare Tunnel guide <ArrowUpRight size={15} /></a>
-                  <div className="info-note"><ShieldCheck size={16} /><span>The tunnel must stay running, and your home computer must stay on.</span></div>
+                  <p>Set up Tailscale on this computer and your phone. No router port forwarding and no shared auth key are needed for the normal native setup.</p>
+                  <button className="settings-action" type="button" onClick={() => setRemoteWizardOpen(true)}><Smartphone size={15} /> Open setup wizard <ArrowUpRight size={15} /></button>
+                  {networkAddresses.tailscale.length > 0 && <div className="info-note"><ShieldCheck size={16} /><span>Tailscale detected: {networkAddresses.tailscale[0]}</span></div>}
                 </div>
 
                 <div className="settings-card settings-card-wide">
