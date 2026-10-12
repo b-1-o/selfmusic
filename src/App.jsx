@@ -1269,6 +1269,37 @@ function App() {
         </div>
       </main>
 
+      {remoteWizardOpen && (
+        <div className="remote-wizard-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeRemoteWizard(); }}>
+          <section className="remote-wizard" role="dialog" aria-modal="true" aria-labelledby="remote-wizard-title">
+            <div className="remote-wizard-head">
+              <div className="remote-wizard-brand"><span className="remote-wizard-icon"><Globe2 size={19} /></span><span>PRIVATE REMOTE ACCESS</span></div>
+              <button className="icon-button remote-wizard-close" type="button" onClick={closeRemoteWizard} aria-label="Close setup wizard"><X size={19} /></button>
+            </div>
+            <h2 id="remote-wizard-title">Take your music with you.</h2>
+            <p className="remote-wizard-intro">Your computer keeps the original files. Tailscale connects your phone to it privately, without opening ports on your router.</p>
+            <div className="remote-wizard-steps">
+              <div className="remote-wizard-step"><span>1</span><div><strong>Install Tailscale on this computer</strong><p>Sign in to your Tailscale account. On Linux, make sure the system service is running.</p><a href={TAILSCALE_DOWNLOAD_URL} target="_blank" rel="noreferrer">Get Tailscale for desktop <ArrowUpRight size={14} /></a></div></div>
+              <div className="remote-wizard-step"><span>2</span><div><strong>Install it on your phone</strong><p>Open the official download page, install the app, and sign in to the same account as your computer.</p><a href={TAILSCALE_DOWNLOAD_URL} target="_blank" rel="noreferrer">Open phone download page <ArrowUpRight size={14} /></a></div></div>
+              <div className="remote-wizard-step"><span>3</span><div><strong>Enable private HTTPS</strong><p>On the computer, run <code>selfmusic remote</code>. Tailscale may ask you to enable MagicDNS and HTTPS certificates.</p><button className="text-button wizard-copy-command" type="button" onClick={() => copyText("selfmusic remote")}><Copy size={14} /> Copy command</button></div></div>
+            </div>
+            <div className="remote-wizard-addresses">
+              <div className="remote-address-title"><div><strong>Your connection addresses</strong><span>Refresh after Tailscale connects</span></div><button className="ghost-button" type="button" onClick={refreshNetworkAddresses} disabled={networkLoading}>{networkLoading ? <RefreshCw size={14} className="spin" /> : <RefreshCw size={14} />} Check connection</button></div>
+              {networkError && <p className="remote-address-error">{networkError}</p>}
+              {networkAddresses.tailscale.length > 0 ? networkAddresses.tailscale.map((ip) => (
+                <div className="remote-address-row" key={ip}><div><span className="remote-address-kind"><ShieldCheck size={14} /> Tailscale</span><strong>http://{ip}:{window.location.port || "8787"}</strong></div><button className="icon-button" type="button" onClick={() => copyText("http://" + ip + ":" + (window.location.port || "8787"))} aria-label={"Copy Tailscale address " + ip}><Copy size={16} /></button></div>
+              )) : (
+                <div className="remote-address-row remote-address-pending"><div><span className="remote-address-kind"><RefreshCw size={14} /> Waiting for Tailscale</span><strong>No Tailscale IP detected on this server yet.</strong></div></div>
+              )}
+              {networkAddresses.local.slice(0, 2).map((ip) => (
+                <div className="remote-address-row" key={ip}><div><span className="remote-address-kind"><Smartphone size={14} /> Same Wi-Fi only</span><strong>http://{ip}:{window.location.port || "8787"}</strong></div><button className="icon-button" type="button" onClick={() => copyText("http://" + ip + ":" + (window.location.port || "8787"))} aria-label={"Copy local address " + ip}><Copy size={16} /></button></div>
+              ))}
+            </div>
+            <div className="remote-wizard-footer"><span><ShieldCheck size={15} /> Never forward port 8787 publicly.</span><button className="primary-button" type="button" onClick={closeRemoteWizard}>Got it <Check size={16} /></button></div>
+          </section>
+        </div>
+      )}
+
       <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
         <button className={view === "home" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("home")}><Home size={19} /><span>Home</span></button>
         <button className={view === "library" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("library")}><Library size={19} /><span>Library</span></button>
