@@ -2656,3 +2656,33 @@ html, body, #root {
   .duplicate-track-row { grid-template-columns:minmax(0,1fr) 67px 30px; gap:7px; }
   .duplicate-group-heading small { max-width:100%; }
 }
+
+
+/* YouTube download queue progress */
+.youtube-download-button {
+  display:inline-flex; align-items:center; justify-content:center; gap:9px;
+  width:100%; min-height:41px; margin-top:12px; padding:0 13px;
+  color:var(--text); background:color-mix(in srgb,var(--user-accent) 15%,transparent);
+  border:1px solid color-mix(in srgb,var(--user-accent) 32%,transparent); border-radius:10px;
+  font-size:11px; font-weight:650; cursor:pointer; transition:background .18s ease,transform .18s ease;
+}
+.youtube-download-button:hover:not(:disabled) { background:color-mix(in srgb,var(--user-accent) 24%,transparent); transform:translateY(-1px); }
+.youtube-download-button:disabled { opacity:.5; cursor:not-allowed; }
+.youtube-result-duration { align-self:flex-start; margin-top:2px; padding:3px 5px; color:#f7f6fa; background:rgba(0,0,0,.62); border-radius:4px; font:9px "DM Mono",monospace; }
+.youtube-job-progress {
+  margin:15px 0; padding:13px 14px; color:var(--text);
+  background:rgba(255,255,255,.025); border:1px solid var(--line-strong); border-radius:12px;
+}
+.youtube-job-progress-head { display:grid; grid-template-columns:27px minmax(0,1fr) auto; align-items:center; gap:9px; margin-bottom:11px; }
+.youtube-job-progress-head strong, .youtube-job-progress-head small { display:block; }
+.youtube-job-progress-head strong { font-size:11px; }
+.youtube-job-progress-head small { margin-top:4px; color:var(--muted); font-size:10px; overflow-wrap:anywhere; }
+.youtube-job-progress-head b { font:11px "DM Mono",monospace; color:var(--muted); }
+.youtube-job-icon { display:grid; place-items:center; width:27px; height:27px; color:var(--user-accent); background:color-mix(in srgb,var(--user-accent) 12%,transparent); border-radius:8px; }
+.youtube-job-failed { border-color:rgba(220,85,103,.35); }
+.youtube-job-failed .youtube-job-icon { color:#e47886; }
+.app-shell[data-theme="light"] .youtube-job-progress { background:rgba(255,255,255,.7); }
+@media (max-width:760px) {
+  .youtube-download-button { min-height:44px; }
+  .youtube-job-progress { padding:11px; }
+}
