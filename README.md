@@ -1,174 +1,237 @@
 # SelfMusic
 
-SelfMusic is a personal, self-hosted music player. Your music files stay on your own computer; the phone or browser acts as a remote player.
+SelfMusic is a self-hosted music server with a personal library, streaming,
+and a small web player. Files stay on your own computer; you can stream them
+from any device on your network or through a tunnel you control.
 
-**Current status:** early MVP (0.1.0). This repository contains the first working app skeleton, server authentication, folder scanning, byte-range audio streaming, a responsive web player, and an installable PWA shell. It has not yet been tested on every phone/browser combination.
+## Features
 
-## What is included
-
-- Mobile-first web player with play/pause, previous/next, seeking, volume, shuffle, repeat, and liked tracks.
-- Media Session integration for track metadata and lock-screen / headset controls when supported by the browser and operating system.
-- Node.js server that scans a music folder and streams files with HTTP Range support.
-- Password-protected library and audio endpoints, signed session cookies, login throttling, and basic security headers.
-- Responsive interface and PWA manifest. Static app-shell assets can be cached; audio and authenticated API responses are deliberately not cached.
-- Album-folder artwork when a file named **cover.jpg**, **cover.jpeg**, **cover.png**, **cover.webp**, **folder.jpg**, **folder.jpeg**, **folder.png**, or **folder.webp** sits alongside tracks.
-
-## Important architecture notes
-
-A browser page cannot silently become a persistent server process, open an arbitrary listening port, or browse any folder on your computer without permission. For that reason, SelfMusic has two parts:
-
-1. **Home server:** a small Node.js process runs on the computer/NAS that stores your audio. Node.js is available for Windows, macOS, and Linux.
-2. **Web client:** open the web app from your phone or another computer. Install it to the home screen where the platform supports it.
-
-The server must be running and the home computer must have internet access for remote streaming. A phone and server do **not** need to be on the same Wi-Fi once remote access is configured.
+* Personal music library scanned from a local folder.
+* Streaming with HTTP range requests (seek, resume, gapless-friendly).
+* Simple playlist, favorites, and "now playing" bar.
+* Upload audio files from a device through the web UI.
+* Import a single track from a direct HTTPS audio URL.
+* **Download a YouTube video's audio to MP3 and add it to the library.**
+* Optional YouTube search using the official YouTube Data API v3.
+* Password-protected server with HMAC-signed session cookies.
 
 ## Requirements
 
-- Node.js 20.19 or later and npm.
-- Your own audio files that you are allowed to store and play.
-- For remote listening: a private network overlay such as Tailscale, or an HTTPS tunnel with an access policy.
+* **Node.js** 20 or later.
+* **npm** 10 or later.
+* A music folder on the same machine as the server.
+* For **YouTube → MP3 downloads**: `yt-dlp` and `ffmpeg` installed on the
+  server (see the YouTube section below).
 
-## Run the home server
+## Setup
 
-### 1. Get the code and install dependencies
+1. Clone the repository and install dependencies:
 
-~~~sh
-git clone https://github.com/b-1-o/selfmusic.git
-cd selfmusic
-npm install
-~~~
+   ```bash
+   git clone https://github.com/b-1-o/selfmusic.git
+   cd selfmusic
+   npm install
+   ```
 
-### 2. Create your configuration
+2. Create `.env` from `.env.example` and set at least:
 
-Create a file named **.env** in the project root using your editor (for example, `zed .env` on Linux/macOS or `notepad .env` on Windows). Put these settings in the file, then replace both placeholder values before starting the server:
+   ```
+   SELF_MUSIC_PASSWORD=your-strong-password-here
+   SESSION_SECRET=replace-with-a-random-string-of-at-least-32-characters
+   MUSIC_DIR=music
+   PORT=8787
 
-~~~dotenv
-SELF_MUSIC_PASSWORD=replace-this-with-your-own-unique-password
-SESSION_SECRET=replace-this-with-a-random-secret
-MUSIC_DIR=./music
-PORT=8787
-NODE_ENV=development
-YOUTUBE_API_KEY=
-~~~
+   # Optional
+   YOUTUBE_API_KEY=
+   YOUTUBE_MAX_DURATION_SECONDS=3600
+   ```
 
-- **SELF_MUSIC_PASSWORD:** use your own unique password of at least 12 characters.
-- **SESSION_SECRET:** generate a random secret with Node.js, then paste the output after `SESSION_SECRET=`:
+   * **SELF_MUSIC_PASSWORD:** login password for the web UI; at least 12
+     characters.
+   * **SESSION_SECRET:** random string of 32+ characters; keeps sessions
+     valid across server restarts. Generate with
+     `openssl rand -hex 32`.
+   * **MUSIC_DIR:** folder scanned for audio files, relative to the project
+     root or an absolute path.
+   * **PORT:** HTTP port for the server.
+   * **YOUTUBE_API_KEY:** optional; enables YouTube search on the Explore
+     page.
+   * **YOUTUBE_MAX_DURATION_SECONDS:** optional; maximum length in seconds
+     for a YouTube download (default 3600 = 60 minutes).
 
-~~~sh
-node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
-~~~
+3. Run in development:
 
-- **MUSIC_DIR:** the folder containing your music. By default it is **./music** inside the project.
-- **YOUTUBE_API_KEY:** optional; leave it empty unless you enable YouTube search.
+   ```bash
+   npm run dev
+   ```
 
-Do not commit **.env** or put secrets in client-side code. The repository ignores local environment files and the default **music/** folder.
+   The Vite dev server runs on `http://localhost:5173` and proxies API calls
+   to the Node server on `http://localhost:8787`.
 
-### 3. Add music and build
+4. Build for production and run:
 
-Create the music folder if necessary and copy your audio files into it. Subfolders are supported.
+   ```bash
+   npm run build
+   NODE_ENV=production npm start
+   ```
 
-~~~sh
-npm run build
-npm start
-~~~
+   The Node server serves the built frontend and the API on the same port.
 
-Open **http://localhost:8787** on the same computer. The first-run screen explains the configuration state; after setting a password and restarting the server, sign in.
+## Music folder layout
 
-To develop the UI locally instead, use **npm run dev**. Vite serves the client and proxies API requests to port 8787.
+SelfMusic scans `MUSIC_DIR` recursively. Subfolders become albums (or
+artist/album paths); the leaf filename becomes the track title. Supported
+extensions:
 
-### Alternative: Docker Compose
+```
+.mp3  .m4a  .aac  .flac  .wav  .ogg  .opus  .webm
+```
 
-If Docker Desktop (Windows/macOS) or Docker Engine (Linux) is already installed, you can run the server as a container. Keep the host port loopback-only unless you have deliberately configured a private network or firewall rule.
+Cover art is picked from the same folder as the track, using the first file
+found among:
 
-~~~sh
-mkdir -p music
-# Make sure .env exists and has your own SELF_MUSIC_PASSWORD and SESSION_SECRET.
-docker compose up --build -d
-~~~
+```
+cover.webp  cover.jpg  cover.jpeg  cover.png
+folder.webp folder.jpg folder.jpeg folder.png
+```
 
-On Windows PowerShell, create **.env** as described in step 2 and create the music folder in File Explorer if needed. Then open **http://localhost:8787**. Use `docker compose logs -f selfmusic` to inspect startup logs and `docker compose down` to stop the container. The provided Compose file binds the port to localhost by default, so a tunnel running on that same host can reach it.
+Everything you upload or download through the web UI lands in
+`MUSIC_DIR/Uploads`.
 
-## Listen away from home
+## Importing music
 
-Do not simply port-forward port 8787 to the public internet.
+### Upload audio files
 
-### Option A: private access with Tailscale
+Choose up to 20 audio files at once from your device. Each file can be up to
+250 MB. Files are streamed to the server and saved directly to
+`MUSIC_DIR/Uploads`.
 
-Install Tailscale on the home server and your phone, sign both devices into the same tailnet, and access the server by its tailnet address. Keep the SelfMusic password enabled. This is best for a personal library when installing the companion network app on each device is acceptable.
+### Import by direct audio URL (legacy)
 
-### Option B: HTTPS tunnel
+The Import music page also accepts a direct HTTPS URL that returns an audio
+file. Paste a download URL — for example, a public MP3/FLAC download URL
+from a creator or store that permits saving the file — then choose
+**Import URL**. The server downloads it to `MUSIC_DIR/Uploads` and refreshes
+the library.
 
-Use a tunnel provider to route a hostname to the local SelfMusic server. For example, Cloudflare Tunnel documentation is here:
+For safety, the importer only follows a small number of HTTPS redirects,
+rejects local/private IP addresses, checks the resolved public hostname on
+each redirect, accepts supported audio formats only, and limits downloads
+to 250 MB. It does not accept arbitrary web pages or links that require
+interactive sign-in/cookies. A URL must be a direct downloadable audio
+asset that you are authorized to save. Some providers use expiring or
+protected links, so not every URL will work.
 
-- https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/
+**For YouTube links, see the next section instead.**
 
-Configure an access/login policy for the hostname as an additional layer, use HTTPS, and keep the SelfMusic password enabled too. A public hostname alone is not an access policy. Do not publish this server without authentication.
+## YouTube
 
-For either option, the home machine must stay on, SelfMusic must stay running, and the internet connection must be available. Remote audio uses the same authenticated streaming endpoint as local audio.
+SelfMusic has two separate YouTube features.
 
-## Phone / lock-screen playback
+### 1. Search and watch (Explore YouTube)
 
-Open the app in a browser that supports web audio and Media Session controls, start a track, and then lock the screen. On supported combinations, the operating system can show the track name and provide play/pause/skip controls.
+The **Explore YouTube** page searches embeddable videos through the
+official YouTube Data API v3 and plays a selected result in YouTube's
+visible embedded player. Search results are only kept in page memory; the
+server does not cache or save audiovisual content. To enable search:
 
-Support is controlled by the browser and operating system, not solely by the app. iOS Safari, installed web apps, and other mobile browsers may behave differently across versions. Test on your actual phone before relying on uninterrupted background playback. The PWA shell alone does not make audio play offline.
-
-## Import audio files into your home library
-
-After signing in, open **Import music** in the sidebar (or mobile navigation), choose one or more audio files from the device you are using, then press **Import selected tracks**. Drag-and-drop is also supported on desktop browsers.
-
-Uploads are saved on the home server in `MUSIC_DIR/Uploads` (by default `./music/Uploads`) and appear in the regular library after scanning. The server accepts MP3, M4A, AAC, FLAC, WAV, OGG, OPUS, and WebM audio files. Up to 20 files can be uploaded in a batch, with a 250 MB limit per file. The upload view shows transfer progress.
-
-This is also how you can add audio purchased from artists or downloaded from websites that explicitly provide downloadable files. For example, Bandcamp lets you download purchases in formats including MP3 and FLAC; its help guide explains where to get purchase downloads:
-
-- https://get.bandcamp.help/en/articles/15263100-where-do-i-download-my-purchase
-
-For public collections such as Internet Archive, check each item’s permissions and whether a download is offered; not every item is downloadable or licensed for every use:
-
-- https://archivesupport.zendesk.com/hc/en-us/articles/360016398872-Downloading-A-Basic-Guide
-
-Keep the downloaded audio files on the device that has them, then upload them to SelfMusic. This MVP does not scrape third-party sites or fetch arbitrary URLs; that avoids importing content without authorization and prevents unsafe server-side URL fetching.
-
-### Import by direct audio URL
-
-The Import music page also accepts a direct HTTPS URL that returns an audio file. Paste a download URL (for example, a public MP3/FLAC download URL from a creator or store that permits saving the file), then choose **Import URL**. The server downloads it to `MUSIC_DIR/Uploads` and refreshes the library.
-
-For safety, the importer only follows a small number of HTTPS redirects, rejects local/private IP addresses, checks the resolved public hostname on each redirect, accepts supported audio formats only, and limits downloads to 250 MB. It does not accept YouTube watch-page URLs, arbitrary web pages, or links that require interactive sign-in/cookies. A URL must be a direct downloadable audio asset that you are authorized to save. Some providers use expiring or protected links, so not every URL will work.
-
-## YouTube discovery
-
-The **Explore YouTube** page searches embeddable videos through the official YouTube Data API v3 and plays a selected result in YouTube's visible embedded player. Search results are only kept in page memory; the server does not cache or save audiovisual content.
-
-To enable search:
-
-1. Create an API key in the [Google Cloud Console](https://console.cloud.google.com/apis/credentials).
+1. Create an API key in the
+   [Google Cloud Console](https://console.cloud.google.com/apis/credentials).
 2. Enable **YouTube Data API v3** for that project.
-3. Put the key in the home server's local `.env` file as `YOUTUBE_API_KEY=your-key`.
-4. Restrict the key to the YouTube Data API v3 where possible, then restart SelfMusic.
+3. Put the key in the home server's local `.env` file as
+   `YOUTUBE_API_KEY=your-key`.
+4. Restrict the key to the YouTube Data API v3 where possible, then restart
+   SelfMusic.
 
 Keep this key on the server; do not put it in React or commit it to GitHub.
 
-**YouTube is for visible video playback only.** This feature does not download tracks, extract audio, cache videos, or provide background/lock-screen audio from YouTube. YouTube's developer policies prohibit downloading or storing audiovisual copies and background-player behavior through API clients without the required authorization. For lock-screen playback, add audio files that you own or are permitted to store to your local `music/` folder.
+### 2. Download audio as MP3
 
-## Supported file types
+The **Import music** page can save the audio track of a YouTube video to
+your library as an MP3 file. This is useful for archiving podcasts, talks,
+or music you are allowed to keep.
 
-The server recognizes MP3, M4A, AAC, FLAC, WAV, OGG, OPUS, and WebM audio extensions. Whether a specific codec can be played depends on the browser/device. This MVP reads titles from filenames and uses the parent folder as the artist label; embedded tag and artwork parsing is not implemented yet.
+**Requirements**
 
-## Current limitations / next milestones
+* `yt-dlp` installed on the server:
+  * **Arch / CachyOS:** `sudo pacman -S yt-dlp`
+  * **Debian / Ubuntu:** `sudo apt install yt-dlp`
+  * **macOS:** `brew install yt-dlp`
+* **FFmpeg** (needed by `yt-dlp` for MP3 conversion):
+  * **Arch / CachyOS:** `sudo pacman -S ffmpeg`
+  * **Debian / Ubuntu:** `sudo apt install ffmpeg`
+  * **macOS:** `brew install ffmpeg`
 
-- First-run setup still requires starting the home server once from a terminal. A browser-only server is not technically possible within normal browser security boundaries; a future cross-platform installer or container flow could make this easier.
-- No embedded ID3/FLAC tag parsing, automatic artwork lookup, playlists, album management, or listening-history sync yet.
-- Favorites and last-played track are currently saved in the browser's local storage, not synced between devices.
-- Media Session controls and lock-screen artwork vary by platform.
-- No server admin panel for arbitrary directory selection. Configure **MUSIC_DIR** on the server instead.
-- File upload supports up to 20 files per batch and 250 MB per file; direct URL import supports one direct HTTPS audio link at a time, up to 250 MB. Metadata/tag extraction and duplicate-content detection are not implemented yet.
+**How to use it**
 
-## Security checklist
+1. Open the **Import music** page.
+2. In the **Download from YouTube** panel, paste a link such as
+   `https://www.youtube.com/watch?v=...` or `https://youtu.be/...`.
+3. Click **Download MP3**. The file is saved to `MUSIC_DIR/Uploads` and
+   appears in your library right away.
 
-- Use a unique, strong SelfMusic password.
-- Configure **SESSION_SECRET** before remote use.
-- Use an HTTPS tunnel or private network overlay.
-- Add an access policy at the tunnel layer where available.
-- Keep **.env** private and keep the server updated.
-- Only store and stream music you have permission to use.
+Only `youtube.com`, `m.youtube.com`, `music.youtube.com`,
+`youtube-nocookie.com`, and `youtu.be` hosts are accepted. Duration is
+limited by `YOUTUBE_MAX_DURATION_SECONDS`.
 
-SelfMusic is a self-hosting project, not a commercial music catalogue or a streaming service that supplies tracks.
+**Optional: cookies for age-restricted or bot-checked videos**
+
+YouTube sometimes requires a signed-in session. To handle those cases:
+
+1. Install a browser extension such as **Get cookies.txt LOCALLY**.
+2. Sign in to YouTube in the browser.
+3. Export cookies in **Netscape** format.
+4. Save the file as `cookies.txt` in the project root (next to `.env`).
+5. Restart the server. SelfMusic picks up the file automatically.
+
+**Never commit `cookies.txt`** — it is already listed in `.gitignore`.
+
+**Legal note**
+
+Only download content you are allowed to keep. Respect YouTube's Terms of
+Service and local copyright law.
+
+## Security notes
+
+* Passwords are compared in constant time after SHA-256 hashing.
+* Sessions use an HMAC-signed cookie with an expiry timestamp and are valid
+  for 7 days.
+* Login attempts are rate limited per IP address.
+* Upload paths are sanitized and kept inside `MUSIC_DIR/Uploads`.
+* Direct URL import and YouTube download never run as root and never accept
+  remote filenames as filesystem paths.
+* The server binds to `0.0.0.0`, so put it behind a reverse proxy with TLS
+  if you expose it beyond your local network.
+
+## Current limitations
+
+* No user accounts — a single shared password protects the whole library.
+* Streaming uses the source file's original codec; transcode-on-the-fly for
+  very large or unsupported formats is not implemented.
+* File upload supports up to 20 files per batch and 250 MB per file.
+  Direct URL import supports one direct HTTPS audio link at a time, up to
+  250 MB. YouTube download also produces one MP3 per request, up to
+  `YOUTUBE_MAX_DURATION_SECONDS` (default 60 minutes).
+* Metadata/tag extraction and duplicate-content detection are not
+  implemented yet.
+* No playlist persistence beyond the in-memory queue and favorites.
+
+## Project layout
+
+```
+.
+├── server/
+│   └── index.js          # Express API, auth, upload, import, YouTube download
+├── src/
+│   └── App.jsx           # React app: library, player, import panel
+├── music/                # MUSIC_DIR default (library root)
+│   └── Uploads/          # uploaded and downloaded files
+├── dist/                 # built frontend (after npm run build)
+├── .env.example
+├── package.json
+└── README.md
+```
+
+## License
+
+MIT. See `LICENSE` if present.
