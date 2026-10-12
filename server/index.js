@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import dns from "node:dns/promises";
 import https from "node:https";
 import net from "node:net";
+import os from "node:os";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,7 +13,7 @@ import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { create as createYoutubeDl } from "youtube-dl-exec";
 
-const youtubedl = createYoutubeDl("/usr/bin/yt-dlp");
+const youtubedl = createYoutubeDl(process.env.YT_DLP_PATH || (process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp"));
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 dotenv.config({ path: path.join(projectRoot, ".env") });
