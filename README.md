@@ -115,6 +115,21 @@ Open the app in a browser that supports web audio and Media Session controls, st
 
 Support is controlled by the browser and operating system, not solely by the app. iOS Safari, installed web apps, and other mobile browsers may behave differently across versions. Test on your actual phone before relying on uninterrupted background playback. The PWA shell alone does not make audio play offline.
 
+## YouTube discovery
+
+The **Explore YouTube** page searches embeddable videos through the official YouTube Data API v3 and plays a selected result in YouTube's visible embedded player. Search results are only kept in page memory; the server does not cache or save audiovisual content.
+
+To enable search:
+
+1. Create an API key in the [Google Cloud Console](https://console.cloud.google.com/apis/credentials).
+2. Enable **YouTube Data API v3** for that project.
+3. Put the key in the home server's local `.env` file as `YOUTUBE_API_KEY=your-key`.
+4. Restrict the key to the YouTube Data API v3 where possible, then restart SelfMusic.
+
+Keep this key on the server; do not put it in React or commit it to GitHub.
+
+**YouTube is for visible video playback only.** This feature does not download tracks, extract audio, cache videos, or provide background/lock-screen audio from YouTube. YouTube's developer policies prohibit downloading or storing audiovisual copies and background-player behavior through API clients without the required authorization. For lock-screen playback, add audio files that you own or are permitted to store to your local `music/` folder.
+
 ## Supported file types
 
 The server recognizes MP3, M4A, AAC, FLAC, WAV, OGG, OPUS, and WebM audio extensions. Whether a specific codec can be played depends on the browser/device. This MVP reads titles from filenames and uses the parent folder as the artist label; embedded tag and artwork parsing is not implemented yet.
