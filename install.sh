@@ -114,14 +114,16 @@ if command -v fish >/dev/null 2>&1; then
   fish -c 'fish_add_path -U "$HOME/.local/bin"' >/dev/null 2>&1 || true
 fi
 PROFILE_FILE="$HOME/.profile"
+if [ "$(uname -s)" = "Darwin" ]; then PROFILE_FILE="$HOME/.zprofile"; fi
 if ! grep -Fq '# SelfMusic user-bin PATH' "$PROFILE_FILE" 2>/dev/null; then
   printf '\n# SelfMusic user-bin PATH\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$PROFILE_FILE"
 fi
 
-APP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
-mkdir -p "$APP_DIR"
-APP_ENTRY="$APP_DIR/selfmusic.desktop"
-cat > "$APP_ENTRY" <<EOF
+if [ "$(uname -s)" != "Darwin" ]; then
+  APP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+  mkdir -p "$APP_DIR"
+  APP_ENTRY="$APP_DIR/selfmusic.desktop"
+  cat > "$APP_ENTRY" <<EOF
 [Desktop Entry]
 Version=1.0
 Type=Application
@@ -132,17 +134,18 @@ Icon=audio-x-generic
 Terminal=true
 Categories=AudioVideo;Audio;Player;
 EOF
-chmod 755 "$APP_ENTRY"
+  chmod 755 "$APP_ENTRY"
 
-DESKTOP_DIR=""
-if command -v xdg-user-dir >/dev/null 2>&1; then
-  DESKTOP_DIR="$(xdg-user-dir DESKTOP 2>/dev/null || true)"
-fi
-[ -n "$DESKTOP_DIR" ] || DESKTOP_DIR="$HOME/Desktop"
-if [ -d "$DESKTOP_DIR" ]; then
-  cp "$APP_ENTRY" "$DESKTOP_DIR/SelfMusic.desktop"
-  chmod 755 "$DESKTOP_DIR/SelfMusic.desktop"
-  green "Created a SelfMusic desktop shortcut."
+  DESKTOP_DIR=""
+  if command -v xdg-user-dir >/dev/null 2>&1; then
+    DESKTOP_DIR="$(xdg-user-dir DESKTOP 2>/dev/null || true)"
+  fi
+  [ -n "$DESKTOP_DIR" ] || DESKTOP_DIR="$HOME/Desktop"
+  if [ -d "$DESKTOP_DIR" ]; then
+    cp "$APP_ENTRY" "$DESKTOP_DIR/SelfMusic.desktop"
+    chmod 755 "$DESKTOP_DIR/SelfMusic.desktop"
+    green "Created a SelfMusic desktop shortcut."
+  fi
 fi
 
 green "Native SelfMusic setup completed. Docker is not required."
