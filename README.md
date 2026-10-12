@@ -14,7 +14,7 @@ from any device on your network or through a tunnel you control.
 * **Download a YouTube video's audio to MP3 and add it to the library.**
 * Optional YouTube search using the official YouTube Data API v3.
 * Password-protected server with HMAC-signed session cookies.
-* One-command setup with Docker Compose and private remote access through Tailscale.
+* One-command native setup, with optional Docker deployment and private remote access through Tailscale.
 
 ## Quick start
 
