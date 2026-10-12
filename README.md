@@ -135,6 +135,7 @@ Use this section when developing the app or when you prefer to start Node.js man
    LASTFM_API_KEY=
    LASTFM_API_SECRET=
    LASTFM_CALLBACK_URL=
+   ```
 
    * **SELF_MUSIC_PASSWORD:** legacy login password, at least 8 characters.
      Existing installations can continue using it.
