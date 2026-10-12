@@ -168,6 +168,15 @@ const migrations = [
       );
       CREATE INDEX lastfm_pending_expiry_idx ON lastfm_pending_auth(expires_at);
     `
+  },
+  {
+    version: 6,
+    name: "durable_youtube_job_options",
+    sql: `
+      ALTER TABLE youtube_jobs ADD COLUMN bitrate TEXT NOT NULL DEFAULT '192k';
+      ALTER TABLE youtube_jobs ADD COLUMN metadata_json TEXT;
+      ALTER TABLE youtube_jobs ADD COLUMN result_json TEXT;
+    `
   }
 ];
 
