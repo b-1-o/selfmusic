@@ -738,7 +738,6 @@ app.post("/api/youtube/download", requireAuth, async (req, res, next) => {
 
     const ytdlpCommon = {
       noWarnings: true,
-      noCheckCertificates: true,
       noPlaylist: true,
       verbose: true,
       forceIpv4: true,
@@ -796,6 +795,9 @@ app.post("/api/youtube/download", requireAuth, async (req, res, next) => {
         extractAudio: true,
         audioFormat: "mp3",
         audioQuality: 0,
+        writeThumbnail: true,
+        convertThumbnails: "jpg",
+        embedThumbnail: true,
         output: outputTemplate
       });
     } catch (error) {
