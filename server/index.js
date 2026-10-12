@@ -556,17 +556,27 @@ app.post("/api/import-url", requireAuth, async (req, res, next) => {
     });
   } catch (error) {
     if (targetPath && !targetCreated) await fs.promises.unlink(targetPath).catch(() => {});
-    if (["The source server timed out.", "This file is larger than the 250 MB limit."].includes(error.message) ||
-        error.message.startsWith("Paste a direct") ||
-        error.message.startsWith("That URL") ||
-        error.message.startsWith("For security") ||
-        error.message.startsWith("Only standard") ||
-        error.message.startsWith("The link") ||
-        error.message.startsWith("This link") ||
-        error.message.startsWith("The URL") ||
-        error.message.startsWith("The source") ||
-        error.message.startsWith("Could not choose")) {
-      return res.status(400).json({ error: "url_import_failed", message: error.message });
+    const message = String(error?.message || "Could not import this link.");
+    const expectedImportFailure =
+      ["The source server timed out.", "This file is larger than the 250 MB limit."].includes(message) ||
+      message.startsWith("Paste a direct") ||
+      message.startsWith("That URL") ||
+      message.startsWith("For security") ||
+      message.startsWith("Only standard") ||
+      message.startsWith("The link") ||
+      message.startsWith("This link") ||
+      message.startsWith("The URL") ||
+      message.startsWith("The source") ||
+      message.startsWith("Could not choose");
+
+    if (expectedImportFailure) {
+      return res.status(400).json({ error: "url_import_failed", message });
+    }
+    if (["ENOTFOUND", "EAI_AGAIN", "ECONNRESET", "ECONNREFUSED", "ETIMEDOUT", "CERT_HAS_EXPIRED", "DEPTH_ZERO_SELF_SIGNED_CERT", "UNABLE_TO_VERIFY_LEAF_SIGNATURE"].includes(error?.code)) {
+      return res.status(400).json({
+        error: "url_source_unreachable",
+        message: "The source could not be reached securely. Check the URL and use a public HTTPS link that downloads an audio file directly."
+      });
     }
     next(error);
   }
