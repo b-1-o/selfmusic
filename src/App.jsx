@@ -312,6 +312,45 @@ function App() {
     refreshNetworkAddresses();
   }, [authenticated, refreshNetworkAddresses]);
 
+  useEffect(() => {
+    if (!currentTrack?.artworkUrl) {
+      setPlayerTint("201,90,120");
+      return;
+    }
+    let active = true;
+    const image = new Image();
+    image.onload = () => {
+      if (!active) return;
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = 24;
+        canvas.height = 24;
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        if (!context) return;
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+        let red = 0, green = 0, blue = 0, totalWeight = 0;
+        for (let i = 0; i < pixels.length; i += 4) {
+          if (pixels[i + 3] < 40) continue;
+          const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
+          const brightness = (r + g + b) / 3;
+          const saturation = Math.max(r, g, b) - Math.min(r, g, b);
+          const weight = brightness > 24 && brightness < 238 && saturation > 22 ? 2 : 1;
+          red += r * weight;
+          green += g * weight;
+          blue += b * weight;
+          totalWeight += weight;
+        }
+        if (totalWeight) setPlayerTint([Math.round(red / totalWeight), Math.round(green / totalWeight), Math.round(blue / totalWeight)].join(","));
+      } catch {
+        setPlayerTint("201,90,120");
+      }
+    };
+    image.onerror = () => { if (active) setPlayerTint("201,90,120"); };
+    image.src = currentTrack.artworkUrl;
+    return () => { active = false; image.onload = null; image.onerror = null; };
+  }, [currentTrack?.artworkUrl, currentTrackId]);
+
   const loadTracks = useCallback(async () => {
     setLoadingTracks(true);
     setLoadError("");
