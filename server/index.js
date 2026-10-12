@@ -15,6 +15,7 @@ import { create as createYoutubeDl } from "youtube-dl-exec";
 import { createDatabase } from "./database.js";
 import { getTracks as readTracks, getTrackRow, listAlbums, listArtists, scanLibrary } from "./library.js";
 import { mountCollectionRoutes } from "./collections.js";
+import { getTranscodedFile, originalSupportsFormat, parseTranscodeOptions, transcodingEnabled } from "./transcoder.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 dotenv.config({ path: path.join(projectRoot, ".env") });
@@ -27,6 +28,7 @@ const databasePath = process.env.DATABASE_PATH === ":memory:"
   ? ":memory:"
   : path.resolve(projectRoot, process.env.DATABASE_PATH || "data/selfmusic.sqlite");
 const coverCacheDir = path.resolve(projectRoot, process.env.COVER_CACHE_DIR || "data/artwork");
+const transcodeCacheDir = path.resolve(projectRoot, process.env.TRANSCODE_CACHE_DIR || "data/transcodes");
 const db = createDatabase(databasePath);
 const configuredSessionSecret = process.env.SESSION_SECRET || "";
 const hasPersistentSessionSecret = configuredSessionSecret.length >= 32 && !configuredSessionSecret.toLowerCase().includes("replace-with");
@@ -1303,6 +1305,56 @@ app.get("/api/stream/:id", requireAuth, async (req, res, next) => {
     const track = await resolveTrackFile(req.params.id);
     if (!track) return res.status(404).json({ error: "track_not_found" });
 
+    const requestedFormat = typeof req.query.format === "string" ? req.query.format.toLowerCase() : "";
+    if (requestedFormat) {
+      let options;
+      try {
+        options = parseTranscodeOptions(requestedFormat, req.query.bitrate);
+      } catch (error) {
+        return res.status(400).json({ error: "invalid_transcode_options", message: error.message });
+      }
+      if (!originalSupportsFormat(track.filePath, options.format)) {
+        const trackRow = getTrackRow(db, req.params.id);
+        if (!trackRow) return res.status(404).json({ error: "track_not_found" });
+        let transcoded;
+        try {
+          transcoded = await getTranscodedFile(db, trackRow, track.filePath, transcodeCacheDir, options);
+        } catch (error) {
+          if (error.code === "TRANSCODE_DISABLED") return res.status(503).json({ error: error.code.toLowerCase(), message: error.message });
+          if (error.code === "FFMPEG_MISSING") return res.status(503).json({ error: error.code.toLowerCase(), message: error.message });
+          if (error.code === "TRANSCODE_TIMEOUT") return res.status(504).json({ error: error.code.toLowerCase(), message: error.message });
+          if (["INVALID_TRANSCODE_FORMAT", "INVALID_TRANSCODE_BITRATE"].includes(error.code)) return res.status(400).json({ error: error.code.toLowerCase(), message: error.message });
+          console.error("[SelfMusic] transcode failed", JSON.stringify({ trackId: req.params.id, code: error.code || "unknown", message: error.message }));
+          return res.status(500).json({ error: "transcode_failed", message: error.message || "Could not transcode this audio." });
+        }
+        const size = transcoded.stats.size;
+        res.setHeader("Content-Type", transcoded.options.mimeType);
+        res.setHeader("Accept-Ranges", "bytes");
+        res.setHeader("Cache-Control", "private, no-store");
+        res.setHeader("X-SelfMusic-Transcode-Cache", transcoded.cacheHit ? "HIT" : "MISS");
+        const requestedRange = req.headers.range;
+        if (!requestedRange) {
+          res.setHeader("Content-Length", size);
+          return fs.createReadStream(transcoded.filePath).pipe(res);
+        }
+        const match = /^bytes=(\\d*)-(\\d*)$/.exec(requestedRange);
+        if (!match || (!match[1] && !match[2])) {
+          res.setHeader("Content-Range", "bytes */" + size);
+          return res.status(416).end();
+        }
+        let startByte = match[1] ? Number(match[1]) : Math.max(0, size - Number(match[2]));
+        let endByte = match[2] ? Number(match[2]) : size - 1;
+        if (!Number.isSafeInteger(startByte) || !Number.isSafeInteger(endByte) || startByte >= size || startByte > endByte || endByte < 0) {
+          res.setHeader("Content-Range", "bytes */" + size);
+          return res.status(416).end();
+        }
+        endByte = Math.min(endByte, size - 1);
+        res.status(206);
+        res.setHeader("Content-Range", "bytes " + startByte + "-" + endByte + "/" + size);
+        res.setHeader("Content-Length", endByte - startByte + 1);
+        return fs.createReadStream(transcoded.filePath, { start: startByte, end: endByte }).pipe(res);
+      }
+    }
     const size = track.stats.size;
     const type = mimeTypes[path.extname(track.filePath).toLowerCase()] || "application/octet-stream";
     res.setHeader("Content-Type", type);
