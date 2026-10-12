@@ -2117,7 +2117,23 @@ function App() {
         ref={audioRef}
         preload="auto"
         playsInline
-        onPlay={() => setIsPlaying(true)}
+        onPlay={() => {
+          setIsPlaying(true);
+          if (currentTrack && nowPlayingTrackRef.current !== currentTrack.id) {
+            nowPlayingTrackRef.current = currentTrack.id;
+            if (historyTrackRef.current !== currentTrack.id) {
+              historyTrackRef.current = currentTrack.id;
+              fetch("/api/history", {
+                method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ trackId: currentTrack.id, positionSeconds: 0 }),
+              }).catch(() => {});
+            }
+            fetch("/api/lastfm/now-playing", {
+              method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ trackId: currentTrack.id, durationSeconds: currentTrack.duration }),
+            }).catch(() => {});
+          }
+        }}
         onPause={() => setIsPlaying(false)}
         onTimeUpdate={(event) => {
           const nextTime = event.currentTarget.currentTime;
@@ -2125,6 +2141,18 @@ function App() {
           if (nextTime < lastUiTimeRef.current || nextTime - lastUiTimeRef.current >= updateInterval) {
             lastUiTimeRef.current = nextTime;
             setCurrentTime(nextTime);
+          }
+          const trackId = currentTrackId;
+          const knownDuration = Number(event.currentTarget.duration || duration || 0);
+          const qualifiesForScrobble = knownDuration > 0 && (nextTime > knownDuration * 0.5 || nextTime > 240);
+          if (qualifiesForScrobble && trackId && scrobbledTrackRef.current !== trackId) {
+            scrobbledTrackRef.current = trackId;
+            fetch("/api/lastfm/scrobble", {
+              method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ trackId, listenedSeconds: nextTime, durationSeconds: knownDuration }),
+            }).then((response) => {
+              if (!response.ok) scrobbledTrackRef.current = "";
+            }).catch(() => { scrobbledTrackRef.current = ""; });
           }
         }}
         onLoadedMetadata={(event) => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
