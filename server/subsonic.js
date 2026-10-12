@@ -103,7 +103,7 @@ function trackToSong(track) {
     discNumber: track.disc_number ?? track.discNumber ?? undefined,
     year: track.year ?? undefined,
     genre: track.genre ?? undefined,
-    duration: Number.isFinite(duration) && duration >= 0 ? Math.floor(duration) : undefined,
+    duration: Number.isFinite(duration) && duration >= 0 ? Math.round(duration) : undefined,
     bitRate: Number.isFinite(bitrate) && bitrate > 0 ? Math.round(bitrate / 1000) : undefined,
     size: Number(track.size_bytes ?? track.bytes) || undefined,
     suffix,
