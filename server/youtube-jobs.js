@@ -191,7 +191,7 @@ function runProcess(binary, args, { timeoutMs, maxOutputBytes = 8 * 1024 * 1024,
 async function runFfmpegMetadata(outputPath, metadata, jobDir) {
   if (!metadata || !Object.keys(metadata).length) return;
   const ffmpeg = process.env.FFMPEG_PATH || "ffmpeg";
-  const tempPath = path.join(jobDir, "retag-" + crypto.randomUUID() + ".mp3");
+  const tempPath = path.join(path.dirname(outputPath), ".retag-" + crypto.randomUUID() + ".mp3");
   const args = ["-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-i", outputPath, "-map", "0:a:0", "-c:a", "copy", "-id3v2_version", "3"];
   for (const key of ["title", "artist", "album", "year", "genre"]) {
     if (metadata[key]) args.push("-metadata", (key === "year" ? "date" : key) + "=" + metadata[key]);
