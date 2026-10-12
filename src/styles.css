@@ -2450,3 +2450,185 @@ html, body, #root {
     filter: none !important;
   }
 }
+
+
+/* Persistent collections and account features. */
+.library-filter-row {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr)) auto;
+  gap: 9px;
+  align-items: end;
+  margin: -3px 0 17px;
+}
+.library-filter-row label,
+.account-create-form label,
+.settings-card > label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+.library-filter-row select,
+.settings-card select,
+.account-create-form input,
+.settings-card input:not([type="file"]) {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 8px 10px;
+  color: var(--text);
+  background: rgba(255,255,255,.035);
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  outline: none;
+  font-size: 11px;
+}
+.library-filter-row select:focus,
+.settings-card select:focus,
+.account-create-form input:focus {
+  border-color: color-mix(in srgb, var(--user-accent) 60%, transparent);
+}
+.library-filter-row .text-button { align-self: center; white-space: nowrap; }
+.track-progress-inline {
+  display: block;
+  width: min(100%, 170px);
+  height: 2px;
+  margin-top: 1px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: rgba(255,255,255,.07);
+  opacity: 0;
+  transition: opacity .18s ease;
+}
+.track-progress-inline-active { opacity: 1; }
+.track-progress-inline > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--user-accent) 70%, white);
+  transition: width .18s linear;
+}
+.playlist-grid { margin-bottom: 22px; }
+.playlist-card-active { border-color: color-mix(in srgb, var(--user-accent) 45%, transparent); }
+.playlist-card-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 16px; }
+.playlist-card-actions .primary-button,
+.playlist-card-actions .ghost-button { min-height: 34px; padding: 0 10px; font-size: 10px; }
+.playlist-card-actions .icon-button { margin-left: auto; }
+.playlist-heading { margin-top: 28px; }
+.playlist-track-panel { margin-bottom: 13px; }
+.playlist-track-panel h3 { margin-top: 0; }
+.playlist-track-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0,1fr) 28px 32px 32px;
+  gap: 10px;
+  align-items: center;
+  min-height: 58px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
+}
+.playlist-track-row:last-child { border-bottom: 0; }
+.playlist-track-row .track-art { width: 42px; height: 42px; padding: 0; overflow: hidden; border: 0; border-radius: 8px; background: transparent; }
+.playlist-track-row .track-identity { width: 100%; }
+.playlist-track-row .track-title { font-size: 12px; }
+.playlist-track-row .track-subtitle { font-size: 10px; }
+.playlist-track-position { color: var(--quiet); text-align: center; font: 10px "DM Mono", monospace; }
+.playlist-track-row .icon-button { width: 31px; height: 31px; }
+.playlist-add-library { max-height: 480px; overflow-y: auto; overscroll-behavior: contain; }
+.playlist-add-library .playlist-track-row { grid-template-columns: 42px minmax(0,1fr) 32px; }
+.playlist-page .settings-grid { margin-bottom: 24px; }
+.playlist-page .settings-action { cursor: pointer; }
+.playlist-page .settings-action input[type="file"] { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.playlist-page .url-import-row > input { flex: 1; min-width: 0; height: 38px; padding: 0 10px; color: var(--text); background: rgba(255,255,255,.035); border: 1px solid var(--line-strong); border-radius: 9px; outline: none; font-size: 11px; }
+.playlist-page .url-import-row > input:focus { border-color: color-mix(in srgb, var(--user-accent) 60%, transparent); }
+.account-create-form { display: grid; grid-template-columns: 130px minmax(0,1fr) 145px minmax(0,1fr) 75px minmax(150px,.8fr) auto; align-items: center; gap: 8px; margin: 18px 0 12px; }
+.account-create-form label { margin: 0; }
+.account-create-form .primary-button { min-height: 36px; padding: 0 12px; font-size: 10px; white-space: nowrap; }
+.admin-user-list { margin-top: 17px; border-top: 1px solid var(--line); }
+.admin-user-row { display: grid; grid-template-columns: minmax(0,1fr) 130px 34px; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--line); }
+.admin-user-row strong, .admin-user-row small { display: block; }
+.admin-user-row strong { font-size: 12px; }
+.admin-user-row small { margin-top: 3px; color: var(--quiet); font-size: 10px; }
+.settings-card .account-create-form + p { margin-top: 10px; }
+.theme-options { max-width: 420px; }
+.theme-preview { display: block; width: 100%; height: 34px; border: 1px solid var(--line-strong); border-radius: 8px; }
+.theme-preview-dark { background: linear-gradient(135deg,#0a0a0e,#38323f); }
+.theme-preview-light { background: linear-gradient(135deg,#fff,#d8dbe6); }
+.settings-card .info-note { margin-top: 12px; }
+.playlist-card-actions a { display: inline-flex; align-items: center; gap: 7px; }
+.muted-count { color: var(--muted); }
+  
+/* A restrained light theme that keeps the same glass hierarchy. */
+.app-shell[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f4f5f9;
+  --panel: #ffffff;
+  --panel-raised: #eceef4;
+  --line: rgba(25, 27, 43, .1);
+  --line-strong: rgba(25, 27, 43, .16);
+  --text: #20212a;
+  --muted: #5f6070;
+  --quiet: #787a89;
+  background: var(--bg);
+  color: var(--text);
+}
+.app-shell[data-theme="light"] .sidebar {
+  background: radial-gradient(ellipse at 0% 0%, color-mix(in srgb, var(--user-accent) 8%, transparent), transparent 44%), #fff;
+  border-color: var(--line);
+}
+.app-shell[data-theme="light"] .brand-light,
+.app-shell[data-theme="light"] .nav-item,
+.app-shell[data-theme="light"] .collection-card,
+.app-shell[data-theme="light"] .library-heading,
+.app-shell[data-theme="light"] .connection-status { color: #6c6e7d; }
+.app-shell[data-theme="light"] .nav-item.nav-active { color: #282935; background: color-mix(in srgb, var(--user-accent) 12%, white); }
+.app-shell[data-theme="light"] .topbar { background: rgba(248,249,252,.86); }
+.app-shell[data-theme="light"] .search-box,
+.app-shell[data-theme="light"] .avatar-pill,
+.app-shell[data-theme="light"] .settings-card,
+.app-shell[data-theme="light"] .settings-status-card,
+.app-shell[data-theme="light"] .empty-state {
+  color: var(--text);
+  background: rgba(255,255,255,.72);
+  border-color: var(--line);
+}
+.app-shell[data-theme="light"] .settings-card p,
+.app-shell[data-theme="light"] .track-subtitle,
+.app-shell[data-theme="light"] .track-album,
+.app-shell[data-theme="light"] .track-duration,
+.app-shell[data-theme="light"] .eyebrow { color: var(--muted); }
+.app-shell[data-theme="light"] .track-row { border-color: var(--line); }
+.app-shell[data-theme="light"] .track-row:hover { background: rgba(18,20,32,.035); }
+.app-shell[data-theme="light"] .track-table-head { color: var(--quiet); border-color: var(--line); }
+.app-shell[data-theme="light"] .settings-action,
+.app-shell[data-theme="light"] .ghost-button,
+.app-shell[data-theme="light"] .library-filter-row select,
+.app-shell[data-theme="light"] .settings-card select,
+.app-shell[data-theme="light"] .account-create-form input,
+.app-shell[data-theme="light"] .settings-card input:not([type="file"]) {
+  color: var(--text);
+  background: rgba(20,22,40,.035);
+  border-color: var(--line-strong);
+}
+.app-shell[data-theme="light"] .settings-card code,
+.app-shell[data-theme="light"] .settings-footnote { color: var(--muted); }
+.app-shell[data-theme="light"] .main-panel { background: var(--bg); }
+.app-shell[data-theme="light"] .player-bar,
+.app-shell[data-theme="light"] .player-dock { background: rgba(255,255,255,.93); }
+.app-shell[data-theme="light"] .player-bar { border-color: var(--line); }
+.app-shell[data-theme="light"] .hero-panel { color: #f5f4f8; }
+
+@media (max-width: 1120px) {
+  .library-filter-row { grid-template-columns: repeat(3, minmax(0,1fr)); }
+  .account-create-form { grid-template-columns: 1fr 1fr; }
+  .account-create-form .primary-button { grid-column: 1 / -1; }
+}
+@media (max-width: 760px) {
+  .library-filter-row { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .account-create-form { grid-template-columns: 1fr; }
+  .admin-user-row { grid-template-columns: minmax(0,1fr) 100px 30px; gap: 7px; }
+  .playlist-track-row { grid-template-columns: 36px minmax(0,1fr) 24px 30px 30px; gap: 6px; }
+  .playlist-track-row .track-art { width: 36px; height: 36px; }
+  .playlist-add-library .playlist-track-row { grid-template-columns: 36px minmax(0,1fr) 30px; }
+  .playlist-card-actions .ghost-button { flex: 1 1 auto; }
+}
