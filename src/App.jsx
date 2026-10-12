@@ -877,7 +877,7 @@ function App() {
                           <div className="upload-queue-row" key={file.name + "-" + file.size + "-" + index}>
                             <span className="upload-file-icon"><Music size={17} /></span>
                             <span className="upload-file-meta"><strong>{file.name}</strong><small>{formatBytes(file.size)}</small></span>
-                            <button className="icon-button" type="button" aria-label={"Remove " + file.name} disabled={uploading} onClick={() => setSelectedUploadFiles((items) => items.filter((_, fileIndex) => fileIndex !== index))}><X size={16} /></button>
+                            <button className="icon-button" type="button" aria-label={"Remove " + file.name} disabled={uploading} onClick={() => { setSelectedUploadFiles((items) => items.filter((_, fileIndex) => fileIndex !== index)); setUploadError(false); setUploadMessage(""); }}><X size={16} /></button>
                           </div>
                         ))}
                       </div>
