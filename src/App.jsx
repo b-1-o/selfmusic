@@ -39,6 +39,9 @@ import {
 
 const FAVORITES_KEY = "selfmusic:favorites:v1";
 const LAST_TRACK_KEY = "selfmusic:last-track:v1";
+const APPEARANCE_KEY = "selfmusic:appearance:v1";
+const REMOTE_WIZARD_KEY = "selfmusic:remote-wizard-seen:v1";
+const TAILSCALE_DOWNLOAD_URL = "https://tailscale.com/download";
 const SUPPORTED_UPLOAD_EXTENSIONS = new Set(["mp3", "m4a", "aac", "flac", "wav", "ogg", "opus", "webm"]);
 const MAX_UPLOAD_BYTES = 250 * 1024 * 1024;
 
