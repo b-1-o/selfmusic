@@ -26,6 +26,8 @@ jobs:
           node --check server/index.js
           node --check vite.config.js
           bash -n install.sh selfmusic.sh
+      - name: Run unit tests
+        run: npm test
       - name: Build web client
         run: npm run build
 
