@@ -17,12 +17,13 @@ function stableId(namespace, value) {
 function fallbackTags(filePath, musicRoot) {
   const relativePath = path.relative(musicRoot, filePath);
   const parent = path.dirname(relativePath);
+  const folders = parent === "." ? [] : parent.split(path.sep).filter(Boolean);
   const stem = path.basename(filePath, path.extname(filePath));
   const title = stem.replace(/[_]+/g, " ").replace(/^\d{1,3}\s*[-_.]\s*/, "").trim();
   return {
     title: title || stem || path.basename(filePath),
-    artist: parent === "." ? "Unknown artist" : path.basename(parent),
-    album: parent === "." ? "Local library" : parent.split(path.sep).join(" / "),
+    artist: folders.length ? folders[0] : "Unknown artist",
+    album: folders.length > 1 ? folders.slice(1).join(" / ") : (folders[0] || "Local library"),
     albumArtist: null,
     year: null,
     genre: null,
