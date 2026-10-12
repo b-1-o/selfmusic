@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import dotenv from "dotenv";
+import multer from "multer";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 dotenv.config({ path: path.join(projectRoot, ".env") });
@@ -202,6 +203,93 @@ app.post("/api/auth/login", (req, res) => {
 app.post("/api/auth/logout", (_req, res) => {
   res.setHeader("Set-Cookie", sessionCookie + "=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
   res.status(204).end();
+});
+
+const uploadRoot = path.join(musicRoot, "Uploads");
+const maxUploadBytes = 250 * 1024 * 1024;
+const audioUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, callback) => {
+      fs.mkdir(uploadRoot, { recursive: true }, (error) => callback(error, uploadRoot));
+    },
+    filename: (_req, file, callback) => {
+      const originalName = path.posix.basename(String(file.originalname || "track").replace(/\\/g, "/"));
+      const extension = path.extname(originalName).toLowerCase();
+      if (!supportedExtensions.has(extension)) {
+        return callback(new Error("Unsupported audio format. Use MP3, M4A, AAC, FLAC, WAV, OGG, OPUS or WebM."));
+      }
+
+      let stem = path.basename(originalName, path.extname(originalName))
+        .normalize("NFKC")
+        .replace(/[\\u0000-\\u001f\\u007f<>:"/\\\\|?*]/g, "")
+        .replace(/\\s+/g, " ")
+        .trim()
+        .slice(0, 140);
+      if (!stem || stem === "." || stem === "..") stem = "Track";
+
+      let candidate = stem + extension;
+      let suffix = 2;
+      while (fs.existsSync(path.join(uploadRoot, candidate))) {
+        candidate = stem + " (" + suffix++ + ")" + extension;
+      }
+      callback(null, candidate);
+    }
+  }),
+  fileFilter: (_req, file, callback) => {
+    const extension = path.extname(String(file.originalname || "")).toLowerCase();
+    if (!supportedExtensions.has(extension)) {
+      return callback(new Error("Unsupported audio format. Use MP3, M4A, AAC, FLAC, WAV, OGG, OPUS or WebM."));
+    }
+    callback(null, true);
+  },
+  limits: {
+    fileSize: maxUploadBytes,
+    files: 20,
+    fields: 0,
+    parts: 20,
+    fieldNameSize: 100
+  }
+});
+
+app.post("/api/upload", requireAuth, (req, res, next) => {
+  audioUpload.array("files", 20)(req, res, async (error) => {
+    if (error) {
+      const receivedFiles = Array.isArray(req.files) ? req.files : [];
+      await Promise.all(receivedFiles.map((file) => fs.promises.unlink(file.path).catch(() => {})));
+
+      if (error instanceof multer.MulterError) {
+        const tooLarge = error.code === "LIMIT_FILE_SIZE";
+        const tooMany = error.code === "LIMIT_FILE_COUNT" || error.code === "LIMIT_UNEXPECTED_FILE";
+        return res.status(tooLarge ? 413 : 400).json({
+          error: error.code.toLowerCase(),
+          message: tooLarge
+            ? "Each file must be 250 MB or smaller."
+            : tooMany
+              ? "Upload up to 20 audio files at a time."
+              : "The upload could not be processed."
+        });
+      }
+      return res.status(400).json({
+        error: "invalid_upload",
+        message: error.message || "The selected files could not be uploaded."
+      });
+    }
+
+    const files = Array.isArray(req.files) ? req.files : [];
+    if (!files.length) {
+      return res.status(400).json({
+        error: "no_files",
+        message: "Choose at least one supported audio file first."
+      });
+    }
+
+    res.setHeader("Cache-Control", "no-store");
+    res.status(201).json({
+      uploaded: files.length,
+      destination: "Uploads",
+      files: files.map((file) => ({ name: file.filename, bytes: file.size }))
+    });
+  });
 });
 
 app.get("/api/tracks", requireAuth, async (_req, res, next) => {
