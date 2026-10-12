@@ -228,7 +228,12 @@ async function doScan(db, musicRoot, options) {
     });
   }
 
-  db.exec("DELETE FROM tracks WHERE relative_path NOT IN (SELECT relative_path FROM scan_seen_paths); DROP TABLE scan_seen_paths;");
+  db.exec(`
+    DELETE FROM tracks WHERE relative_path NOT IN (SELECT relative_path FROM scan_seen_paths);
+    DELETE FROM albums WHERE NOT EXISTS (SELECT 1 FROM tracks WHERE tracks.album_id = albums.id);
+    DELETE FROM artists WHERE NOT EXISTS (SELECT 1 FROM albums WHERE albums.artist_id = artists.id);
+    DROP TABLE scan_seen_paths;
+  `);
   return getTracks(db);
 }
 
