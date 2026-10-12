@@ -30,6 +30,7 @@ import {
   Volume2,
   VolumeX,
   X,
+  Youtube,
 } from "lucide-react";
 
 const FAVORITES_KEY = "selfmusic:favorites:v1";
@@ -185,6 +186,11 @@ function App() {
   const [loadingTracks, setLoadingTracks] = useState(false);
   const [query, setQuery] = useState("");
   const searchInputRef = useRef(null);
+  const [youtubeQuery, setYoutubeQuery] = useState("");
+  const [youtubeResults, setYoutubeResults] = useState([]);
+  const [youtubeLoading, setYoutubeLoading] = useState(false);
+  const [youtubeError, setYoutubeError] = useState("");
+  const [selectedYoutube, setSelectedYoutube] = useState(null);
   const [view, setView] = useState("home");
   const [favorites, setFavorites] = useState(() => readLocalJson(FAVORITES_KEY, []));
   const [currentTrackId, setCurrentTrackId] = useState(() => localStorage.getItem(LAST_TRACK_KEY) || "");
@@ -301,6 +307,7 @@ function App() {
 
   const playTrack = useCallback((track) => {
     if (!track || !audioRef.current) return;
+    setSelectedYoutube(null);
     const audio = audioRef.current;
     if (audio.getAttribute("src") !== track.streamUrl) {
       audio.src = track.streamUrl;
@@ -358,6 +365,39 @@ function App() {
       audio.pause();
     }
   }, [currentTrack, tracks, playTrack]);
+
+  const handleYoutubeSearch = useCallback(async () => {
+    const search = youtubeQuery.trim();
+    if (search.length < 2) {
+      setYoutubeError("Enter at least two characters to search YouTube.");
+      setYoutubeResults([]);
+      return;
+    }
+
+    setYoutubeLoading(true);
+    setYoutubeError("");
+    setSelectedYoutube(null);
+    try {
+      const response = await fetch("/api/youtube/search?q=" + encodeURIComponent(search));
+      if (!response.ok) throw new Error(await readMessage(response));
+      const body = await response.json();
+      setYoutubeResults(Array.isArray(body.items) ? body.items : []);
+      if (!body.items?.length) setYoutubeError("No embeddable videos found. Try another search.");
+    } catch (error) {
+      setYoutubeResults([]);
+      setYoutubeError(error.message || "YouTube search could not be completed.");
+    } finally {
+      setYoutubeLoading(false);
+    }
+  }, [youtubeQuery]);
+
+  const selectYoutubeVideo = useCallback((item) => {
+    // Keep YouTube playback inside its visible, official video player.
+    // The local audio player is paused so the two sources do not overlap.
+    audioRef.current?.pause();
+    setIsPlaying(false);
+    setSelectedYoutube(item);
+  }, []);
 
   useEffect(() => {
     if (!currentTrack || !("mediaSession" in navigator)) return;
@@ -432,7 +472,7 @@ function App() {
     );
   }
 
-  const pageTitle = view === "home" ? "Listen now" : view === "library" ? "Your library" : view === "favorites" ? "Liked tracks" : "Server settings";
+  const pageTitle = view === "home" ? "Listen now" : view === "library" ? "Your library" : view === "favorites" ? "Liked tracks" : view === "youtube" ? "Explore YouTube" : "Server settings";
 
   return (
     <div className="app-shell">
@@ -454,6 +494,9 @@ function App() {
             </button>
             <button className={view === "favorites" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("favorites"); setMobileMenuOpen(false); }}>
               <Heart size={18} /> <span>Liked tracks</span>
+            </button>
+            <button className={view === "youtube" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("youtube"); setMobileMenuOpen(false); }}>
+              <Youtube size={18} /> <span>Explore YouTube</span>
             </button>
           </nav>
         </div>
@@ -576,6 +619,96 @@ function App() {
             </section>
           )}
 
+          {view === "youtube" && (
+            <section className="page-section youtube-page">
+              <div className="youtube-hero glass-mist-panel">
+                <div className="youtube-fog youtube-fog-one" />
+                <div className="youtube-fog youtube-fog-two" />
+                <div className="youtube-hero-content">
+                  <div className="youtube-kicker"><Youtube size={15} /> VIDEO DISCOVERY <span /> OFFICIAL PLAYER</div>
+                  <h1>Find your next<br /><span>favorite sound.</span></h1>
+                  <p>Search YouTube videos from your own home server and play them in the official YouTube player.</p>
+                  <form className="youtube-search-form" onSubmit={(event) => { event.preventDefault(); handleYoutubeSearch(); }}>
+                    <label className="youtube-search-field">
+                      <Search size={18} />
+                      <input
+                        value={youtubeQuery}
+                        onChange={(event) => setYoutubeQuery(event.target.value)}
+                        placeholder="Search artists, tracks, live sessions…"
+                        aria-label="Search YouTube videos"
+                        minLength={2}
+                        maxLength={100}
+                      />
+                    </label>
+                    <button className="primary-button" type="submit" disabled={youtubeLoading || youtubeQuery.trim().length < 2}>
+                      {youtubeLoading ? <RefreshCw className="spin" size={16} /> : <Search size={16} />}
+                      {youtubeLoading ? "Searching" : "Search YouTube"}
+                    </button>
+                  </form>
+                  <div className="youtube-privacy-line"><ShieldCheck size={14} /> The API key stays on your server. Search results are not saved.</div>
+                </div>
+                <div className="youtube-hero-orb" aria-hidden="true"><div className="youtube-orb-core"><Youtube size={37} /></div><div className="youtube-orb-ring ring-one" /><div className="youtube-orb-ring ring-two" /></div>
+              </div>
+
+              <div className="youtube-workspace">
+                <div className="youtube-results-panel glass-mist-panel">
+                  <div className="youtube-panel-heading">
+                    <div><p className="eyebrow">DISCOVER SOMETHING NEW</p><h2>Search results</h2></div>
+                    {youtubeResults.length > 0 && <span className="youtube-result-count">{youtubeResults.length} videos</span>}
+                  </div>
+                  {youtubeError && (
+                    <div className="youtube-message">
+                      <CircleAlert size={18} />
+                      <div><strong>{youtubeError}</strong><span>To enable search, add a YouTube Data API v3 key as YOUTUBE_API_KEY in the server's .env file, then restart SelfMusic.</span></div>
+                    </div>
+                  )}
+                  {youtubeLoading && <div className="youtube-empty"><RefreshCw className="spin" size={23} /><strong>Looking through YouTube</strong><span>Searching embeddable videos…</span></div>}
+                  {!youtubeLoading && !youtubeError && youtubeResults.length === 0 && (
+                    <div className="youtube-empty"><div className="youtube-empty-icon"><Search size={22} /></div><strong>Your next discovery starts here</strong><span>Search for an artist, track, concert, or live set.</span></div>
+                  )}
+                  {youtubeResults.length > 0 && (
+                    <div className="youtube-results-grid">
+                      {youtubeResults.map((item) => (
+                        <button key={item.videoId} className={"youtube-result" + (selectedYoutube?.videoId === item.videoId ? " youtube-result-active" : "")} onClick={() => selectYoutubeVideo(item)}>
+                          <span className="youtube-thumb-wrap">
+                            {item.thumbnail ? <img src={item.thumbnail} alt="" loading="lazy" /> : <span className="youtube-thumb-fallback"><Youtube size={24} /></span>}
+                            <span className="youtube-thumb-play"><Play size={18} fill="currentColor" /></span>
+                          </span>
+                          <span className="youtube-result-title">{item.title}</span>
+                          <span className="youtube-result-channel">{item.channelTitle}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="youtube-attribution"><Youtube size={14} /><span>Video results by YouTube</span><span className="attribution-dot" /><span>Playback provided by YouTube</span></div>
+                </div>
+
+                <aside className="youtube-player-panel glass-mist-panel">
+                  <div className="youtube-panel-heading"><div><p className="eyebrow">NOW IN DISCOVERY</p><h2>Video player</h2></div><span className="youtube-live-label"><span /> READY</span></div>
+                  {selectedYoutube ? (
+                    <>
+                      <div className="youtube-player-frame">
+                        <iframe
+                          key={selectedYoutube.videoId}
+                          src={"https://www.youtube.com/embed/" + selectedYoutube.videoId + "?autoplay=1&playsinline=1"}
+                          title={selectedYoutube.title}
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                          referrerPolicy="strict-origin-when-cross-origin"
+                          allowFullScreen
+                        />
+                      </div>
+                      <div className="youtube-selected-meta"><strong>{selectedYoutube.title}</strong><span>{selectedYoutube.channelTitle}</span></div>
+                      <a className="youtube-watch-link" href={"https://www.youtube.com/watch?v=" + selectedYoutube.videoId} target="_blank" rel="noreferrer"><Youtube size={15} /> Watch on YouTube <ArrowUpRight size={15} /></a>
+                    </>
+                  ) : (
+                    <div className="youtube-player-empty"><div className="youtube-player-art"><Youtube size={35} /></div><strong>Pick a video to play</strong><span>Your selection appears here inside the official YouTube player.</span></div>
+                  )}
+                  <div className="youtube-local-note"><Headphones size={16} /><span>For lock-screen and background listening, use audio files in your home library. YouTube playback stays in the visible video player.</span></div>
+                </aside>
+              </div>
+            </section>
+          )}
+
           {view === "settings" && (
             <section className="page-section settings-page">
               <div className="page-intro">
@@ -631,7 +764,7 @@ function App() {
       <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
         <button className={view === "home" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("home")}><Home size={19} /><span>Home</span></button>
         <button className={view === "library" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("library")}><Library size={19} /><span>Library</span></button>
-        <button className={view === "favorites" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("favorites")}><Heart size={19} /><span>Liked</span></button>
+        <button className={view === "youtube" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("youtube")}><Youtube size={19} /><span>YouTube</span></button>
         <button className={view === "settings" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("settings")}><Settings size={19} /><span>Server</span></button>
       </nav>
 
