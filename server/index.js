@@ -11,7 +11,9 @@ dotenv.config({ path: path.join(projectRoot, ".env") });
 const app = express();
 const port = Number.parseInt(process.env.PORT || "8787", 10);
 const musicRoot = path.resolve(projectRoot, process.env.MUSIC_DIR || "music");
-const sessionSecret = process.env.SESSION_SECRET || crypto.randomBytes(32).toString("hex");
+const configuredSessionSecret = process.env.SESSION_SECRET || "";
+const hasPersistentSessionSecret = configuredSessionSecret.length >= 32 && !configuredSessionSecret.toLowerCase().includes("replace-with");
+const sessionSecret = hasPersistentSessionSecret ? configuredSessionSecret : crypto.randomBytes(32).toString("hex");
 const sessionCookie = "selfmusic_session";
 const sessionLifetimeSeconds = 7 * 24 * 60 * 60;
 const supportedExtensions = new Set([".mp3", ".m4a", ".aac", ".flac", ".wav", ".ogg", ".opus", ".webm"]);
@@ -305,8 +307,8 @@ fs.promises.mkdir(musicRoot, { recursive: true }).then(() => {
     console.log("SelfMusic server listening on http://localhost:" + port);
     console.log("Music folder: " + musicRoot);
     if (!isConfigured()) console.warn("Setup required: create .env and set SELF_MUSIC_PASSWORD to a password of at least 12 characters.");
-    if (process.env.NODE_ENV === "production" && !process.env.SESSION_SECRET) {
-      console.warn("Set SESSION_SECRET in production so sessions remain valid after restarts.");
+    if (process.env.NODE_ENV === "production" && !hasPersistentSessionSecret) {
+      console.warn("Set a random SESSION_SECRET of at least 32 characters in production so sessions remain valid after restarts.");
     }
   });
 }).catch((error) => {
