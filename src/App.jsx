@@ -588,14 +588,19 @@ function App() {
     }
   }, [selectedUploadFiles, uploading, loadTracks]);
 
-  const importFromUrl = useCallback(async () => {
+  const downloadFromYoutube = useCallback(async () => {
     const url = audioUrl.trim();
     if (!url || importingUrl) return;
+    if (!parseYoutubeVideoId(url)) {
+      setUrlImportError(true);
+      setUrlImportMessage("That is not a valid YouTube video link.");
+      return;
+    }
     setImportingUrl(true);
     setUrlImportMessage("");
     setUrlImportError(false);
     try {
-      const response = await fetch("/api/import-url", {
+      const response = await fetch("/api/youtube/download", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url }),
@@ -603,7 +608,7 @@ function App() {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         if (response.status === 401) setAuthenticated(false);
-        throw new Error(payload.message || "Could not import this link.");
+        throw new Error(payload.message || "Could not download from YouTube.");
       }
       setUrlImportMessage("Saved " + payload.name + " to music/Uploads (" + formatBytes(payload.bytes) + ").");
       setUrlImportError(false);
@@ -611,7 +616,7 @@ function App() {
       await loadTracks();
     } catch (error) {
       setUrlImportError(true);
-      setUrlImportMessage(error.message || "Import failed. Make sure this is a direct HTTPS audio download link.");
+      setUrlImportMessage(error.message || "YouTube download failed. Check the link and try again.");
     } finally {
       setImportingUrl(false);
     }
@@ -993,18 +998,18 @@ function App() {
                   )}
                   {uploadMessage && <div className={"upload-feedback" + (uploadError ? " upload-feedback-error" : "")}><span className="upload-feedback-icon">{uploadError ? <CircleAlert size={17} /> : <Check size={17} />}</span><span>{uploadMessage}</span>{!uploadError && <button type="button" className="text-button" onClick={() => setView("library")}>Open library <ArrowUpRight size={14} /></button>}</div>}
 
-                  <div className="url-import-divider"><span>OR IMPORT FROM A DOWNLOAD LINK</span></div>
-                  <form className="url-import-block" onSubmit={(event) => { event.preventDefault(); importFromUrl(); }}>
-                    <label htmlFor="audio-import-url">Direct audio file URL</label>
+                  <div className="url-import-divider"><span>OR DOWNLOAD FROM YOUTUBE</span></div>
+                  <form className="url-import-block" onSubmit={(event) => { event.preventDefault(); downloadFromYoutube(); }}>
+                    <label htmlFor="audio-import-url">YouTube video URL</label>
                     <div className="url-import-row">
                       <div className="url-import-input-wrap">
-                        <Link2 size={17} />
+                        <Youtube size={17} />
                         <input
                           id="audio-import-url"
                           type="url"
                           inputMode="url"
                           autoComplete="url"
-                          placeholder="https://example.com/music/track.mp3"
+                          placeholder="https://www.youtube.com/watch?v=..."
                           value={audioUrl}
                           onChange={(event) => { setAudioUrl(event.target.value); setUrlImportMessage(""); setUrlImportError(false); }}
                           maxLength={2048}
@@ -1014,10 +1019,10 @@ function App() {
                       </div>
                       <button className="primary-button" type="submit" disabled={importingUrl || !audioUrl.trim()}>
                         {importingUrl ? <RefreshCw size={15} className="spin" /> : <Download size={15} />}
-                        {importingUrl ? "Importing…" : "Import URL"}
+                        {importingUrl ? "Downloading…" : "Download MP3"}
                       </button>
                     </div>
-                    <p className="url-import-hint">Use a direct HTTPS download link to an audio file you are allowed to save — not a YouTube watch page or a webpage with a download button.</p>
+                    <p className="url-import-hint">Paste a link to a YouTube video — the audio is downloaded and saved as an MP3 in <code>music/Uploads</code>. Only save content you are allowed to keep.</p>
                     {urlImportMessage && <div className={"upload-feedback" + (urlImportError ? " upload-feedback-error" : "")}><span className="upload-feedback-icon">{urlImportError ? <CircleAlert size={17} /> : <Check size={17} />}</span><span>{urlImportMessage}</span>{!urlImportError && <button className="text-button" type="button" onClick={() => setView("library")}>Open library <ArrowUpRight size={14} /></button>}</div>}
                   </form>
 

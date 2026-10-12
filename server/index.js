@@ -10,6 +10,9 @@ import dotenv from "dotenv";
 import multer from "multer";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { create as createYoutubeDl } from "youtube-dl-exec";
+
+const youtubedl = createYoutubeDl("/usr/bin/yt-dlp");
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 dotenv.config({ path: path.join(projectRoot, ".env") });
@@ -55,6 +58,24 @@ const audioMimeToExtension = {
   "audio/webm": ".webm"
 };
 
+function isYoutubeUrl(value) {
+  if (typeof value !== "string" || value.length > 2048) return false;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return false;
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    return (
+      host === "youtu.be" ||
+      host === "youtube.com" ||
+      host === "m.youtube.com" ||
+      host === "music.youtube.com" ||
+      host === "youtube-nocookie.com"
+    );
+  } catch {
+    return false;
+  }
+}
+
 function ipv4ToBigInt(address) {
   const parts = address.split(".");
   if (parts.length !== 4 || parts.some((part) => !/^\d{1,3}$/.test(part) || Number(part) > 255)) return null;
@@ -96,13 +117,12 @@ function addressIsPublic(address) {
   if (family === 6) {
     const value = ipv6ToBigInt(address);
     if (value === null) return false;
-    // Allow only IPv6 global-unicast space (2000::/3), excluding special-use/documentation ranges.
     if ((value >> 125n) !== 1n) return false;
     const prefixMatches = (network, bits) => (value >> BigInt(128 - bits)) === (network >> BigInt(128 - bits));
     const blocked = [
-      [(0x20010db8000000000000000000000000n), 32], // Documentation: 2001:db8::/32
-      [(0x20010000000000000000000000000000n), 23], // Special-use transition range: 2001::/23
-      [(0x20020000000000000000000000000000n), 16]  // 6to4: 2002::/16
+      [(0x20010db8000000000000000000000000n), 32],
+      [(0x20010000000000000000000000000000n), 23],
+      [(0x20020000000000000000000000000000n), 16]
     ];
     return !blocked.some(([network, bits]) => prefixMatches(network, bits));
   }
@@ -192,7 +212,43 @@ async function chooseUniqueUploadPath(name) {
   throw new Error("Could not choose a unique filename for this import.");
 }
 
+// Классификация ошибок yt-dlp для понятного сообщения пользователю.
+function describeYtdlpError(error) {
+  const stderr = error?.stderr ? String(error.stderr) : "";
+  const stdout = error?.stdout ? String(error.stdout) : "";
+  const combined = (stderr + "\n" + stdout + "\n" + (error?.message || "")).toLowerCase();
 
+  let code = "youtube_unavailable";
+  let friendly = "Could not read that YouTube video. It may be private, age-restricted, region-locked, or YouTube changed something.";
+
+  if (combined.includes("sign in to confirm") || combined.includes("not a bot") || combined.includes("confirm you're not a bot")) {
+    code = "youtube_bot_check";
+    friendly = "YouTube requires sign-in confirmation for this request. Export cookies from your browser to cookies.txt in the project root, then restart SelfMusic.";
+  } else if (combined.includes("private video")) {
+    code = "youtube_private";
+    friendly = "This video is private.";
+  } else if (combined.includes("video unavailable")) {
+    code = "youtube_unavailable_video";
+    friendly = "This video is unavailable.";
+  } else if (combined.includes("age") && combined.includes("restrict")) {
+    code = "youtube_age_restricted";
+    friendly = "This video is age-restricted and requires cookies from a signed-in session.";
+  } else if (combined.includes("http error 403") || combined.includes("403 forbidden")) {
+    code = "youtube_forbidden";
+    friendly = "YouTube returned 403 Forbidden. Try adding cookies.txt or updating yt-dlp (sudo pacman -S yt-dlp).";
+  } else if (combined.includes("unsupported url") || combined.includes("is not a valid url")) {
+    code = "youtube_bad_url";
+    friendly = "That YouTube URL is not supported.";
+  } else if (combined.includes("enoent") || combined.includes("no such file")) {
+    code = "ytdlp_missing";
+    friendly = "yt-dlp binary was not found. Install it with: sudo pacman -S yt-dlp";
+  } else if (combined.includes("is not a valid") && combined.includes("url")) {
+    code = "youtube_bad_url";
+    friendly = "That YouTube URL is not supported.";
+  }
+
+  return { code, friendly, stderr, stdout };
+}
 
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
@@ -654,6 +710,137 @@ app.get("/api/youtube/search", requireAuth, async (req, res, next) => {
     if (error.name === "TimeoutError" || error.name === "AbortError") {
       return res.status(504).json({ error: "youtube_timeout", message: "YouTube search took too long. Try again." });
     }
+    next(error);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Download audio from a YouTube URL and convert to MP3 using yt-dlp.
+// POST /api/youtube/download   body: { url: "https://www.youtube.com/watch?v=..." }
+// ─────────────────────────────────────────────────────────────────────────────
+app.post("/api/youtube/download", requireAuth, async (req, res, next) => {
+  let targetPath = null;
+  try {
+    const rawUrl = typeof req.body?.url === "string" ? req.body.url.trim() : "";
+    if (!rawUrl || rawUrl.length > 2048) {
+      return res.status(400).json({
+        error: "invalid_youtube_url",
+        message: "Paste a YouTube video URL."
+      });
+    }
+    if (!isYoutubeUrl(rawUrl)) {
+      return res.status(400).json({
+        error: "invalid_youtube_url",
+        message: "That does not look like a valid YouTube video URL."
+      });
+    }
+
+    const ytdlpCommon = {
+      noWarnings: true,
+      noCheckCertificates: true,
+      noPlaylist: true,
+      verbose: true,
+      forceIpv4: true,
+      extractorArgs: "youtube:player_client=android,web",
+      addHeader: [
+        "referer:youtube.com",
+        "user-agent:Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36"
+      ]
+    };
+
+    // Если пользователь положил cookies.txt в корень проекта — используем его.
+    const cookiesPath = path.join(projectRoot, "cookies.txt");
+    if (fs.existsSync(cookiesPath)) {
+      ytdlpCommon.cookies = cookiesPath;
+    }
+
+    let info;
+    try {
+      info = await youtubedl(rawUrl, { ...ytdlpCommon, dumpSingleJson: true, skipDownload: true });
+    } catch (error) {
+      const described = describeYtdlpError(error);
+      console.error("[SelfMusic] yt-dlp info failed:", {
+        message: error?.message || "(no message)",
+        code: error?.code,
+        exitCode: error?.exitCode,
+        signal: error?.signal,
+        stderr: described.stderr ? described.stderr.slice(-4000) : "(empty)",
+        stdout: described.stdout ? described.stdout.slice(-4000) : "(empty)"
+      });
+      return res.status(400).json({ error: described.code, message: described.friendly });
+    }
+
+    const durationSeconds = Number(info?.duration || 0);
+    const maxDurationSeconds = Number.parseInt(process.env.YOUTUBE_MAX_DURATION_SECONDS || "3600", 10);
+    if (Number.isFinite(durationSeconds) && durationSeconds > maxDurationSeconds) {
+      return res.status(413).json({
+        error: "youtube_too_long",
+        message: "That video is longer than the allowed " + Math.round(maxDurationSeconds / 60) + " minutes."
+      });
+    }
+
+    const rawTitle = String(info?.title || "YouTube audio");
+    const baseName = safeUploadedName(rawTitle).replace(/\.[a-z0-9]{2,5}$/i, "").slice(0, 140) || "YouTube audio";
+    const filename = baseName + ".mp3";
+
+    await fs.promises.mkdir(uploadRoot, { recursive: true });
+    targetPath = await chooseUniqueUploadPath(filename);
+
+    // yt-dlp wants an output template; use stem + %(ext)s so it writes exactly <stem>.mp3.
+    const outputTemplate = path.join(uploadRoot, path.basename(targetPath, ".mp3") + ".%(ext)s");
+
+    try {
+      await youtubedl(rawUrl, {
+        ...ytdlpCommon,
+        extractAudio: true,
+        audioFormat: "mp3",
+        audioQuality: 0,
+        output: outputTemplate
+      });
+    } catch (error) {
+      const described = describeYtdlpError(error);
+      await fs.promises.unlink(targetPath).catch(() => {});
+      console.error("[SelfMusic] yt-dlp download error:", {
+        message: error?.message || "(no message)",
+        code: error?.code,
+        exitCode: error?.exitCode,
+        signal: error?.signal,
+        stderr: described.stderr ? described.stderr.slice(-4000) : "(empty)",
+        stdout: described.stdout ? described.stdout.slice(-4000) : "(empty)"
+      });
+      return res.status(500).json({ error: described.code, message: described.friendly });
+    }
+
+    let stats;
+    try {
+      stats = await fs.promises.stat(targetPath);
+    } catch {
+      return res.status(500).json({
+        error: "youtube_empty_output",
+        message: "The conversion produced no file."
+      });
+    }
+
+    if (!stats.size) {
+      await fs.promises.unlink(targetPath).catch(() => {});
+      return res.status(500).json({
+        error: "youtube_empty_output",
+        message: "The conversion produced an empty file."
+      });
+    }
+
+    res.setHeader("Cache-Control", "no-store");
+    res.status(201).json({
+      downloaded: true,
+      name: path.basename(targetPath),
+      bytes: stats.size,
+      durationSeconds,
+      title: rawTitle,
+      destination: "Uploads"
+    });
+  } catch (error) {
+    if (targetPath) await fs.promises.unlink(targetPath).catch(() => {});
+    console.error("[SelfMusic] YouTube download error:", error?.message);
     next(error);
   }
 });
