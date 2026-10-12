@@ -162,7 +162,7 @@ function LoginScreen({ configured, checking, onLogin, error, serverUnavailable }
         ) : !configured ? (
           <div className="setup-notice">
             <div className="notice-heading"><CircleAlert size={18} /> The server needs setup</div>
-            <p>SelfMusic runs on your computer. Create a <strong>.env</strong> file from <strong>.env.example</strong>, set a password with at least 12 characters, then restart the server.</p>
+            <p>SelfMusic runs on your computer. Create a <strong>.env</strong> file in the project folder, set your own password with at least 12 characters and a random <code>SESSION_SECRET</code>, then restart the server.</p>
             <p className="notice-foot">A webpage cannot start a background server or grant itself access to your computer's music folders. The cross-platform setup steps are in the README.</p>
             <a className="text-link" href="https://github.com/b-1-o/selfmusic#run-the-home-server" target="_blank" rel="noreferrer">Open setup guide <ArrowUpRight size={15} /></a>
           </div>
@@ -1027,8 +1027,8 @@ function App() {
                     <div><Check size={16} /><span>Use HTTPS with a private access policy and never commit <code>.env</code>.</span></div>
                     <div><Check size={16} /><span>Keep the operating system and Node.js updated.</span></div>
                   </div>
-                  <button className="settings-action" onClick={() => copyText("cp .env.example .env")}><Copy size={15} /> {copied ? "Copied" : "Copy Linux/macOS setup command"} {copied && <Check size={15} />}</button>
-                  <p className="settings-footnote">On Windows, duplicate <code>.env.example</code> as <code>.env</code> in File Explorer, then edit it in Notepad.</p>
+                  <button className="settings-action" onClick={() => copyText("node -e \"console.log(require('node:crypto').randomBytes(32).toString('hex'))\"")}><Copy size={15} /> {copied ? "Copied" : "Copy secret-generation command"} {copied && <Check size={15} />}</button>
+                  <p className="settings-footnote">Create and edit <code>.env</code> directly in the project folder with your preferred editor. Keep it private and never commit it to GitHub.</p>
                 </div>
               </div>
 
