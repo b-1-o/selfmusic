@@ -1157,7 +1157,7 @@ function App() {
     else if (libraryFilters.sort === "year") list.sort((a, b) => Number(b.year || 0) - Number(a.year || 0) || compare(a, b, "title"));
     else if (libraryFilters.sort === "duration") list.sort((a, b) => Number(a.duration || 0) - Number(b.duration || 0));
     else if (libraryFilters.sort === "recent") list.sort((a, b) => String(b.addedAt || "").localeCompare(String(a.addedAt || "")));
-    else list.sort((a, b) => compare(a, "artist") || compare(a, b, "album") || compare(a, b, "trackNumber") || compare(a, b, "title"));
+    else list.sort((a, b) => compare(a, b, "artist") || compare(a, b, "album") || compare(a, b, "trackNumber") || compare(a, b, "title"));
     return list;
   }, [tracks, view, favorites, query, libraryFilters]);
 
