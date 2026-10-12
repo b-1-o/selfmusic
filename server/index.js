@@ -271,11 +271,12 @@ app.use("/api", enforceSameOriginMutation);
 
 const rateLimitBuckets = new Map();
 function rateLimitHeavyApi(req, res, next) {
-  const heavy = /^\/api\/(?:youtube\/(?:search|download)|import-url|upload)$/.test(req.path);
+  const requestPath = String(req.originalUrl || req.url || "").split("?")[0];
+  const heavy = /^\/api\/(?:youtube\/(?:search|download)|import-url|upload)$/.test(requestPath);
   if (!heavy) return next();
   const windowMs = Math.max(10000, Number.parseInt(process.env.API_RATE_LIMIT_WINDOW_MS || "60000", 10) || 60000);
   const max = Math.max(1, Number.parseInt(process.env.HEAVY_API_RATE_LIMIT_MAX || "8", 10) || 8);
-  const key = (req.ip || req.socket.remoteAddress || "unknown") + ":" + req.path;
+  const key = (req.ip || req.socket.remoteAddress || "unknown") + ":" + requestPath;
   const now = Date.now();
   let bucket = rateLimitBuckets.get(key);
   if (!bucket || now - bucket.startedAt >= windowMs) bucket = { startedAt: now, count: 0 };
@@ -317,29 +318,68 @@ function constantTimeTextCompare(left, right) {
   return crypto.timingSafeEqual(a, b);
 }
 
-function createSessionToken() {
+function createSessionToken(userId = "legacy") {
   const expiresAt = String(Math.floor(Date.now() / 1000) + sessionLifetimeSeconds);
-  const signature = crypto.createHmac("sha256", sessionSecret).update(expiresAt).digest("base64url");
-  return expiresAt + "." + signature;
+  if (userId === "legacy") {
+    const signature = crypto.createHmac("sha256", sessionSecret).update(expiresAt).digest("base64url");
+    return expiresAt + "." + signature;
+  }
+  const signedValue = userId + "." + expiresAt;
+  const signature = crypto.createHmac("sha256", sessionSecret).update(signedValue).digest("base64url");
+  return signedValue + "." + signature;
+}
+
+function getSessionInfo(req) {
+  const cookies = String(req.headers.cookie || "").split(";").map((part) => part.trim());
+  const entry = cookies.find((part) => part.startsWith(sessionCookie + "="));
+  if (!entry) return { status: "missing", userId: null };
+
+  const token = entry.slice(sessionCookie.length + 1);
+  const parts = token.split(".");
+  let userId = "legacy";
+  let expiresAt;
+  let signature;
+  let signedValue;
+  if (parts.length === 2) {
+    [expiresAt, signature] = parts;
+    signedValue = expiresAt;
+  } else if (parts.length === 3) {
+    [userId, expiresAt, signature] = parts;
+    signedValue = userId + "." + expiresAt;
+  } else {
+    return { status: "invalid", userId: null };
+  }
+  const expiresAtNumber = Number(expiresAt);
+  if (!expiresAt || !signature || !Number.isSafeInteger(expiresAtNumber) || expiresAtNumber <= Math.floor(Date.now() / 1000)) {
+    return { status: "invalid", userId: null };
+  }
+  const expected = crypto.createHmac("sha256", sessionSecret).update(signedValue).digest("base64url");
+  return constantTimeTextCompare(signature, expected)
+    ? { status: "valid", userId }
+    : { status: "invalid", userId: null };
 }
 
 function getSessionStatus(req) {
-  const cookies = String(req.headers.cookie || "").split(";").map((part) => part.trim());
-  const entry = cookies.find((part) => part.startsWith(sessionCookie + "="));
-  if (!entry) return "missing";
-
-  const token = entry.slice(sessionCookie.length + 1);
-  const [expiresAt, signature] = token.split(".");
-  const expiresAtNumber = Number(expiresAt);
-  if (!expiresAt || !signature || !Number.isSafeInteger(expiresAtNumber) || expiresAtNumber <= Math.floor(Date.now() / 1000)) {
-    return "invalid";
-  }
-  const expected = crypto.createHmac("sha256", sessionSecret).update(expiresAt).digest("base64url");
-  return constantTimeTextCompare(signature, expected) ? "valid" : "invalid";
+  return getSessionInfo(req).status;
 }
 
-function hasValidSession(req) {
-  return getSessionStatus(req) === "valid";
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString("base64url");
+  const derived = crypto.scryptSync(password, salt, 64).toString("base64url");
+  return "scrypt$" + salt + "$" + derived;
+}
+
+function verifyPassword(password, encoded) {
+  if (typeof encoded !== "string") return false;
+  const [algorithm, salt, expectedText] = encoded.split("$");
+  if (algorithm !== "scrypt" || !salt || !expectedText) return false;
+  try {
+    const expected = Buffer.from(expectedText, "base64url");
+    const actual = crypto.scryptSync(password, salt, expected.length);
+    return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+  } catch {
+    return false;
+  }
 }
 
 function sessionRequestIsSecure(req) {
@@ -394,9 +434,20 @@ function requireAuth(req, res, next) {
   if (!isConfigured()) {
     return res.status(503).json({ error: "server_not_configured", message: "Set SELF_MUSIC_PASSWORD in .env before using the library." });
   }
-  if (!hasValidSession(req)) {
+  const session = getSessionInfo(req);
+  if (session.status !== "valid") {
     return res.status(401).json({ error: "unauthorized", message: "Sign in to access your music library." });
   }
+  if (session.userId === "legacy") {
+    req.authUser = { id: "legacy", username: "owner", role: "admin", legacy: true };
+    return next();
+  }
+  const user = db.prepare("SELECT id, username, role, created_at AS createdAt FROM users WHERE id = ?").get(session.userId);
+  if (!user) {
+    setSessionCookie(req, res, "", 0);
+    return res.status(401).json({ error: "unauthorized", message: "This account no longer exists. Sign in again." });
+  }
+  req.authUser = user;
   next();
 }
 
@@ -450,7 +501,7 @@ app.post("/api/auth/login", (req, res) => {
   if (!isConfigured()) {
     return res.status(503).json({
       error: "server_not_configured",
-      message: "Create .env from .env.example, set a password of at least 8 characters, then restart SelfMusic."
+      message: "Create .env from .env.example, set SELF_MUSIC_PASSWORD and SESSION_SECRET, then restart SelfMusic."
     });
   }
 
@@ -462,18 +513,94 @@ app.post("/api/auth/login", (req, res) => {
   }
 
   const password = typeof req.body?.password === "string" ? req.body.password : "";
-  if (!constantTimeTextCompare(password, process.env.SELF_MUSIC_PASSWORD)) {
+  const username = typeof req.body?.username === "string" ? req.body.username.trim() : "";
+  let userId = null;
+  let user = null;
+  if (username) {
+    user = db.prepare("SELECT id, password_hash FROM users WHERE username = ? COLLATE NOCASE").get(username);
+    if (user && verifyPassword(password, user.password_hash)) userId = user.id;
+  } else if (constantTimeTextCompare(password, process.env.SELF_MUSIC_PASSWORD)) {
+    userId = "legacy";
+  }
+
+  if (!userId) {
     if (!attempt || now - attempt.startedAt >= 15 * 60 * 1000) {
       loginAttempts.set(key, { startedAt: now, count: 1 });
     } else {
       attempt.count += 1;
     }
-    return res.status(401).json({ error: "invalid_password", message: "That password did not match." });
+    return res.status(401).json({ error: "invalid_credentials", message: "The username or password did not match." });
   }
 
   loginAttempts.delete(key);
-  setSessionCookie(req, res, createSessionToken());
-  res.json({ authenticated: true });
+  setSessionCookie(req, res, createSessionToken(userId));
+  res.json({
+    authenticated: true,
+    user: user ? { id: user.id, username, role: db.prepare("SELECT role FROM users WHERE id = ?").get(user.id)?.role || "user" } : { id: "legacy", username: "owner", role: "admin" }
+  });
+});
+
+app.get("/api/auth/profile", requireAuth, (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ user: { id: req.authUser.id, username: req.authUser.username, role: req.authUser.role } });
+});
+
+app.post("/api/auth/register", requireAuth, (req, res) => {
+  if (req.authUser.role !== "admin") {
+    return res.status(403).json({ error: "admin_required", message: "Only an administrator can create accounts." });
+  }
+  const username = typeof req.body?.username === "string" ? req.body.username.trim() : "";
+  const password = typeof req.body?.password === "string" ? req.body.password : "";
+  const role = req.body?.role === "admin" ? "admin" : "user";
+  if (!/^[A-Za-z0-9._-]{3,32}$/.test(username)) {
+    return res.status(400).json({ error: "invalid_username", message: "Username must be 3–32 characters using letters, numbers, dot, underscore or hyphen." });
+  }
+  if (password.length < 12 || password.length > 128) {
+    return res.status(400).json({ error: "invalid_password", message: "Account passwords must be 12–128 characters." });
+  }
+  try {
+    const id = crypto.randomUUID();
+    db.prepare("INSERT INTO users(id, username, password_hash, role) VALUES (?, ?, ?, ?)").run(id, username, hashPassword(password), role);
+    console.info("[SelfMusic] account created", JSON.stringify({ id, role }));
+    res.status(201).json({ user: { id, username, role } });
+  } catch (error) {
+    if (String(error?.code || "").includes("CONSTRAINT")) {
+      return res.status(409).json({ error: "username_taken", message: "That username is already in use." });
+    }
+    throw error;
+  }
+});
+
+app.get("/api/admin/users", requireAuth, (req, res) => {
+  if (req.authUser.role !== "admin") return res.status(403).json({ error: "admin_required" });
+  const users = db.prepare("SELECT id, username, role, created_at AS createdAt FROM users ORDER BY created_at, username COLLATE NOCASE").all();
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ users });
+});
+
+app.patch("/api/admin/users/:id", requireAuth, (req, res) => {
+  if (req.authUser.role !== "admin") return res.status(403).json({ error: "admin_required" });
+  const id = String(req.params.id || "");
+  const role = req.body?.role;
+  if (!["admin", "user"].includes(role)) return res.status(400).json({ error: "invalid_role" });
+  if (id === req.authUser.id && role !== "admin") return res.status(400).json({ error: "cannot_demote_self", message: "You cannot remove your own administrator role." });
+  const result = db.prepare("UPDATE users SET role = ? WHERE id = ?").run(role, id);
+  if (!result.changes) return res.status(404).json({ error: "user_not_found" });
+  res.json({ updated: true, id, role });
+});
+
+app.delete("/api/admin/users/:id", requireAuth, (req, res) => {
+  if (req.authUser.role !== "admin") return res.status(403).json({ error: "admin_required" });
+  const id = String(req.params.id || "");
+  if (!id || id === req.authUser.id || id === "legacy") return res.status(400).json({ error: "cannot_delete_user", message: "An administrator cannot delete their own account." });
+  const result = db.prepare("DELETE FROM users WHERE id = ?").run(id);
+  if (!result.changes) return res.status(404).json({ error: "user_not_found" });
+  db.prepare("DELETE FROM playlists WHERE user_id = ?").run(id);
+  db.prepare("DELETE FROM favorites WHERE user_id = ?").run(id);
+  db.prepare("DELETE FROM play_history WHERE user_id = ?").run(id);
+  db.prepare("DELETE FROM lastfm_accounts WHERE user_id = ?").run(id);
+  console.info("[SelfMusic] account deleted", JSON.stringify({ id }));
+  res.status(204).end();
 });
 
 app.post("/api/auth/logout", (req, res) => {
