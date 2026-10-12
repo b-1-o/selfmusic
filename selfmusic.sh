@@ -30,6 +30,8 @@ SelfMusic native launcher
 Usage:
   selfmusic [start]        Start the server and open the browser
   selfmusic stop           Stop the server
+  selfmusic off            Stop the server
+  off selfmusic            Stop the server (short command)
   selfmusic restart        Restart the server
   selfmusic status         Show status and connection addresses
   selfmusic logs           Follow the server log
@@ -186,7 +188,7 @@ done
 
 case "$ACTION" in
   start|"") start_server ;;
-  stop) stop_server ;;
+  stop|off) stop_server ;;
   restart) stop_server || true; start_server ;;
   status)
     if health_ok; then green "SelfMusic is responding."; else yellow "SelfMusic is not responding."; fi

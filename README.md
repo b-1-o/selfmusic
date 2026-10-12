@@ -37,6 +37,9 @@ Useful commands:
 |---|---|
 | `selfmusic` | Start the server and open the browser |
 | `selfmusic stop` | Stop the server |
+| `selfmusic off` | Stop the server (same as `stop`) |
+| `off selfmusic` | Short command to stop SelfMusic |
+| `selfmusic restart` | Restart the server |
 | `selfmusic status` | Show status and connection addresses |
 | `selfmusic logs` | Follow the server log |
 | `selfmusic remote` | Try to configure private HTTPS through Tailscale |
@@ -52,7 +55,7 @@ Useful commands:
 
 3. The installer creates a **SelfMusic** desktop shortcut and a `selfmusic` command shim. Click the shortcut, or open a new PowerShell window and run `selfmusic`.
 
-Use `selfmusic stop`, `selfmusic status`, `selfmusic logs`, `selfmusic open`, or `selfmusic remote` to manage the server.
+Use `selfmusic stop`, `selfmusic off`, `selfmusic restart`, `selfmusic status`, `selfmusic logs`, `selfmusic open`, or `selfmusic remote` to manage the server. The Windows installer also adds the `off` command, so `off selfmusic` stops the server without closing Windows or deleting music files.
 
 A browser/PWA shortcut can open SelfMusic, but browser security prevents a webpage from starting a stopped local server. The desktop shortcut / `selfmusic` launcher starts the server first, then opens the browser.
 

@@ -110,6 +110,17 @@ mkdir -p "$BIN_DIR"
 printf '#!/usr/bin/env bash\nexec /bin/bash %q/selfmusic.sh "$@"\n' "$ROOT_DIR" > "$BIN_DIR/selfmusic"
 chmod 755 "$BIN_DIR/selfmusic"
 
+cat > "$BIN_DIR/off" <<'OFF_COMMAND'
+#!/usr/bin/env bash
+if [ "${1:-}" = "selfmusic" ] && [ "$#" -eq 1 ]; then
+  exec "$HOME/.local/bin/selfmusic" off
+fi
+printf 'Usage: off selfmusic\n' >&2
+printf 'This stops the SelfMusic server; it does not shut down your computer.\n' >&2
+exit 2
+OFF_COMMAND
+chmod 755 "$BIN_DIR/off"
+
 if command -v fish >/dev/null 2>&1; then
   fish -c 'fish_add_path -U "$HOME/.local/bin"' >/dev/null 2>&1 || true
 fi
@@ -152,6 +163,8 @@ green "Native SelfMusic setup completed. Docker is not required."
 printf '\nDaily use:\n'
 printf '  selfmusic         Start SelfMusic and open the browser\n'
 printf '  selfmusic stop    Stop the server\n'
+printf '  selfmusic off     Stop the server\n'
+printf '  off selfmusic     Stop the server (short command)\n'
 printf '  selfmusic status  Show status and connection addresses\n'
 printf '  selfmusic logs    Follow server logs\n'
 printf '  selfmusic remote  Configure private HTTPS access through Tailscale\n'

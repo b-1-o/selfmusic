@@ -108,6 +108,16 @@ $CmdBody = '@echo off' + [Environment]::NewLine +
 $CmdPath = Join-Path $ToolsDir "selfmusic.cmd"
 [System.IO.File]::WriteAllText($CmdPath, $CmdBody, [System.Text.Encoding]::ASCII)
 
+$OffBody = '@echo off' + [Environment]::NewLine +
+    'if /I "%~1"=="selfmusic" if "%~2"=="" goto stopSelfMusic' + [Environment]::NewLine +
+    'echo Usage: off selfmusic' + [Environment]::NewLine +
+    'exit /b 2' + [Environment]::NewLine +
+    ':stopSelfMusic' + [Environment]::NewLine +
+    'powershell.exe -NoProfile -ExecutionPolicy Bypass -File ' + $Quote + $LauncherPath + $Quote + ' off' + [Environment]::NewLine +
+    'exit /b %errorlevel%' + [Environment]::NewLine
+$OffCmdPath = Join-Path $ToolsDir "off.cmd"
+[System.IO.File]::WriteAllText($OffCmdPath, $OffBody, [System.Text.Encoding]::ASCII)
+
 $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ([string]::IsNullOrWhiteSpace($UserPath)) { $UserPath = "" }
 $PathEntries = $UserPath -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
@@ -137,7 +147,8 @@ if (-not (Get-Command yt-dlp -ErrorAction SilentlyContinue) -or -not (Get-Comman
 }
 Write-Host ([Environment]::NewLine + "Native setup complete. Docker is not required.") -ForegroundColor Green
 Write-Host "Click the SelfMusic desktop shortcut, or open a NEW PowerShell window and run: selfmusic"
-Write-Host "Available commands: selfmusic stop | status | logs | open | remote"
+Write-Host "Available commands: selfmusic stop | off | restart | status | logs | open | remote"
+Write-Host "Stop SelfMusic with 'selfmusic off' or the shortcut command 'off selfmusic'."
 Write-Host "For remote access, install Tailscale on this PC and your phone and sign both into the same tailnet:"
 Write-Host "https://tailscale.com/download"
 Write-Host "Then run 'selfmusic remote' to try enabling private HTTPS. The tailnet must have MagicDNS and HTTPS certificates enabled."

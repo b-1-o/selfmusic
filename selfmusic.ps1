@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("start", "stop", "status", "logs", "open", "remote")]
+    [ValidateSet("start", "stop", "off", "restart", "status", "logs", "open", "remote")]
     [string]$Action = "start"
 )
 
@@ -129,19 +129,27 @@ function Start-SelfMusic {
     Start-Process $BrowserUrl
 }
 
+function Stop-SelfMusic {
+    $Process = Get-SelfMusicProcess
+    if ($Process) {
+        Stop-Process -Id $Process.ProcessId
+        try { Wait-Process -Id $Process.ProcessId -Timeout 10 -ErrorAction Stop } catch { }
+        Remove-Item -Force $PidFile -ErrorAction SilentlyContinue
+        Write-Host "SelfMusic stopped. Your music files are unchanged." -ForegroundColor Green
+    } elseif (Test-SelfMusicHealth) {
+        Write-Warning "SelfMusic is responding, but this launcher does not own its process ID. Stop the process that started it."
+    } else {
+        Write-Host "SelfMusic is not running."
+    }
+}
+
 switch ($Action) {
     "start" { Start-SelfMusic }
-    "stop" {
-        $Process = Get-SelfMusicProcess
-        if ($Process) {
-            Stop-Process -Id $Process.ProcessId
-            Remove-Item -Force $PidFile -ErrorAction SilentlyContinue
-            Write-Host "SelfMusic stopped." -ForegroundColor Green
-        } elseif (Test-SelfMusicHealth) {
-            Write-Warning "SelfMusic is responding, but this launcher does not own its process ID. Stop the process that started it."
-        } else {
-            Write-Host "SelfMusic is not running."
-        }
+    "stop" { Stop-SelfMusic }
+    "off" { Stop-SelfMusic }
+    "restart" {
+        Stop-SelfMusic
+        Start-SelfMusic
     }
     "status" {
         if (Test-SelfMusicHealth) { Write-Host "SelfMusic is responding." -ForegroundColor Green }
