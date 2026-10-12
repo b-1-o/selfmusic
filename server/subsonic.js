@@ -324,6 +324,10 @@ export function mountSubsonicRoutes(app, { db, musicRoot, requireFindTracks, res
         return envelope(res);
       }
 
+      if (method === "download" && user.role !== "admin") {
+        return fail(res, 50, "Only administrators can download original audio files.");
+      }
+
       if (method === "stream" || method === "download") {
         const row = getTrackRow(db, requestedId);
         if (!row) return fail(res, 70, "Song not found.");
