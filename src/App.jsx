@@ -461,8 +461,12 @@ function App() {
           artist: currentTrack.artist,
           album: currentTrack.album,
           artwork: [
-            { src: currentTrack.artworkUrl, sizes: "512x512" },
-            { src: "/icon.svg", sizes: "any" },
+            { src: currentTrack.artworkUrl, sizes: "192x192", type: "image/jpeg" },
+            { src: currentTrack.artworkUrl, sizes: "256x256", type: "image/jpeg" },
+            { src: currentTrack.artworkUrl, sizes: "384x384", type: "image/jpeg" },
+            { src: currentTrack.artworkUrl, sizes: "512x512", type: "image/jpeg" },
+            { src: "/icon-512.png", sizes: "512x512", type: "image/png" },
+            { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
           ],
         });
       }
@@ -472,6 +476,14 @@ function App() {
       navigator.mediaSession.setActionHandler("nexttrack", playNext);
       navigator.mediaSession.setActionHandler("seekto", (details) => {
         if (audioRef.current && Number.isFinite(details.seekTime)) audioRef.current.currentTime = details.seekTime;
+      });
+      navigator.mediaSession.setActionHandler("seekbackward", (details) => {
+        const audio = audioRef.current;
+        if (audio) audio.currentTime = Math.max(0, audio.currentTime - (details.seekOffset || 10));
+      });
+      navigator.mediaSession.setActionHandler("seekforward", (details) => {
+        const audio = audioRef.current;
+        if (audio) audio.currentTime = Math.min(audio.duration || Infinity, audio.currentTime + (details.seekOffset || 10));
       });
     } catch {
       // Not all browsers implement every Media Session action.
@@ -486,6 +498,22 @@ function App() {
       // Ignore browsers with partial Media Session support.
     }
   }, [isPlaying]);
+
+  // Progress bar on the lock screen (Android). Updates as the track plays.
+  useEffect(() => {
+    if (!("mediaSession" in navigator) || typeof navigator.mediaSession.setPositionState !== "function") return;
+    const audio = audioRef.current;
+    if (!audio || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
+    try {
+      navigator.mediaSession.setPositionState({
+        duration: audio.duration,
+        playbackRate: audio.playbackRate || 1,
+        position: Math.min(audio.currentTime, audio.duration),
+      });
+    } catch {
+      // Some browsers may throw if values are out of range — ignore.
+    }
+  }, [currentTime, duration]);
 
   const filteredTracks = useMemo(() => {
     let list = tracks;
