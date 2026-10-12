@@ -649,6 +649,28 @@ app.get("/api/tracks", requireAuth, async (_req, res, next) => {
   }
 });
 
+app.get("/api/network/addresses", requireAuth, (_req, res) => {
+  const local = new Set();
+  const tailscale = new Set();
+  const interfaces = os.networkInterfaces();
+
+  for (const [interfaceName, entries] of Object.entries(interfaces)) {
+    if (/^(docker|br-|veth|podman|cni|virbr)/i.test(interfaceName)) continue;
+    for (const entry of entries || []) {
+      if (entry.internal || (entry.family !== 4 && entry.family !== "IPv4")) continue;
+      const address = String(entry.address || "");
+      if (/^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(address)) {
+        tailscale.add(address);
+      } else if (/^10\./.test(address) || /^192\.168\./.test(address)) {
+        local.add(address);
+      }
+    }
+  }
+
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ local: [...local], tailscale: [...tailscale] });
+});
+
 app.get("/api/youtube/search", requireAuth, async (req, res, next) => {
   try {
     const apiKey = process.env.YOUTUBE_API_KEY;
