@@ -20,7 +20,7 @@ from any device on your network or through a tunnel you control.
 
 **Recommended: native installation.** Docker and Tailscale auth keys are not required for ordinary local use.
 
-### Linux / macOS
+### Linux and macOS
 
 1. Install Node.js 20.19+ and npm. On CachyOS / Arch, for example: `sudo pacman -S nodejs npm`.
 2. Clone the repository (or extract its ZIP), open a terminal in the project directory, and run:
@@ -62,7 +62,7 @@ For use at home, open `http://<computer-lan-ip>:8787` from a phone on the same W
 
 Once both devices are connected, `selfmusic status` shows the private Tailscale address. Run `selfmusic remote` to try configuring Tailscale Serve HTTPS. HTTPS Serve requires MagicDNS and HTTPS certificates enabled in the tailnet admin console. The direct Tailscale-IP URL uses HTTP at the browser level, although traffic between Tailscale devices is encrypted by Tailscale; HTTPS is preferred for installable PWA/service-worker features.
 
-The host computer must remain powered on, awake, and connected to the internet while you listen remotely. Do not port-forward SelfMusic directly to the public internet.
+The host computer must remain powered on, awake, and connected to the internet while you listen remotely. Do not port-forward SelfMusic directly to the public internet. The same-Wi-Fi LAN URL is plain HTTP, so use it only on a trusted home network; prefer the Tailscale path while away from home.
 
 ## Optional: Docker deployment (advanced)
 
@@ -323,6 +323,7 @@ Keep the `tailscale-state` volume: it stores the container node's identity. Do n
   `YOUTUBE_MAX_DURATION_SECONDS` (default 60 minutes).
 * Metadata/tag extraction and duplicate-content detection are not
   implemented yet.
+* The committed YouTube-to-MP3 runner currently uses the Linux path `/usr/bin/yt-dlp`; that specific native-download path is Linux-specific. Docker includes the downloader. Windows/macOS native launch works, but YouTube MP3 imports need a platform-specific downloader-path adjustment in the current upstream server source.
 * No playlist persistence beyond the in-memory queue and favorites.
 * Docker build requires roughly 500 MB of disk space for the image and build cache.
 
