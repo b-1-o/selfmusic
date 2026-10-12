@@ -97,6 +97,9 @@ def main():
             print(json.dumps({"error": "unsupported_audio"}))
             return
         tags = getattr(audio, "tags", None) or {}
+        # Easy tag wrappers normalize text tags, but raw MP3 ID3/APIC and some
+        # container-specific cover tags are exposed only by the non-easy parser.
+        raw_audio = MutagenFile(filename, easy=False)
         raw_artist = first(tags, "artist", "performer")
         raw_album_artist = first(tags, "albumartist", "album artist", "band")
         raw_album = first(tags, "album")
@@ -123,7 +126,7 @@ def main():
             "bitrate": int(info.bitrate) if info and getattr(info, "bitrate", None) else None,
             "sampleRate": int(info.sample_rate) if info and getattr(info, "sample_rate", None) else None,
             "codec": path_ext,
-            "cover": cover_data(audio),
+            "cover": cover_data(raw_audio) or cover_data(audio),
         }
         print(json.dumps(result, ensure_ascii=False))
     except Exception as error:
