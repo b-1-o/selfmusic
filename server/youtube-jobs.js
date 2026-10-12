@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { getTrackRow, scanLibrary } from "./library.js";
+import { getTrackRow, hashFile, scanLibrary } from "./library.js";
 
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 const BITRATES = new Set(["64k", "96k", "128k", "160k", "192k", "256k", "320k"]);
@@ -78,6 +78,11 @@ function sanitizeName(value) {
     .slice(0, 140);
   if (!name || name === "." || name === "..") name = "YouTube audio";
   return name;
+}
+
+function duplicateStrategy() {
+  const configured = String(process.env.DUPLICATE_STRATEGY || "keep").toLowerCase();
+  return ["skip", "keep", "ask"].includes(configured) ? configured : "keep";
 }
 
 function publicJob(row) {
@@ -212,6 +217,8 @@ async function runOneJob(db, config, row) {
   const musicRoot = path.resolve(config.musicRoot);
   const uploadRoot = path.join(musicRoot, "Uploads");
   await fs.mkdir(uploadRoot, { recursive: true });
+  // Index the existing library before this task creates a new file, so duplicate lookup won't match the output against itself.
+  await scanLibrary(db, musicRoot, { coverCacheDir: config.coverCacheDir });
   const jobTemp = path.join(config.workDir, "youtube", jobId);
   await fs.mkdir(jobTemp, { recursive: true });
   const url = normalizeVideoUrl({ url: row.url });
@@ -276,6 +283,23 @@ async function runOneJob(db, config, row) {
     }
     await runFfmpegMetadata(outputPath, effectiveMetadata, jobTemp);
     const finalStats = await fs.stat(outputPath);
+    const outputSha256 = await hashFile(outputPath);
+    const strategy = duplicateStrategy();
+    const duplicateMatches = db.prepare("SELECT id, title, artist, album, relative_path AS path, size_bytes AS bytes FROM tracks WHERE sha256 = ? LIMIT 10").all(outputSha256);
+
+    if (duplicateMatches.length && strategy === "skip") {
+      await fs.unlink(outputPath);
+      const existing = duplicateMatches[0];
+      const resultPayload = {
+        skippedDuplicate: true,
+        existingTracks: duplicateMatches,
+        title: existing.title,
+        destination: "existing library track"
+      };
+      updateJob(db, jobId, { status: "completed", progress: 100, title: existing.title, trackId: existing.id, result: resultPayload });
+      console.info("[SelfMusic] YouTube duplicate skipped", JSON.stringify({ jobId, trackId: existing.id }));
+      return;
+    }
 
     const relativePath = path.relative(musicRoot, outputPath);
     if (!relativePath || relativePath.startsWith(".." + path.sep) || path.isAbsolute(relativePath)) {
@@ -283,7 +307,7 @@ async function runOneJob(db, config, row) {
       error.code = "INVALID_OUTPUT_PATH";
       throw error;
     }
-    await scanLibrary(db, musicRoot, { coverCacheDir: config.coverCacheDir, force: true });
+    await scanLibrary(db, musicRoot, { coverCacheDir: config.coverCacheDir });
     const trackId = Buffer.from(relativePath).toString("base64url");
     const track = getTrackRow(db, trackId);
     const resultPayload = {
@@ -293,7 +317,9 @@ async function runOneJob(db, config, row) {
       title,
       artist: effectiveMetadata?.artist || "",
       album: effectiveMetadata?.album || "",
-      destination: "MUSIC_DIR/Uploads"
+      destination: "MUSIC_DIR/Uploads",
+      duplicateStrategy: strategy,
+      duplicateMatches: duplicateMatches.length && strategy === "ask" ? duplicateMatches : undefined
     };
     updateJob(db, jobId, { status: "completed", progress: 100, title, trackId: track?.id || trackId, result: resultPayload });
     console.info("[SelfMusic] YouTube job completed", JSON.stringify({ jobId, trackId: track?.id || trackId, bytes: finalStats.size }));
