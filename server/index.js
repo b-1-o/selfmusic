@@ -275,7 +275,7 @@ app.use("/api", enforceSameOriginMutation);
 const rateLimitBuckets = new Map();
 function rateLimitHeavyApi(req, res, next) {
   const requestPath = String(req.originalUrl || req.url || "").split("?")[0];
-  const heavy = /^\/api\/(?:youtube\/(?:search|download)|import-url|upload)$/.test(requestPath);
+  const heavy = /^\/api\/(?:youtube\/(?:search|download)|import-url|upload|library\/scan|duplicates(?:\/merge)?|duplicates\/[^/]+)$/.test(requestPath);
   if (!heavy) return next();
   const windowMs = Math.max(10000, Number.parseInt(process.env.API_RATE_LIMIT_WINDOW_MS || "60000", 10) || 60000);
   const max = Math.max(1, Number.parseInt(process.env.HEAVY_API_RATE_LIMIT_MAX || "8", 10) || 8);
@@ -451,6 +451,13 @@ function requireAuth(req, res, next) {
     return res.status(401).json({ error: "unauthorized", message: "This account no longer exists. Sign in again." });
   }
   req.authUser = user;
+  next();
+}
+
+function requireAdmin(req, res, next) {
+  if (req.authUser?.role !== "admin") {
+    return res.status(403).json({ error: "admin_required", message: "Administrator access is required for this operation." });
+  }
   next();
 }
 
@@ -665,7 +672,7 @@ const audioUpload = multer({
   }
 });
 
-app.post("/api/upload", requireAuth, (req, res, next) => {
+app.post("/api/upload", requireAuth, requireAdmin, (req, res, next) => {
   audioUpload.array("files", 20)(req, res, async (error) => {
     if (error) {
       const receivedFiles = Array.isArray(req.files) ? req.files : [];
@@ -706,7 +713,7 @@ app.post("/api/upload", requireAuth, (req, res, next) => {
   });
 });
 
-app.post("/api/import-url", requireAuth, async (req, res, next) => {
+app.post("/api/import-url", requireAuth, requireAdmin, async (req, res, next) => {
   let targetPath = null;
   let targetCreated = false;
   try {
@@ -880,7 +887,7 @@ app.get("/api/search", requireAuth, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-app.post("/api/library/scan", requireAuth, async (_req, res, next) => {
+app.post("/api/library/scan", requireAuth, requireAdmin, async (_req, res, next) => {
   try {
     const tracks = await findTracks({}, { force: true });
     console.info("[SelfMusic] library scan complete", JSON.stringify({ tracks: tracks.length }));
@@ -899,7 +906,86 @@ app.get("/api/duplicates", requireAuth, async (_req, res, next) => {
   } catch (error) { next(error); }
 });
 
-app.delete("/api/tracks/:id", requireAuth, async (req, res, next) => {
+app.post("/api/duplicates/merge", requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const keepId = typeof req.body?.keepId === "string" ? req.body.keepId : "";
+    const duplicateIds = req.body?.duplicateIds;
+    if (!keepId || !Array.isArray(duplicateIds) || duplicateIds.length < 1 || duplicateIds.length > 100 ||
+        duplicateIds.some((id) => typeof id !== "string" || id === keepId) ||
+        new Set(duplicateIds).size !== duplicateIds.length) {
+      return res.status(400).json({ error: "invalid_duplicate_merge", message: "Choose one keeper and 1–100 distinct duplicate track IDs." });
+    }
+    await findTracks();
+    const keeper = getTrackRow(db, keepId);
+    if (!keeper?.sha256) return res.status(404).json({ error: "track_not_found" });
+    const duplicates = duplicateIds.map((id) => getTrackRow(db, id));
+    if (duplicates.some((row) => !row || row.sha256 !== keeper.sha256)) {
+      return res.status(409).json({ error: "not_identical_files", message: "Only tracks with identical SHA-256 content can be merged." });
+    }
+    const filesToRemove = [];
+    for (const duplicate of duplicates) {
+      const file = await resolveTrackFile(duplicate.id);
+      if (!file) return res.status(409).json({ error: "duplicate_file_missing", message: "A duplicate file is no longer available." });
+      filesToRemove.push({ duplicate, file });
+    }
+    const insertFavorite = db.prepare("INSERT OR IGNORE INTO favorites(user_id, track_id) SELECT user_id, ? FROM favorites WHERE track_id = ?");
+    const playlists = db.prepare("SELECT playlist_id, position FROM playlist_tracks WHERE track_id = ? ORDER BY position");
+    const existing = db.prepare("SELECT 1 AS found FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?");
+    const maxPosition = db.prepare("SELECT COALESCE(MAX(position), -1) + 1 AS position FROM playlist_tracks WHERE playlist_id = ?");
+    const insertPlaylistTrack = db.prepare("INSERT OR IGNORE INTO playlist_tracks(playlist_id, track_id, position) VALUES (?, ?, ?)");
+    const moveHistory = db.prepare("UPDATE play_history SET track_id = ? WHERE track_id = ?");
+    const deleteTrackRow = db.prepare("DELETE FROM tracks WHERE id = ?");
+    db.exec("BEGIN IMMEDIATE;");
+    try {
+      for (const { duplicate } of filesToRemove) {
+        insertFavorite.run(keeper.id, duplicate.id);
+        for (const row of playlists.all(duplicate.id)) {
+          if (existing.get(row.playlist_id, keeper.id)) continue;
+          const nextPosition = Number(maxPosition.get(row.playlist_id).position);
+          insertPlaylistTrack.run(row.playlist_id, keeper.id, nextPosition);
+        }
+        moveHistory.run(keeper.id, duplicate.id);
+        deleteTrackRow.run(duplicate.id);
+      }
+      db.exec("COMMIT;");
+    } catch (error) {
+      db.exec("ROLLBACK;");
+      throw error;
+    }
+    for (const { file } of filesToRemove) await fs.promises.unlink(file.filePath).catch((error) => {
+      console.error("[SelfMusic] merged duplicate file cleanup failed", error.message);
+    });
+    console.info("[SelfMusic] duplicates merged", JSON.stringify({ keepId, removedCount: duplicates.length }));
+    res.json({ merged: true, kept: keepId, removed: duplicates.length });
+  } catch (error) { next(error); }
+});
+
+app.delete("/api/duplicates/:id", requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const row = getTrackRow(db, req.params.id);
+    const file = await resolveTrackFile(req.params.id);
+    if (!row || !file) return res.status(404).json({ error: "track_not_found" });
+    await fs.promises.unlink(file.filePath);
+    db.prepare("DELETE FROM tracks WHERE id = ?").run(row.id);
+    console.info("[SelfMusic] duplicate track deleted", JSON.stringify({ id: row.id }));
+    res.json({ deleted: true, id: row.id });
+  } catch (error) {
+    if (error?.code === "ENOENT") return res.status(404).json({ error: "track_not_found" });
+    next(error);
+  }
+});
+
+app.get("/api/player/settings", requireAuth, (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json({
+    transcodingEnabled: transcodingEnabled(),
+    formats: ["original", "mp3", "opus", "aac"],
+    defaultBitrate: process.env.DEFAULT_BITRATE || "192k",
+    bitrates: ["64k", "96k", "128k", "160k", "192k", "256k", "320k"]
+  });
+});
+
+app.delete("/api/tracks/:id", requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const track = await resolveTrackFile(req.params.id);
     if (!track) {
@@ -1107,7 +1193,7 @@ async function ensureYoutubeArtwork(info, targetPath) {
 // Download audio from a YouTube URL and convert to MP3 using yt-dlp.
 // POST /api/youtube/download   body: { url: "https://www.youtube.com/watch?v=..." }
 // ─────────────────────────────────────────────────────────────────────────────
-app.post("/api/youtube/download", requireAuth, async (req, res, next) => {
+app.post("/api/youtube/download", requireAuth, requireAdmin, async (req, res, next) => {
   let targetPath = null;
   try {
     const rawUrl = typeof req.body?.url === "string" ? req.body.url.trim() : "";
