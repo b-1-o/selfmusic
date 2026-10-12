@@ -18,6 +18,7 @@ import {
   ListMusic,
   LockKeyhole,
   LogOut,
+  Menu,
   Music,
   Palette,
   Pause,
@@ -103,6 +104,76 @@ function hsvToHex(hueInput, saturationInput, valueInput) {
 function darkenAccent(hex) {
   const hsv = hexToHsv(hex);
   return hsvToHex(hsv.hue, Math.min(100, hsv.saturation + 8), Math.max(30, hsv.value * 0.72));
+}
+
+
+function SectionGlyph({ kind, size = 24 }) {
+  const common = {
+    className: "section-glyph",
+    width: size,
+    height: size,
+    viewBox: "0 0 48 48",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.8,
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    "aria-hidden": "true",
+    focusable: "false",
+  };
+
+  if (kind === "library") return (
+    <svg {...common}>
+      <rect x="6.5" y="11" width="27" height="29" rx="7" fill="currentColor" fillOpacity=".08" />
+      <rect x="11" y="7" width="29.5" height="31" rx="7.5" fill="currentColor" fillOpacity=".13" />
+      <path d="M17 14.5h17M17 19.5h12" opacity=".55" />
+      <path d="M23 25v7.7a3.2 3.2 0 1 1-2.1-3V21l10-2.5v10.2a3.2 3.2 0 1 1-2.1-3V16.9" strokeWidth="2.1" />
+    </svg>
+  );
+  if (kind === "liked") return (
+    <svg {...common}>
+      <path d="M24 39.5 9.8 26.2C1.9 18.9 7.2 7.6 16.2 9.2c3.5.6 6 3.1 7.8 5.6 1.8-2.5 4.3-5 7.8-5.6 9-1.6 14.3 9.7 6.4 17L24 39.5Z" fill="currentColor" fillOpacity=".16" strokeWidth="2.2" />
+      <path d="M14.5 23.8h5l2.8-5.2 4.1 11 2.6-5.8h4.5" strokeWidth="2" />
+    </svg>
+  );
+  if (kind === "server") return (
+    <svg {...common}>
+      <rect x="7" y="6.5" width="34" height="15" rx="4.5" fill="currentColor" fillOpacity=".1" />
+      <rect x="7" y="26.5" width="34" height="15" rx="4.5" fill="currentColor" fillOpacity=".1" />
+      <path d="M13 12.5h13M13 32.5h13" opacity=".7" />
+      <circle cx="34" cy="14" r="1.8" fill="currentColor" stroke="none" />
+      <circle cx="34" cy="34" r="1.8" fill="currentColor" stroke="none" />
+    </svg>
+  );
+  if (kind === "home") return (
+    <svg {...common}>
+      <path d="m5.5 22 18.5-15 18.5 15" strokeWidth="2.2" />
+      <path d="M10.5 20v20h27V20" fill="currentColor" fillOpacity=".08" />
+      <path d="M20 40V27.5h8V40" />
+      <path d="M31.5 11.5V7h5v8" />
+    </svg>
+  );
+  if (kind === "import") return (
+    <svg {...common}>
+      <path d="M24 5.5v24" strokeWidth="2.4" />
+      <path d="m14.5 20 9.5 9.5 9.5-9.5" strokeWidth="2.4" />
+      <path d="M8 29v9a3.5 3.5 0 0 0 3.5 3.5h25A3.5 3.5 0 0 0 40 38v-9" />
+      <path d="M15 36h18" opacity=".55" />
+    </svg>
+  );
+  if (kind === "youtube") return (
+    <svg {...common}>
+      <rect x="5.5" y="10" width="37" height="28" rx="8" fill="currentColor" fillOpacity=".1" />
+      <path d="M21 17.5 32 24l-11 6.5v-13Z" fill="currentColor" stroke="none" />
+      <path d="M5.5 18.5h-1M43.5 18.5h-1M5.5 29.5h-1M43.5 29.5h-1" opacity=".5" />
+    </svg>
+  );
+  return (
+    <svg {...common}>
+      <circle cx="24" cy="24" r="16.5" fill="currentColor" fillOpacity=".07" />
+      <path d="M24 12v24M12 24h24" />
+    </svg>
+  );
 }
 
 function readLocalJson(key, fallback) {
@@ -311,6 +382,7 @@ function App() {
   const [youtubeError, setYoutubeError] = useState("");
   const [selectedYoutube, setSelectedYoutube] = useState(null);
   const [view, setView] = useState("home");
+  const contentWrapRef = useRef(null);
   const [favorites, setFavorites] = useState(() => readLocalJson(FAVORITES_KEY, []));
   const [currentTrackId, setCurrentTrackId] = useState(() => localStorage.getItem(LAST_TRACK_KEY) || "");
   const [isPlaying, setIsPlaying] = useState(false);
@@ -412,6 +484,16 @@ function App() {
   useEffect(() => {
     localStorage.setItem(APPEARANCE_KEY, JSON.stringify(appearance));
   }, [appearance]);
+
+  useEffect(() => {
+    const container = contentWrapRef.current;
+    if (!container) return undefined;
+    container.classList.remove("view-entering");
+    void container.offsetWidth;
+    container.classList.add("view-entering");
+    const timer = window.setTimeout(() => container.classList.remove("view-entering"), 420);
+    return () => window.clearTimeout(timer);
+  }, [view]);
 
   useEffect(() => {
     if (!trackActionMessage) return undefined;
@@ -981,19 +1063,19 @@ function App() {
           <p className="sidebar-label">YOUR SPACE</p>
           <nav className="side-nav" aria-label="Main navigation">
             <button className={view === "home" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("home"); setMobileMenuOpen(false); }}>
-              <Home size={18} /> <span>Home</span>
+              <SectionGlyph kind="home" size={19} /> <span>Home</span>
             </button>
             <button className={view === "library" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("library"); setMobileMenuOpen(false); }}>
-              <Library size={18} /> <span>Library</span><span className="nav-count">{tracks.length}</span>
+              <SectionGlyph kind="library" size={19} /> <span>Library</span><span className="nav-count">{tracks.length}</span>
             </button>
             <button className={view === "import" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("import"); setMobileMenuOpen(false); }}>
-              <Upload size={18} /> <span>Import music</span>
+              <SectionGlyph kind="import" size={19} /> <span>Import music</span>
             </button>
             <button className={view === "favorites" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("favorites"); setMobileMenuOpen(false); }}>
-              <Heart size={18} /> <span>Liked tracks</span>
+              <SectionGlyph kind="liked" size={19} /> <span>Liked tracks</span>
             </button>
             <button className={view === "youtube" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("youtube"); setMobileMenuOpen(false); }}>
-              <Youtube size={18} /> <span>Explore YouTube</span>
+              <SectionGlyph kind="youtube" size={19} /> <span>Explore YouTube</span>
             </button>
           </nav>
         </div>
@@ -1001,7 +1083,7 @@ function App() {
         <div className="sidebar-library">
           <div className="library-heading"><span>Your collection</span><span className="live-dot" /></div>
           <button className="collection-card" onClick={() => setView("library")}>
-            <div className="collection-art"><Disc3 size={24} /></div>
+            <div className="collection-art"><SectionGlyph kind="library" size={29} /></div>
             <span><strong>Home library</strong><small>{tracks.length} {tracks.length === 1 ? "track" : "tracks"}</small></span>
           </button>
           {!tracks.length && <p className="sidebar-hint">Add audio files to your server's music folder to begin.</p>}
@@ -1010,7 +1092,7 @@ function App() {
         <div className="sidebar-bottom">
           <div className="connection-status"><span className="status-pip" /><span>Home server connected</span></div>
           <button className={view === "settings" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("settings"); setMobileMenuOpen(false); }}>
-            <Settings size={18} /><span>Server settings</span>
+            <SectionGlyph kind="server" size={19} /><span>Server settings</span>
           </button>
           <button className="nav-item logout-item" onClick={handleLogout}><LogOut size={18} /><span>Sign out</span></button>
           <div className="sidebar-version">SELFMUSIC <span>v0.1.0</span></div>
@@ -1021,7 +1103,7 @@ function App() {
 
       <main className="main-panel">
         <header className="topbar">
-          <button className="icon-button mobile-menu" onClick={() => setMobileMenuOpen(true)} aria-label="Open menu"><Library size={20} /></button>
+          <button className="icon-button mobile-menu" onClick={() => setMobileMenuOpen(true)} aria-label="Open menu"><Menu size={20} /></button>
           <div className="breadcrumb"><span>SelfMusic</span><span className="crumb-slash">/</span><strong>{pageTitle}</strong></div>
           <div className="topbar-right">
             <label className="search-box">
@@ -1034,7 +1116,7 @@ function App() {
           </div>
         </header>
 
-        <div className="content-wrap">
+        <div className="content-wrap" ref={contentWrapRef}>
           {view === "home" && (
             <>
               <section className="hero-panel">
@@ -1058,9 +1140,9 @@ function App() {
               </section>
 
               <section className="section-block quick-stats">
-                <div className="stat-card"><span className="stat-icon"><Library size={18} /></span><div><strong>{tracks.length.toLocaleString()}</strong><span>Tracks in library</span></div></div>
-                <div className="stat-card"><span className="stat-icon stat-icon-warm"><Heart size={18} /></span><div><strong>{favorites.length.toLocaleString()}</strong><span>Liked tracks</span></div></div>
-                <div className="stat-card"><span className="stat-icon stat-icon-cool"><Cloud size={18} /></span><div><strong>Personal</strong><span>Your server, your rules</span></div></div>
+                <div className="stat-card stat-card-library"><span className="stat-icon"><SectionGlyph kind="library" size={29} /></span><div><strong>{tracks.length.toLocaleString()}</strong><span>Tracks in library</span></div></div>
+                <div className="stat-card stat-card-liked"><span className="stat-icon stat-icon-warm"><SectionGlyph kind="liked" size={29} /></span><div><strong>{favorites.length.toLocaleString()}</strong><span>Liked tracks</span></div></div>
+                <div className="stat-card stat-card-server"><span className="stat-icon stat-icon-cool"><SectionGlyph kind="server" size={29} /></span><div><strong>Personal</strong><span>Your server, your rules</span></div></div>
               </section>
 
               <section className="section-block track-section">
@@ -1097,7 +1179,7 @@ function App() {
           {(view === "library" || view === "favorites") && (
             <section className="page-section">
               <div className="page-intro">
-                <div className="intro-icon">{view === "favorites" ? <Heart size={22} /> : <Library size={22} />}</div>
+                <div className="intro-icon"><SectionGlyph kind={view === "favorites" ? "liked" : "library"} size={29} /></div>
                 <p className="eyebrow">{view === "favorites" ? "THE ONES YOU KEEP" : "ALL YOUR AUDIO IN ONE PLACE"}</p>
                 <h1>{view === "favorites" ? "Liked tracks" : "Your library"}</h1>
                 <p>{view === "favorites" ? "Your personal shortlist, saved on this device." : "Music stored on your home server, ready when you are."}</p>
@@ -1267,7 +1349,7 @@ function App() {
           {view === "import" && (
             <section className="page-section import-page">
               <div className="page-intro">
-                <div className="intro-icon"><Upload size={22} /></div>
+                <div className="intro-icon"><SectionGlyph kind="import" size={29} /></div>
                 <p className="eyebrow">YOUR MUSIC, ON YOUR SERVER</p>
                 <h1>Import music</h1>
                 <p>Choose audio files from this device and send them straight to your home library. They stay on your computer after upload.</p>
@@ -1398,7 +1480,7 @@ function App() {
           {view === "settings" && (
             <section className="page-section settings-page">
               <div className="page-intro">
-                <div className="intro-icon"><Server size={22} /></div>
+                <div className="intro-icon"><SectionGlyph kind="server" size={29} /></div>
                 <p className="eyebrow">YOUR HOME INFRASTRUCTURE</p>
                 <h1>Server settings</h1>
                 <p>Keep the library private, and make it reachable when you leave home.</p>
@@ -1565,11 +1647,11 @@ function App() {
       )}
 
       <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
-        <button className={view === "home" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("home")}><Home size={19} /><span>Home</span></button>
-        <button className={view === "library" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("library")}><Library size={19} /><span>Library</span></button>
-        <button className={view === "import" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("import")}><Upload size={19} /><span>Import</span></button>
-        <button className={view === "youtube" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("youtube")}><Youtube size={19} /><span>YouTube</span></button>
-        <button className={view === "settings" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("settings")}><Settings size={19} /><span>Server</span></button>
+        <button className={view === "home" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("home")}><SectionGlyph kind="home" size={21} /><span>Home</span></button>
+        <button className={view === "library" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("library")}><SectionGlyph kind="library" size={21} /><span>Library</span></button>
+        <button className={view === "import" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("import")}><SectionGlyph kind="import" size={21} /><span>Import</span></button>
+        <button className={view === "youtube" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("youtube")}><SectionGlyph kind="youtube" size={21} /><span>YouTube</span></button>
+        <button className={view === "settings" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("settings")}><SectionGlyph kind="server" size={21} /><span>Server</span></button>
       </nav>
 
       <PlayerBar
