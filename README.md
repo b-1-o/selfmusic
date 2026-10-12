@@ -131,6 +131,12 @@ For public collections such as Internet Archive, check each item’s permissions
 
 Keep the downloaded audio files on the device that has them, then upload them to SelfMusic. This MVP does not scrape third-party sites or fetch arbitrary URLs; that avoids importing content without authorization and prevents unsafe server-side URL fetching.
 
+### Import by direct audio URL
+
+The Import music page also accepts a direct HTTPS URL that returns an audio file. Paste a download URL (for example, a public MP3/FLAC download URL from a creator or store that permits saving the file), then choose **Import URL**. The server downloads it to `MUSIC_DIR/Uploads` and refreshes the library.
+
+For safety, the importer only follows a small number of HTTPS redirects, rejects local/private IP addresses, checks the resolved public hostname on each redirect, accepts supported audio formats only, and limits downloads to 250 MB. It does not accept YouTube watch-page URLs, arbitrary web pages, or links that require interactive sign-in/cookies. A URL must be a direct downloadable audio asset that you are authorized to save. Some providers use expiring or protected links, so not every URL will work.
+
 ## YouTube discovery
 
 The **Explore YouTube** page searches embeddable videos through the official YouTube Data API v3 and plays a selected result in YouTube's visible embedded player. Search results are only kept in page memory; the server does not cache or save audiovisual content.
@@ -157,7 +163,7 @@ The server recognizes MP3, M4A, AAC, FLAC, WAV, OGG, OPUS, and WebM audio extens
 - Favorites and last-played track are currently saved in the browser's local storage, not synced between devices.
 - Media Session controls and lock-screen artwork vary by platform.
 - No server admin panel for arbitrary directory selection. Configure **MUSIC_DIR** on the server instead.
-- Audio upload currently supports supported file types, up to 20 files per batch and 250 MB per file; metadata/tag extraction and duplicate-content detection are not implemented yet.
+- File upload supports up to 20 files per batch and 250 MB per file; direct URL import supports one direct HTTPS audio link at a time, up to 250 MB. Metadata/tag extraction and duplicate-content detection are not implemented yet.
 
 ## Security checklist
 
