@@ -471,12 +471,18 @@ async function findTracks(query = {}, options = {}) {
 }
 mountCollectionRoutes(app, { db, requireAuth, findTracks });
 async function resolveTrackFile(id) {
+  if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,2048}$/.test(id)) return null;
   const filePath = safeTrackPath(id);
   if (!filePath) return null;
   try {
-    const stats = await fs.promises.stat(filePath);
-    if (!stats.isFile() || !supportedExtensions.has(path.extname(filePath).toLowerCase())) return null;
-    return { filePath, stats };
+    const entryStats = await fs.promises.lstat(filePath);
+    if (entryStats.isSymbolicLink() || !entryStats.isFile() || !supportedExtensions.has(path.extname(filePath).toLowerCase())) return null;
+    const rootRealPath = await fs.promises.realpath(musicRoot);
+    const fileRealPath = await fs.promises.realpath(filePath);
+    const relative = path.relative(rootRealPath, fileRealPath);
+    if (!relative || relative === "." || relative.startsWith(".." + path.sep) || path.isAbsolute(relative)) return null;
+    const stats = await fs.promises.stat(fileRealPath);
+    return { filePath: fileRealPath, stats };
   } catch {
     return null;
   }
