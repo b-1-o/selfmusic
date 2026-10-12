@@ -3,21 +3,17 @@ $RootDir = $PSScriptRoot
 $EnvFile = Join-Path $RootDir ".env"
 Set-Location $RootDir
 
-function Show-DockerHelp {
-    Write-Host "ERROR: Docker Desktop and Docker Compose are required." -ForegroundColor Red
-    Write-Host "Install Docker Desktop: https://www.docker.com/products/docker-desktop/"
-    Write-Host "Compose guide: https://docs.docker.com/compose/install/"
-}
-if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-    Show-DockerHelp
+$Node = Get-Command node -ErrorAction SilentlyContinue
+$Npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
+if (-not $Node -or -not $Npm) {
+    Write-Host "Node.js 20.19+ and npm are required for native SelfMusic." -ForegroundColor Red
+    Write-Host "Install the LTS/current Node.js release from https://nodejs.org/, then reopen PowerShell."
     exit 1
 }
-try {
-    docker compose version | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "Compose is not available" }
-} catch {
-    Show-DockerHelp
-    exit 1
+$NodeVersionText = (& $Node.Source --version).Trim().TrimStart('v')
+try { $NodeVersion = [version]$NodeVersionText } catch { throw "Could not detect Node.js version: $NodeVersionText" }
+if ($NodeVersion -lt [version]"20.19.0") {
+    throw "Detected Node.js $NodeVersionText; SelfMusic requires Node.js 20.19 or later."
 }
 
 if (-not (Test-Path $EnvFile)) {
@@ -26,18 +22,19 @@ if (-not (Test-Path $EnvFile)) {
     Copy-Item $Template $EnvFile
     Write-Host "Created .env from .env.example" -ForegroundColor Green
 } else {
-    Write-Host "Found existing .env; valid settings will be preserved."
+    Write-Host "Found existing .env; existing settings will be preserved."
 }
 
 function Get-EnvValue([string]$Name) {
-    $Line = Get-Content $EnvFile | Where-Object { $_ -match ('^' + [regex]::Escape($Name) + '=') } | Select-Object -First 1
+    $Line = Get-Content -LiteralPath $EnvFile | Where-Object { $_ -match ('^' + [regex]::Escape($Name) + '=') } | Select-Object -First 1
     if ($null -eq $Line) { return "" }
-    return ($Line -split '=', 2)[1].Trim().Trim('"').Trim("'")
+    return (($Line -split '=', 2)[1]).Trim().Trim('"').Trim("'")
 }
+
 function Set-EnvValue([string]$Name, [string]$Value) {
     $Lines = [System.Collections.Generic.List[string]]::new()
     $Found = $false
-    foreach ($Line in (Get-Content $EnvFile)) {
+    foreach ($Line in (Get-Content -LiteralPath $EnvFile)) {
         if ($Line.StartsWith($Name + "=")) {
             if (-not $Found) { $Lines.Add($Name + "=" + $Value); $Found = $true }
         } else {
@@ -47,12 +44,14 @@ function Set-EnvValue([string]$Name, [string]$Value) {
     if (-not $Found) { $Lines.Add($Name + "=" + $Value) }
     [System.IO.File]::WriteAllText($EnvFile, (($Lines -join [Environment]::NewLine) + [Environment]::NewLine), [System.Text.UTF8Encoding]::new($false))
 }
+
 function Read-Secret([string]$Prompt) {
     $Secure = Read-Host $Prompt -AsSecureString
     $Ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Secure)
     try { return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($Ptr) }
     finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($Ptr) }
 }
+
 function Is-Placeholder([string]$Value, [int]$MinLength) {
     return ([string]::IsNullOrWhiteSpace($Value) -or $Value.Length -lt $MinLength -or $Value -match 'replace-with')
 }
@@ -66,7 +65,8 @@ if (Is-Placeholder $Password 12) {
         elseif ($Password.Length -lt 12) { Write-Host "Use at least 12 characters." -ForegroundColor Yellow }
     } while ($Password -ne $Confirm -or $Password.Length -lt 12)
     Set-EnvValue "SELF_MUSIC_PASSWORD" $Password
-    $Password = $null; $Confirm = $null
+    $Password = $null
+    $Confirm = $null
 } else {
     Write-Host "Keeping the existing SelfMusic password." -ForegroundColor Green
 }
@@ -84,42 +84,58 @@ if (Is-Placeholder $SessionSecret 32) {
 }
 $SessionSecret = $null
 
-$TsKey = Get-EnvValue "TS_AUTHKEY"
-if ([string]::IsNullOrWhiteSpace($TsKey) -or $TsKey -match 'replace-with') {
-    Write-Host "Create a reusable Tailscale auth key: https://login.tailscale.com/admin/settings/keys"
-    Write-Host "Allow tag:selfmusic in your tailnet policy."
-    $TsKey = Read-Secret "Paste Tailscale auth key (input hidden)"
-    if ([string]::IsNullOrWhiteSpace($TsKey)) {
-        Write-Host "TS_AUTHKEY is required for remote access. Re-run this script after creating a key." -ForegroundColor Red
-        exit 1
-    }
-    Set-EnvValue "TS_AUTHKEY" $TsKey
-    $TsKey = $null
-} else {
-    Write-Host "Keeping the existing Tailscale auth key." -ForegroundColor Green
+$MusicDir = Get-EnvValue "MUSIC_DIR"
+if ([string]::IsNullOrWhiteSpace($MusicDir)) {
+    $MusicDir = "./music"
+    Set-EnvValue "MUSIC_DIR" $MusicDir
 }
-
-$MusicHostDir = Get-EnvValue "MUSIC_HOST_DIR"
-if ([string]::IsNullOrWhiteSpace($MusicHostDir)) { $MusicHostDir = "./music"; Set-EnvValue "MUSIC_HOST_DIR" $MusicHostDir }
-$MusicPath = if ([System.IO.Path]::IsPathRooted($MusicHostDir)) { $MusicHostDir } else { Join-Path $RootDir $MusicHostDir }
+$MusicPath = if ([System.IO.Path]::IsPathRooted($MusicDir)) { $MusicDir } else { Join-Path $RootDir $MusicDir }
 New-Item -ItemType Directory -Force -Path $MusicPath, (Join-Path $RootDir "data") | Out-Null
 
-Write-Host "`nBuilding and starting SelfMusic + Tailscale..." -ForegroundColor Cyan
-docker compose up -d --build
-if ($LASTEXITCODE -ne 0) { throw "docker compose up failed. Check .env and Docker Desktop." }
+Write-Host ([Environment]::NewLine + "Installing Node dependencies...") -ForegroundColor Cyan
+& $Npm.Source install
+if ($LASTEXITCODE -ne 0) { throw "npm install failed." }
+Write-Host ([Environment]::NewLine + "Building SelfMusic...") -ForegroundColor Cyan
+& $Npm.Source run build
+if ($LASTEXITCODE -ne 0) { throw "Frontend build failed." }
 
-Write-Host "`nSelfMusic containers started." -ForegroundColor Green
-Write-Host "Install Tailscale on your phone and sign in to the same tailnet:"
-Write-Host "https://tailscale.com/download"
-Start-Sleep -Seconds 3
-$TailIp = docker compose exec -T tailscale tailscale ip -4 2>$null | Select-Object -First 1
-if ($TailIp) {
-    Write-Host ("Open on your phone: http://" + $TailIp + ":8787") -ForegroundColor Green
-    Write-Host "Or, if MagicDNS is enabled: http://selfmusic:8787"
-} else {
-    Write-Host "Tailscale is still connecting. Run .\selfmusic.sh status or docker compose logs -f tailscale" -ForegroundColor Yellow
+$LauncherPath = Join-Path $RootDir "selfmusic.ps1"
+$ToolsDir = Join-Path $env:LOCALAPPDATA "Programs\SelfMusic"
+New-Item -ItemType Directory -Force -Path $ToolsDir | Out-Null
+$Quote = [char]34
+$CmdBody = '@echo off' + [Environment]::NewLine +
+    'powershell.exe -NoProfile -ExecutionPolicy Bypass -File ' + $Quote + $LauncherPath + $Quote + ' %*' + [Environment]::NewLine
+$CmdPath = Join-Path $ToolsDir "selfmusic.cmd"
+[System.IO.File]::WriteAllText($CmdPath, $CmdBody, [System.Text.Encoding]::ASCII)
+
+$UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
+if ([string]::IsNullOrWhiteSpace($UserPath)) { $UserPath = "" }
+$PathEntries = $UserPath -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+if (-not ($PathEntries | Where-Object { $_.TrimEnd('\') -ieq $ToolsDir.TrimEnd('\') })) {
+    $NewUserPath = if ($UserPath) { "$UserPath;$ToolsDir" } else { $ToolsDir }
+    [Environment]::SetEnvironmentVariable("Path", $NewUserPath, "User")
 }
-Write-Host "Optional HTTPS/PWA support: docker compose exec tailscale tailscale serve --bg 8787"
-Write-Host "Check the HTTPS URL with: docker compose exec tailscale tailscale serve status"
-Write-Host "Sign in with your SelfMusic password. Keep this computer running for remote playback."
-Write-Host "For an app-like experience, open the address on your phone and choose Add to Home Screen / Install app."
+if (($env:Path -split ';' | Where-Object { $_.TrimEnd('\') -ieq $ToolsDir.TrimEnd('\') }).Count -eq 0) {
+    $env:Path = "$env:Path;$ToolsDir"
+}
+
+$DesktopDir = [Environment]::GetFolderPath("Desktop")
+if (-not [string]::IsNullOrWhiteSpace($DesktopDir)) {
+    $Shell = New-Object -ComObject WScript.Shell
+    $ShortcutPath = Join-Path $DesktopDir "SelfMusic.lnk"
+    $Shortcut = $Shell.CreateShortcut($ShortcutPath)
+    $Shortcut.TargetPath = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+    $Shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -File " + $Quote + $LauncherPath + $Quote + " start"
+    $Shortcut.WorkingDirectory = $RootDir
+    $Shortcut.Description = "Start SelfMusic and open the music player"
+    $Shortcut.Save()
+    Write-Host "Created desktop shortcut: $ShortcutPath" -ForegroundColor Green
+}
+
+Write-Host ([Environment]::NewLine + "Native setup complete. Docker is not required.") -ForegroundColor Green
+Write-Host "Click the SelfMusic desktop shortcut, or open a NEW PowerShell window and run: selfmusic"
+Write-Host "Available commands: selfmusic stop | status | logs | open | remote"
+Write-Host "For remote access, install Tailscale on this PC and your phone and sign both into the same tailnet:"
+Write-Host "https://tailscale.com/download"
+Write-Host "Then run 'selfmusic remote' to try enabling private HTTPS. The tailnet must have MagicDNS and HTTPS certificates enabled."
+Write-Host "Keep the PC awake and connected to the internet while listening remotely."
