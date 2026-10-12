@@ -349,7 +349,7 @@ export function createYoutubeJob(db, config, userId, body = {}) {
 }
 
 export function mountYoutubeJobRoutes(app, config) {
-  const { db, requireAuth } = config;
+  const { db, requireAuth, requireAdmin } = config;
   const workerConfig = {
     projectRoot: path.resolve(config.projectRoot),
     musicRoot: path.resolve(config.musicRoot),
@@ -360,7 +360,7 @@ export function mountYoutubeJobRoutes(app, config) {
   db.prepare("UPDATE youtube_jobs SET status = 'queued', progress = 0, updated_at = CURRENT_TIMESTAMP WHERE status = 'running'").run();
   workerContext = { db, config: workerConfig };
 
-  app.post("/api/youtube/jobs", requireAuth, (req, res) => {
+  app.post("/api/youtube/jobs", requireAuth, requireAdmin, (req, res) => {
     try {
       const job = createYoutubeJob(db, workerConfig, req.authUser.id, req.body || {});
       return res.status(202).json({ job });
