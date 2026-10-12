@@ -610,6 +610,13 @@ function App() {
         </div>
       </main>
 
+      <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
+        <button className={view === "home" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("home")}><Home size={19} /><span>Home</span></button>
+        <button className={view === "library" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("library")}><Library size={19} /><span>Library</span></button>
+        <button className={view === "favorites" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("favorites")}><Heart size={19} /><span>Liked</span></button>
+        <button className={view === "settings" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("settings")}><Settings size={19} /><span>Server</span></button>
+      </nav>
+
       <PlayerBar
         audioRef={audioRef}
         track={currentTrack}
