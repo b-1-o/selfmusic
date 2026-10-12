@@ -16,6 +16,7 @@ import {
   ListMusic,
   LockKeyhole,
   LogOut,
+  Music,
   Pause,
   Play,
   RefreshCw,
