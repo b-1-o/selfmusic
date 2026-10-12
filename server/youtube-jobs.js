@@ -59,8 +59,10 @@ function cleanMetadata(input) {
     const value = String(raw).replace(/[\x00-\x1f\x7f]/g, " ").trim().slice(0, key === "title" ? 200 : 120);
     if (!value) continue;
     if (key === "year") {
-      const year = Number.parseInt(value, 10);
-      if (Number.isInteger(year) && year >= 1800 && year <= 2200) output.year = String(year);
+      if (/^\d{4}$/.test(value)) {
+        const year = Number(value);
+        if (year >= 1800 && year <= 2200) output.year = String(year);
+      }
     } else output[key] = value;
   }
   return Object.keys(output).length ? output : null;
@@ -359,6 +361,7 @@ export function mountYoutubeJobRoutes(app, config) {
   fs.mkdir(workerConfig.workDir, { recursive: true }).catch((error) => console.error("[SelfMusic] YouTube work directory failed", error.message));
   db.prepare("UPDATE youtube_jobs SET status = 'queued', progress = 0, updated_at = CURRENT_TIMESTAMP WHERE status = 'running'").run();
   workerContext = { db, config: workerConfig };
+  setImmediate(() => { void drainQueue(); });
 
   app.post("/api/youtube/jobs", requireAuth, requireAdmin, (req, res) => {
     try {
