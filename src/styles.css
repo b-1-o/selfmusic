@@ -1719,3 +1719,207 @@ button:focus-visible, a:focus-visible, input:focus-visible {
   .expanded-meta { margin-top:21px; }
   .expanded-progress { margin-top:20px; }
 }
+
+
+/* Full-interface appearance preferences — accent affects highlights and surfaces, not just buttons. */
+.app-shell[data-accent], .login-shell[data-accent] {
+  --accent:var(--user-accent);
+  --accent-strong:var(--user-accent-strong);
+  --accent-glow:color-mix(in srgb,var(--user-accent) 22%,transparent);
+}
+.login-shell[data-accent="rose"] { --user-accent:#f1a0ba; --user-accent-strong:#cd547b; }
+.login-shell[data-accent="ocean"] { --user-accent:#87d7ee; --user-accent-strong:#328db9; }
+.login-shell[data-accent="violet"] { --user-accent:#c5a9ff; --user-accent-strong:#805bd4; }
+.login-shell[data-accent="amber"] { --user-accent:#f4c27a; --user-accent-strong:#c77b30; }
+.login-shell[data-accent="mint"] { --user-accent:#8fe0bf; --user-accent-strong:#329a76; }
+.login-shell[data-glass="soft"] { --user-glass-blur:10px; }
+.login-shell[data-glass="solid"] { --user-glass-blur:0px; }
+
+.app-shell[data-accent] .sidebar {
+  background:radial-gradient(ellipse at 0% 0%,color-mix(in srgb,var(--user-accent) 12%,transparent),transparent 48%),#0c0c10;
+}
+.app-shell[data-accent] .brand-mark,
+.login-shell[data-accent] .brand-mark {
+  background:linear-gradient(140deg,color-mix(in srgb,var(--user-accent) 34%,white),var(--user-accent) 62%,var(--user-accent-strong));
+  box-shadow:0 5px 22px color-mix(in srgb,var(--user-accent) 25%,transparent);
+}
+.app-shell[data-accent] .nav-item.nav-active {
+  color:#fff;
+  background:linear-gradient(105deg,color-mix(in srgb,var(--user-accent) 18%,transparent),color-mix(in srgb,var(--user-accent) 5%,transparent));
+  border-color:color-mix(in srgb,var(--user-accent) 20%,transparent);
+}
+.app-shell[data-accent] .collection-art,
+.app-shell[data-accent] .stat-icon,
+.app-shell[data-accent] .empty-disc,
+.app-shell[data-accent] .intro-icon,
+.app-shell[data-accent] .settings-icon,
+.app-shell[data-accent] .import-drop-icon,
+.app-shell[data-accent] .youtube-empty-icon {
+  color:var(--user-accent);
+  border-color:color-mix(in srgb,var(--user-accent) 25%,transparent);
+  background:linear-gradient(145deg,color-mix(in srgb,var(--user-accent) 16%,transparent),rgba(255,255,255,.018));
+}
+.app-shell[data-accent] .stat-icon-cool { color:var(--user-accent); background:color-mix(in srgb,var(--user-accent) 10%,transparent); border-color:color-mix(in srgb,var(--user-accent) 20%,transparent); }
+.app-shell[data-accent] .hero-panel {
+  background:linear-gradient(112deg,color-mix(in srgb,var(--user-accent) 12%,#19141b),color-mix(in srgb,var(--user-accent) 7%,#171219) 49%,color-mix(in srgb,var(--user-accent) 8%,#171016));
+  border-color:color-mix(in srgb,var(--user-accent) 18%,rgba(255,255,255,.085));
+}
+.app-shell[data-accent] .hero-panel::before {
+  background:radial-gradient(ellipse at 73% 44%,color-mix(in srgb,var(--user-accent) 20%,transparent),transparent 38%),radial-gradient(ellipse at 15% 0%,color-mix(in srgb,var(--user-accent) 9%,transparent),transparent 42%);
+}
+.app-shell[data-accent] .hero-kicker,
+.app-shell[data-accent] .hero-panel h1 span,
+.app-shell[data-accent] .hero-footer span svg,
+.app-shell[data-accent] .stat-icon,
+.app-shell[data-accent] .collection-art,
+.app-shell[data-accent] .track-index,
+.app-shell[data-accent] .empty-state > svg,
+.app-shell[data-accent] .settings-icon,
+.app-shell[data-accent] .youtube-kicker,
+.app-shell[data-accent] .youtube-hero h1 span,
+.app-shell[data-accent] .youtube-orb-core,
+.app-shell[data-accent] .import-path svg,
+.app-shell[data-accent] .import-resource-link,
+.app-shell[data-accent] .settings-action > svg { color:var(--user-accent); }
+.app-shell[data-accent] .visual-orbit { border-color:color-mix(in srgb,var(--user-accent) 18%,transparent); }
+.app-shell[data-accent] .visual-disc {
+  box-shadow:0 0 0 17px color-mix(in srgb,var(--user-accent) 4%,transparent),0 0 0 38px color-mix(in srgb,var(--user-accent) 3%,transparent),0 25px 58px rgba(0,0,0,.34),inset 0 0 35px rgba(0,0,0,.65);
+}
+.app-shell[data-accent] .disc-label { background:radial-gradient(circle at 30% 20%,color-mix(in srgb,var(--user-accent) 40%,white),var(--user-accent-strong) 75%); box-shadow:0 0 25px color-mix(in srgb,var(--user-accent) 30%,transparent); }
+.app-shell[data-accent] .stem-a,.app-shell[data-accent] .stem-b,.app-shell[data-accent] .stem-c { background:linear-gradient(0deg,color-mix(in srgb,var(--user-accent) 8%,transparent),color-mix(in srgb,var(--user-accent) 75%,transparent)); }
+.app-shell[data-accent] .equalizer i { background:var(--user-accent); }
+.app-shell[data-accent] .track-row-active { background:color-mix(in srgb,var(--user-accent) 8%,transparent); }
+.app-shell[data-accent] .track-row-active .track-title,
+.app-shell[data-accent] .track-heart:hover,
+.app-shell[data-accent] .track-heart.is-favorite,
+.app-shell[data-accent] .player-like.is-favorite { color:var(--user-accent); }
+.app-shell[data-accent] .empty-state,
+.app-shell[data-accent] .track-action-feedback { border-color:color-mix(in srgb,var(--user-accent) 20%,rgba(255,255,255,.1)); }
+.app-shell[data-accent] .empty-disc { background:color-mix(in srgb,var(--user-accent) 8%,transparent); }
+.app-shell[data-accent] .settings-action:hover,
+.app-shell[data-accent] .appearance-glass-option-active,
+.app-shell[data-accent] .appearance-swatch-active { border-color:color-mix(in srgb,var(--user-accent) 52%,transparent); background:color-mix(in srgb,var(--user-accent) 9%,transparent); }
+.app-shell[data-accent] .import-dropzone:hover,
+.app-shell[data-accent] .import-dropzone.is-dragging { border-color:color-mix(in srgb,var(--user-accent) 45%,transparent); background:color-mix(in srgb,var(--user-accent) 6%,rgba(255,255,255,.015)); }
+.app-shell[data-accent] .import-folder-tag { color:var(--user-accent); border-color:color-mix(in srgb,var(--user-accent) 22%,transparent); background:color-mix(in srgb,var(--user-accent) 6%,transparent); }
+.app-shell[data-accent] .url-import-row > .primary-button { color:#201018; background:linear-gradient(120deg,var(--user-accent),var(--user-accent-strong)); border-color:color-mix(in srgb,var(--user-accent) 55%,white); }
+.app-shell[data-accent] .youtube-orb-core { background:radial-gradient(circle at 35% 25%,color-mix(in srgb,var(--user-accent) 45%,white),var(--user-accent-strong)); border-color:color-mix(in srgb,var(--user-accent) 55%,white); box-shadow:0 0 75px color-mix(in srgb,var(--user-accent) 28%,transparent); }
+.app-shell[data-accent] .youtube-hero { border-color:color-mix(in srgb,var(--user-accent) 15%,rgba(237,232,245,.1)); }
+.app-shell[data-accent] .youtube-fog-one,.app-shell[data-accent] .youtube-fog-two { background:radial-gradient(ellipse,color-mix(in srgb,var(--user-accent) 18%,transparent),transparent 70%); }
+.app-shell[data-accent] .settings-icon-blue { color:var(--user-accent); border-color:color-mix(in srgb,var(--user-accent) 25%,transparent); background:color-mix(in srgb,var(--user-accent) 9%,transparent); }
+.app-shell[data-accent] .mobile-nav-item.nav-active { color:var(--user-accent); background:color-mix(in srgb,var(--user-accent) 9%,transparent); }
+.app-shell[data-accent] .playerbar { border-top-color:color-mix(in srgb,var(--user-accent) 22%,rgba(255,255,255,.1)); }
+.app-shell[data-accent] .mobile-player-expanded::before { background:radial-gradient(ellipse at 50% 0,color-mix(in srgb,var(--user-accent) 18%,transparent),transparent 70%); }
+.app-shell[data-accent] .login-button,.login-shell[data-accent] .primary-button { color:#1b1018; border-color:color-mix(in srgb,var(--user-accent) 55%,white); }
+.login-shell[data-accent] .art-center { color:var(--user-accent); border-color:color-mix(in srgb,var(--user-accent) 22%,transparent); }
+.login-shell[data-accent] .login-card { border-color:color-mix(in srgb,var(--user-accent) 20%,rgba(255,255,255,.12)); }
+.login-shell[data-accent] .text-link { color:var(--user-accent); }
+.app-shell[data-accent] ::selection,.login-shell[data-accent] ::selection { background:color-mix(in srgb,var(--user-accent) 42%,transparent); }
+
+.app-shell[data-glass="liquid"] .sidebar,
+.app-shell[data-glass="liquid"] .topbar,
+.app-shell[data-glass="liquid"] .hero-panel,
+.app-shell[data-glass="liquid"] .stat-card,
+.app-shell[data-glass="liquid"] .track-table,
+.app-shell[data-glass="liquid"] .settings-card,
+.app-shell[data-glass="liquid"] .settings-status-card,
+.app-shell[data-glass="liquid"] .glass-mist-panel,
+.app-shell[data-glass="liquid"] .import-dropzone,
+.app-shell[data-glass="liquid"] .upload-queue,
+.app-shell[data-glass="liquid"] .playerbar,
+.app-shell[data-glass="liquid"] .mobile-bottom-nav,
+.login-shell[data-glass="liquid"] .login-card,
+.app-shell[data-glass="soft"] .sidebar,
+.app-shell[data-glass="soft"] .topbar,
+.app-shell[data-glass="soft"] .hero-panel,
+.app-shell[data-glass="soft"] .stat-card,
+.app-shell[data-glass="soft"] .track-table,
+.app-shell[data-glass="soft"] .settings-card,
+.app-shell[data-glass="soft"] .settings-status-card,
+.app-shell[data-glass="soft"] .glass-mist-panel,
+.app-shell[data-glass="soft"] .import-dropzone,
+.app-shell[data-glass="soft"] .upload-queue,
+.app-shell[data-glass="soft"] .playerbar,
+.app-shell[data-glass="soft"] .mobile-bottom-nav,
+.login-shell[data-glass="soft"] .login-card {
+  backdrop-filter:blur(var(--user-glass-blur)) saturate(125%);
+  -webkit-backdrop-filter:blur(var(--user-glass-blur)) saturate(125%);
+}
+.app-shell[data-glass="liquid"] .sidebar { background-color:rgba(12,12,16,.76); }
+.app-shell[data-glass="liquid"] .topbar { background:rgba(9,9,12,.68); }
+.app-shell[data-glass="liquid"] .settings-card,
+.app-shell[data-glass="liquid"] .settings-status-card,
+.app-shell[data-glass="liquid"] .stat-card,
+.app-shell[data-glass="liquid"] .glass-mist-panel,
+.app-shell[data-glass="liquid"] .track-table,
+.app-shell[data-glass="liquid"] .import-dropzone,
+.app-shell[data-glass="liquid"] .upload-queue {
+  border-color:rgba(255,255,255,.13);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.065),0 20px 55px rgba(0,0,0,.18);
+}
+.app-shell[data-glass="soft"] .sidebar { background-color:rgba(12,12,16,.91); }
+.app-shell[data-glass="soft"] .topbar { background:rgba(9,9,12,.84); }
+.app-shell[data-glass="solid"] .sidebar,
+.app-shell[data-glass="solid"] .topbar,
+.app-shell[data-glass="solid"] .hero-panel,
+.app-shell[data-glass="solid"] .stat-card,
+.app-shell[data-glass="solid"] .track-table,
+.app-shell[data-glass="solid"] .settings-card,
+.app-shell[data-glass="solid"] .settings-status-card,
+.app-shell[data-glass="solid"] .glass-mist-panel,
+.app-shell[data-glass="solid"] .import-dropzone,
+.app-shell[data-glass="solid"] .upload-queue,
+.app-shell[data-glass="solid"] .playerbar,
+.app-shell[data-glass="solid"] .mobile-bottom-nav,
+.login-shell[data-glass="solid"] .login-card {
+  backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
+  box-shadow:none!important;
+}
+.app-shell[data-glass="solid"] .sidebar { background:#0c0c10!important; }
+.app-shell[data-glass="solid"] .topbar { background:rgba(9,9,12,.98)!important; }
+.app-shell[data-glass="solid"] .stat-card,
+.app-shell[data-glass="solid"] .settings-card,
+.app-shell[data-glass="solid"] .settings-status-card,
+.app-shell[data-glass="solid"] .glass-mist-panel,
+.app-shell[data-glass="solid"] .track-table,
+.app-shell[data-glass="solid"] .import-dropzone,
+.app-shell[data-glass="solid"] .upload-queue { background:#15141a!important; }
+.login-shell[data-glass="liquid"] .login-card { background:rgba(18,15,23,.70); }
+.login-shell[data-glass="soft"] .login-card { background:rgba(18,15,23,.88); }
+.login-shell[data-glass="solid"] .login-card { background:#15131a!important; backdrop-filter:none!important; }
+
+/* Deletion controls remain reachable on touch screens; show feedback in the library. */
+.track-delete { justify-self:center; color:#827988; }
+.track-delete:hover:not(:disabled) { color:#ff9eaa; background:rgba(255,88,106,.1); }
+.track-action-feedback { display:flex; align-items:flex-start; gap:9px; margin:0 0 12px; padding:12px 14px; border:1px solid rgba(255,255,255,.1); border-radius:12px; background:rgba(255,255,255,.025); color:#c8c3ce; font-size:11px; line-height:1.5; }
+.track-action-feedback svg { flex:0 0 auto; margin-top:1px; color:#93d6b5; }
+.track-action-feedback-error { border-color:rgba(244,105,118,.24); color:#f0b0b6; background:rgba(244,105,118,.055); }
+.track-action-feedback-error svg { color:#f0a0a9; }
+.track-table-head,.track-row { grid-template-columns:34px 43px minmax(130px,1.35fr) minmax(100px,1fr) 32px 32px 45px; }
+@media (max-width:980px) {
+  .track-table-head,.track-row { grid-template-columns:26px 39px minmax(100px,1.3fr) minmax(65px,.9fr) 30px 30px 40px; column-gap:6px; }
+}
+@media (max-width:720px) {
+  .track-table-head,.track-row { grid-template-columns:24px 37px minmax(0,1fr) 30px 30px; column-gap:5px; }
+  .track-table-head span:nth-child(2) { grid-column:2 / 4; }
+  .track-table-head span:nth-child(3),.track-table-head span:nth-child(4),.track-table-head span:nth-child(5),.track-table-head span:nth-child(6) { display:none; }
+  .track-row .track-album,.track-row .track-duration { display:none; }
+  .track-heart,.track-delete { width:29px;height:29px; }
+}
+
+
+/* Keep the glass preference defined on the standalone login screen too. */
+.login-shell { --user-glass-blur:26px; }
+.app-shell[data-glass="liquid"] .track-row {
+  background:rgba(255,255,255,.018);
+  border-color:rgba(255,255,255,.06);
+  backdrop-filter:blur(10px) saturate(130%);
+  -webkit-backdrop-filter:blur(10px) saturate(130%);
+}
+.app-shell[data-glass="soft"] .track-row {
+  background:rgba(255,255,255,.012);
+  backdrop-filter:blur(5px);
+  -webkit-backdrop-filter:blur(5px);
+}
+.app-shell[data-glass="solid"] .track-row { background:rgba(255,255,255,.025); }

@@ -35,6 +35,7 @@ import {
   Volume2,
   VolumeX,
   Upload,
+  Trash2,
   X,
   Youtube,
 } from "lucide-react";
@@ -127,7 +128,7 @@ function Cover({ track, large = false }) {
   );
 }
 
-function TrackRow({ track, index, active, playing, favorite, onPlay, onFavorite }) {
+function TrackRow({ track, index, active, playing, favorite, onPlay, onFavorite, onDelete, deleting }) {
   return (
     <div className={"track-row" + (active ? " track-row-active" : "")}>
       <button className="track-index" aria-label={"Play " + track.title} onClick={() => onPlay(track)}>
@@ -149,17 +150,27 @@ function TrackRow({ track, index, active, playing, favorite, onPlay, onFavorite 
       >
         <Heart size={17} fill={favorite ? "currentColor" : "none"} />
       </button>
+      <button
+        className="icon-button track-delete"
+        type="button"
+        disabled={deleting}
+        aria-label={"Delete " + track.title + " from the server"}
+        title="Permanently delete this audio file from the server"
+        onClick={() => onDelete(track)}
+      >
+        {deleting ? <RefreshCw size={16} className="spin" /> : <Trash2 size={16} />}
+      </button>
       <span className="track-duration">—:—</span>
     </div>
   );
 }
 
-function LoginScreen({ configured, checking, onLogin, error, serverUnavailable }) {
+function LoginScreen({ configured, checking, onLogin, error, serverUnavailable, appearance }) {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
   return (
-    <div className="login-shell">
+    <div className="login-shell" data-accent={appearance.accent} data-glass={appearance.glass}>
       <div className="login-orb login-orb-one" />
       <div className="login-orb login-orb-two" />
       <div className="login-card">
@@ -190,7 +201,7 @@ function LoginScreen({ configured, checking, onLogin, error, serverUnavailable }
         ) : !configured ? (
           <div className="setup-notice">
             <div className="notice-heading"><CircleAlert size={18} /> The server needs setup</div>
-            <p>SelfMusic runs on your computer. Create a <strong>.env</strong> file in the project folder, set your own password with at least 12 characters and a random <code>SESSION_SECRET</code>, then restart the server.</p>
+            <p>SelfMusic runs on your computer. In the project <strong>.env</strong> file, set <code>SELF_MUSIC_PASSWORD</code> to a strong password of at least 12 characters and <code>SESSION_SECRET</code> to a random value of at least 32 characters. After editing the file, restart SelfMusic on the home computer. This screen cannot read or change the file for you.</p>
             <p className="notice-foot">A webpage cannot start a background server or grant itself access to your computer's music folders. The cross-platform setup steps are in the README.</p>
             <a className="text-link" href="https://github.com/b-1-o/selfmusic#run-the-home-server" target="_blank" rel="noreferrer">Open setup guide <ArrowUpRight size={15} /></a>
           </div>
@@ -231,6 +242,9 @@ function App() {
   const [tracks, setTracks] = useState([]);
   const [loadError, setLoadError] = useState("");
   const [loadingTracks, setLoadingTracks] = useState(false);
+  const [deletingTrackId, setDeletingTrackId] = useState("");
+  const [trackActionMessage, setTrackActionMessage] = useState("");
+  const [trackActionError, setTrackActionError] = useState(false);
   const [query, setQuery] = useState("");
   const searchInputRef = useRef(null);
   const [youtubeQuery, setYoutubeQuery] = useState("");
@@ -373,6 +387,52 @@ function App() {
     }
   }, []);
 
+  const handleDeleteTrack = useCallback(async (track) => {
+    if (!track || deletingTrackId) return;
+    const confirmed = window.confirm(
+      'Permanently delete "' + track.title + '" from the server? This removes the actual audio file and cannot be undone.'
+    );
+    if (!confirmed) return;
+
+    setDeletingTrackId(track.id);
+    setTrackActionMessage("");
+    setTrackActionError(false);
+    try {
+      const response = await fetch("/api/tracks/" + encodeURIComponent(track.id), {
+        method: "DELETE",
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      if (response.status === 401) {
+        setAuthenticated(false);
+        throw new Error("Your session expired. Sign in again before deleting tracks.");
+      }
+      if (!response.ok) throw new Error(await readMessage(response));
+      const result = await response.json();
+
+      setTracks((items) => items.filter((item) => item.id !== track.id));
+      setFavorites((items) => items.filter((id) => id !== track.id));
+      if (currentTrackId === track.id) {
+        audioRef.current?.pause();
+        if (audioRef.current) {
+          audioRef.current.removeAttribute("src");
+          audioRef.current.load();
+        }
+        setIsPlaying(false);
+        setCurrentTrackId("");
+        setCurrentTime(0);
+        setDuration(0);
+        localStorage.removeItem(LAST_TRACK_KEY);
+      }
+      setTrackActionMessage('Deleted "' + (result.name || track.title) + '" from the server.');
+    } catch (error) {
+      setTrackActionError(true);
+      setTrackActionMessage(error.message || "Could not delete this track. Check the server and try again.");
+    } finally {
+      setDeletingTrackId("");
+    }
+  }, [currentTrackId, deletingTrackId]);
+
   useEffect(() => {
     const handleSearchShortcut = (event) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
@@ -426,10 +486,18 @@ function App() {
       const response = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        cache: "no-store",
         body: JSON.stringify({ password }),
       });
       if (!response.ok) {
         setLoginError(await readMessage(response));
+        return;
+      }
+      const sessionResponse = await fetch("/api/auth/session", { credentials: "same-origin", cache: "no-store" });
+      const session = sessionResponse.ok ? await sessionResponse.json() : { authenticated: false };
+      if (!session.authenticated) {
+        setLoginError("The password was accepted, but this browser did not keep the sign-in session. Open SelfMusic through its HTTPS Tailscale address, then try again.");
         return;
       }
       setAuthenticated(true);
@@ -768,6 +836,7 @@ function App() {
         onLogin={handleLogin}
         error={loginError}
         serverUnavailable={serverUnavailable}
+        appearance={appearance}
       />
     );
   }
@@ -883,6 +952,14 @@ function App() {
                   favorites={favorites}
                   onPlay={playTrack}
                   onFavorite={toggleFavorite}
+
+                  onDelete={handleDeleteTrack}
+
+                  deletingTrackId={deletingTrackId}
+
+                  trackActionMessage={trackActionMessage}
+
+                  trackActionError={trackActionError}
                   onRefresh={loadTracks}
                   emptyTitle={query ? "No matches found" : "Your first track is waiting"}
                   emptyCopy={query ? "Try another title, artist, or album name." : "Put your own music files in the server's music folder, then refresh the library."}
@@ -914,6 +991,14 @@ function App() {
                 favorites={favorites}
                 onPlay={playTrack}
                 onFavorite={toggleFavorite}
+
+                onDelete={handleDeleteTrack}
+
+                deletingTrackId={deletingTrackId}
+
+                trackActionMessage={trackActionMessage}
+
+                trackActionError={trackActionError}
                 onRefresh={loadTracks}
                 emptyTitle={view === "favorites" ? "Nothing liked yet" : query ? "No matches found" : "Your library is empty"}
                 emptyCopy={view === "favorites" ? "Tap the heart beside any track to keep it here." : "Add audio files to your server's music folder, then refresh."}
@@ -1378,6 +1463,10 @@ function TrackList({
   favorites,
   onPlay,
   onFavorite,
+  onDelete,
+  deletingTrackId,
+  trackActionMessage,
+  trackActionError,
   onRefresh,
   emptyTitle,
   emptyCopy,
@@ -1398,8 +1487,15 @@ function TrackList({
   }
 
   return (
+    <>
+    {trackActionMessage && (
+      <div className={"track-action-feedback" + (trackActionError ? " track-action-feedback-error" : "")} role={trackActionError ? "alert" : "status"}>
+        {trackActionError ? <CircleAlert size={16} /> : <Check size={16} />}
+        <span>{trackActionMessage}</span>
+      </div>
+    )}
     <div className="track-table">
-      <div className="track-table-head"><span>#</span><span>TITLE</span><span>ALBUM / FOLDER</span><span><Heart size={14} /></span><span>TIME</span></div>
+      <div className="track-table-head"><span>#</span><span>TITLE</span><span>ALBUM / FOLDER</span><span><Heart size={14} /></span><span aria-label="Delete track"><Trash2 size={13} /></span><span>TIME</span></div>
       {tracks.map((track, index) => (
         <TrackRow
           key={track.id}
@@ -1410,9 +1506,12 @@ function TrackList({
           favorite={favorites.includes(track.id)}
           onPlay={onPlay}
           onFavorite={onFavorite}
+          onDelete={onDelete}
+          deleting={deletingTrackId === track.id}
         />
       ))}
     </div>
+    </>
   );
 }
 
