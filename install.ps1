@@ -93,7 +93,7 @@ $MusicPath = if ([System.IO.Path]::IsPathRooted($MusicDir)) { $MusicDir } else {
 New-Item -ItemType Directory -Force -Path $MusicPath, (Join-Path $RootDir "data") | Out-Null
 
 Write-Host ([Environment]::NewLine + "Installing Node dependencies...") -ForegroundColor Cyan
-& $Npm.Source install
+& $Npm.Source install --no-save --package-lock=false --no-audit --no-fund
 if ($LASTEXITCODE -ne 0) { throw "npm install failed." }
 Write-Host ([Environment]::NewLine + "Building SelfMusic...") -ForegroundColor Cyan
 & $Npm.Source run build
