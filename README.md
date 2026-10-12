@@ -31,14 +31,16 @@ from any device on your network or through a tunnel you control.
 
 3. Start SelfMusic any day with `selfmusic`. The installer adds a desktop launcher where supported.
 
+On Linux, the native launcher starts `tailscaled` on demand for the SelfMusic session; it does not enable system boot autostart. `selfmusic stop`, `selfmusic off`, and `off selfmusic` stop that service only if the launcher started it. If you previously ran `systemctl enable tailscaled` and do not want Tailscale to start at boot, disable that setting once with `sudo systemctl disable tailscaled`.
+
 Useful commands:
 
 | Command | What it does |
 |---|---|
-| `selfmusic` | Start the server and open the browser |
-| `selfmusic stop` | Stop the server |
-| `selfmusic off` | Stop the server (same as `stop`) |
-| `off selfmusic` | Short command to stop SelfMusic |
+| `selfmusic` | Start Tailscale for this session if needed, start the server, and open the browser |
+| `selfmusic stop` | Stop the server and Tailscale if this launcher started its service |
+| `selfmusic off` | Same as `stop` |
+| `off selfmusic` | Short command to stop SelfMusic and its session Tailscale service |
 | `selfmusic restart` | Restart the server |
 | `selfmusic status` | Show status and connection addresses |
 | `selfmusic logs` | Follow the server log |

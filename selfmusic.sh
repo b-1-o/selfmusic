@@ -7,6 +7,7 @@ DATA_DIR="$ROOT_DIR/data"
 ENV_FILE="$ROOT_DIR/.env"
 PID_FILE="$DATA_DIR/selfmusic.pid"
 LOG_FILE="$DATA_DIR/selfmusic.log"
+TAILSCALE_MARKER="$DATA_DIR/tailscaled-started-by-selfmusic"
 mkdir -p "$DATA_DIR"
 
 env_value() {
@@ -29,9 +30,9 @@ SelfMusic native launcher
 
 Usage:
   selfmusic [start]        Start the server and open the browser
-  selfmusic stop           Stop the server
-  selfmusic off            Stop the server
-  off selfmusic            Stop the server (short command)
+  selfmusic stop           Stop server and session Tailscale
+  selfmusic off            Stop server and session Tailscale
+  off selfmusic            Stop both if Tailscale was started by SelfMusic
   selfmusic restart        Restart the server
   selfmusic status         Show status and connection addresses
   selfmusic logs           Follow the server log
@@ -80,7 +81,7 @@ show_addresses() {
         printf 'Tailscale HTTPS address: %s\n' "$https_url"
       fi
     else
-      yellow "Tailscale is installed but not connected. Run: sudo systemctl start tailscaled && sudo tailscale up"
+      yellow "Tailscale is installed but not connected. Run selfmusic to start its session service, then authenticate if prompted."
     fi
   fi
   printf 'Do not port-forward this app directly to the public internet.\n'
@@ -97,7 +98,77 @@ open_browser() {
   fi
 }
 
+start_tailscale() {
+  if ! command -v tailscale >/dev/null 2>&1; then
+    yellow "Tailscale is not installed; SelfMusic will still work locally. Install it from https://tailscale.com/download"
+    return 0
+  fi
+
+  if [[ "$(uname -s)" != "Linux" ]]; then
+    if tailscale ip -4 >/dev/null 2>&1; then return 0; fi
+    yellow "Tailscale is not connected. Start the Tailscale app and sign in; SelfMusic can still work locally."
+    return 0
+  fi
+
+  if ! command -v systemctl >/dev/null 2>&1; then
+    yellow "systemctl is unavailable; start Tailscale manually. SelfMusic can still work locally."
+    return 0
+  fi
+
+  if ! systemctl is-active --quiet tailscaled; then
+    printf 'Starting Tailscale for this SelfMusic session...\n'
+    if sudo systemctl start tailscaled; then
+      if [ -r /proc/sys/kernel/random/boot_id ]; then
+        cat /proc/sys/kernel/random/boot_id > "$TAILSCALE_MARKER"
+        chmod 600 "$TAILSCALE_MARKER" 2>/dev/null || true
+      fi
+    else
+      yellow "Could not start Tailscale. SelfMusic will still work locally."
+      return 0
+    fi
+  fi
+
+  if ! tailscale ip -4 >/dev/null 2>&1; then
+    printf 'Connecting Tailscale; you may be asked to authenticate...\n'
+    if ! sudo tailscale up; then
+      yellow "Tailscale did not connect. Try 'sudo tailscale up' manually; SelfMusic will still work locally."
+      return 0
+    fi
+  fi
+
+  if tailscale ip -4 >/dev/null 2>&1; then
+    local ts_ip
+    ts_ip="$(tailscale ip -4 2>/dev/null | head -n 1 || true)"
+    if [ -n "$ts_ip" ]; then green "Tailscale is connected: $ts_ip"; else green "Tailscale is connected."; fi
+  else
+    yellow "Tailscale service is running but no Tailscale IP is available yet."
+  fi
+}
+
+stop_tailscale_if_owned() {
+  [[ "$(uname -s)" == "Linux" ]] || return 0
+  [ -f "$TAILSCALE_MARKER" ] || return 0
+
+  local marker_boot current_boot
+  marker_boot="$(cat "$TAILSCALE_MARKER" 2>/dev/null || true)"
+  current_boot="$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || true)"
+  rm -f "$TAILSCALE_MARKER"
+
+  # Ignore stale markers from a previous boot.
+  [ -n "$current_boot" ] && [ "$marker_boot" = "$current_boot" ] || return 0
+  command -v systemctl >/dev/null 2>&1 || return 0
+  systemctl is-active --quiet tailscaled || return 0
+
+  printf 'Stopping Tailscale started by SelfMusic...\n'
+  if sudo systemctl stop tailscaled; then
+    green "Tailscale stopped for this SelfMusic session."
+  else
+    yellow "Could not stop Tailscale; stop it manually with: sudo systemctl stop tailscaled"
+  fi
+}
+
 start_server() {
+  start_tailscale
   if health_ok; then
     green "SelfMusic is already running."
     show_addresses
@@ -188,7 +259,12 @@ done
 
 case "$ACTION" in
   start|"") start_server ;;
-  stop|off) stop_server ;;
+  stop|off)
+    stop_status=0
+    stop_server || stop_status=$?
+    stop_tailscale_if_owned
+    exit "$stop_status"
+    ;;
   restart) stop_server || true; start_server ;;
   status)
     if health_ok; then green "SelfMusic is responding."; else yellow "SelfMusic is not responding."; fi
@@ -205,8 +281,9 @@ case "$ACTION" in
       printf 'https://tailscale.com/download\n'
       exit 1
     fi
+    start_tailscale
     if ! tailscale ip -4 >/dev/null 2>&1; then
-      yellow "Start/connect Tailscale first: sudo systemctl start tailscaled && sudo tailscale up"
+      yellow "Tailscale is not connected. Run selfmusic and complete any sign-in prompt, then retry selfmusic remote."
       exit 1
     fi
     if ! health_ok; then start_server; fi

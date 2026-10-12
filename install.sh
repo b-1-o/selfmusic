@@ -171,7 +171,8 @@ printf '  selfmusic remote  Configure private HTTPS access through Tailscale\n'
 
 if command -v tailscale >/dev/null 2>&1; then
   printf '\nTailscale CLI detected. To allow remote access, sign this computer and your phone into the same tailnet.\n'
-  printf 'Run "selfmusic remote" after starting the server to try enabling HTTPS Serve.\n'
+  printf 'On Linux, selfmusic starts Tailscale for this session when needed; off selfmusic stops it if this launcher started it.\n'
+  printf 'Run selfmusic remote once after signing in to try enabling HTTPS Serve.\n'
 else
   printf '\nRemote access is optional. Install Tailscale on this computer and your phone, then sign in to the same account:\n'
   printf 'https://tailscale.com/download\n'
