@@ -25,5 +25,25 @@ jobs:
         run: |
           node --check server/index.js
           node --check vite.config.js
+          bash -n install.sh selfmusic.sh
       - name: Build web client
         run: npm run build
+
+  windows-launchers:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Parse PowerShell scripts
+        shell: pwsh
+        run: |
+          $files = @("install.ps1", "selfmusic.ps1")
+          foreach ($file in $files) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file), [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error $_ }
+              exit 1
+            }
+          }
