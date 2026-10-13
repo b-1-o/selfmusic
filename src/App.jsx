@@ -497,6 +497,28 @@ function App() {
   const [muted, setMuted] = useState(false);
   const [shuffle, setShuffle] = useState(false);
   const [repeatMode, setRepeatMode] = useState("off");
+  const [playbackQueueIds, setPlaybackQueueIds] = useState([]);
+  const [remotePlaybackState, setRemotePlaybackState] = useState(null);
+  const [playbackSyncStatus, setPlaybackSyncStatus] = useState("connecting");
+  const [playbackDeviceId] = useState(() => {
+    const key = "selfmusic:playback-device:v1";
+    try {
+      const saved = localStorage.getItem(key);
+      if (saved) return saved;
+      const id = globalThis.crypto?.randomUUID?.() || ("device-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2));
+      localStorage.setItem(key, id);
+      return id;
+    } catch {
+      return "device-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
+    }
+  });
+  const playbackSyncRevisionRef = useRef(0);
+  const playbackSyncReadyRef = useRef(false);
+  const playbackSyncPayloadRef = useRef(null);
+  const playbackSyncPausedForRemoteRef = useRef(false);
+  const playbackSyncWriteRef = useRef(false);
+  const playbackSyncLastPayloadRef = useRef("");
+  const pendingResumeRef = useRef(null);
   const [copied, setCopied] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const uploadInputRef = useRef(null);
@@ -533,12 +555,118 @@ function App() {
   const [remoteWizardOpen, setRemoteWizardOpen] = useState(() => localStorage.getItem(REMOTE_WIZARD_KEY) !== "1");
 
   const currentTrack = tracks.find((track) => track.id === currentTrackId) || null;
+  const remotePlaybackTrack = remotePlaybackState?.currentTrackId
+    ? tracks.find((track) => track.id === remotePlaybackState.currentTrackId) || null
+    : null;
+  const activeQueueTracks = playbackQueueIds.length
+    ? playbackQueueIds.map((id) => tracks.find((track) => track.id === id)).filter(Boolean)
+    : tracks;
+  const knownTrackIds = new Set(tracks.map((track) => track.id));
+  let syncQueue = (playbackQueueIds.length ? playbackQueueIds.filter((id) => knownTrackIds.has(id)) : tracks.map((track) => track.id));
+  if (syncQueue.length > 500) {
+    const currentIndex = syncQueue.indexOf(currentTrackId);
+    const start = currentIndex >= 0 ? Math.max(0, Math.min(currentIndex - 250, syncQueue.length - 500)) : 0;
+    syncQueue = syncQueue.slice(start, start + 500);
+  }
+  if (currentTrackId && knownTrackIds.has(currentTrackId) && !syncQueue.includes(currentTrackId)) {
+    if (syncQueue.length >= 500) syncQueue = [...syncQueue.slice(0, 499), currentTrackId];
+    else syncQueue = [...syncQueue, currentTrackId];
+  }
+  playbackSyncPayloadRef.current = {
+    queue: syncQueue,
+    currentTrackId: syncQueue.includes(currentTrackId) ? currentTrackId : null,
+    positionSeconds: Math.max(0, Math.min(86400, Number.isFinite(currentTime) ? currentTime : 0)),
+    isPlaying: Boolean(isPlaying && syncQueue.includes(currentTrackId)),
+    repeatMode: ["off", "one", "all"].includes(repeatMode) ? repeatMode : "off",
+    shuffle: Boolean(shuffle),
+    sourceDeviceId: playbackDeviceId
+  };
   const playerTint = useMemo(() => {
     const hex = /^#[0-9a-f]{6}$/i.test(appearance.accentColor) ? appearance.accentColor : "#f1a0ba";
     return [hex.slice(1, 3), hex.slice(3, 5), hex.slice(5, 7)]
       .map((channel) => Number.parseInt(channel, 16))
       .join(",");
   }, [appearance.accentColor]);
+
+  useEffect(() => {
+    if (!authenticated) {
+      playbackSyncReadyRef.current = false;
+      setPlaybackSyncStatus("offline");
+      return undefined;
+    }
+
+    let source;
+    try {
+      source = new EventSource("/api/playback/events");
+    } catch {
+      setPlaybackSyncStatus("offline");
+      return undefined;
+    }
+    const onPlaybackState = (event) => {
+      try {
+        const state = JSON.parse(event.data);
+        if (!state || !Number.isSafeInteger(Number(state.revision))) return;
+        playbackSyncRevisionRef.current = Number(state.revision);
+        playbackSyncReadyRef.current = true;
+        setPlaybackSyncStatus("connected");
+
+        if (state.sourceDeviceId && state.sourceDeviceId !== playbackDeviceId && state.currentTrackId) {
+          playbackSyncPausedForRemoteRef.current = true;
+          setRemotePlaybackState(state);
+        } else if (state.sourceDeviceId === playbackDeviceId || !state.currentTrackId) {
+          playbackSyncPausedForRemoteRef.current = false;
+          setRemotePlaybackState(null);
+        }
+      } catch {
+        // Ignore malformed events; EventSource will continue listening.
+      }
+    };
+    source.addEventListener("playback-state", onPlaybackState);
+    source.onopen = () => setPlaybackSyncStatus("connected");
+    source.onerror = () => setPlaybackSyncStatus("reconnecting");
+    return () => source.close();
+  }, [authenticated, playbackDeviceId]);
+
+  useEffect(() => {
+    if (!authenticated) return undefined;
+    const timer = window.setInterval(async () => {
+      if (!playbackSyncReadyRef.current || playbackSyncPausedForRemoteRef.current || playbackSyncWriteRef.current) return;
+      const payload = playbackSyncPayloadRef.current;
+      if (!payload) return;
+      const signature = JSON.stringify(payload);
+      if (signature === playbackSyncLastPayloadRef.current) return;
+
+      playbackSyncWriteRef.current = true;
+      try {
+        const response = await fetch("/api/playback/state", {
+          method: "PUT",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...payload, expectedRevision: playbackSyncRevisionRef.current })
+        });
+        const body = await response.json().catch(() => ({}));
+        if (response.status === 409 && body.state) {
+          playbackSyncRevisionRef.current = Number(body.state.revision) || 0;
+          if (body.state.sourceDeviceId && body.state.sourceDeviceId !== playbackDeviceId && body.state.currentTrackId) {
+            playbackSyncPausedForRemoteRef.current = true;
+            setRemotePlaybackState(body.state);
+          }
+          setPlaybackSyncStatus("connected");
+          playbackSyncLastPayloadRef.current = "";
+          return;
+        }
+        if (!response.ok || !body.state) throw new Error("Playback sync is unavailable.");
+        playbackSyncRevisionRef.current = Number(body.state.revision) || playbackSyncRevisionRef.current;
+        playbackSyncLastPayloadRef.current = signature;
+        setPlaybackSyncStatus("connected");
+      } catch {
+        setPlaybackSyncStatus("offline");
+      } finally {
+        playbackSyncWriteRef.current = false;
+      }
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [authenticated, playbackDeviceId]);
 
   const refreshNetworkAddresses = useCallback(async () => {
     setNetworkLoading(true);
@@ -1196,6 +1324,18 @@ function App() {
 
   const playTrack = useCallback((track) => {
     if (!track || !audioRef.current) return;
+    playbackSyncPausedForRemoteRef.current = false;
+    setRemotePlaybackState(null);
+    if (pendingResumeRef.current?.trackId !== track.id) pendingResumeRef.current = null;
+    setPlaybackQueueIds((existing) => {
+      if (existing.length) return existing;
+      const ids = tracks.map((item) => item.id);
+      if (ids.length <= 500) return ids;
+      const trackIndex = Math.max(0, ids.indexOf(track.id));
+      const start = Math.max(0, Math.min(trackIndex - 250, ids.length - 500));
+      return ids.slice(start, start + 500);
+    });
+    playbackSyncLastPayloadRef.current = "";
     setSelectedYoutube(null);
     const audio = audioRef.current;
     const requestedFormat = playerSettings.transcodingEnabled ? streamFormat : "original";
@@ -1217,20 +1357,21 @@ function App() {
     setCurrentTime(0);
     setDuration(0);
     audio.play().catch(() => setIsPlaying(false));
-  }, [playerSettings.transcodingEnabled, streamFormat, streamBitrate, offlineTrackIds]);
+  }, [playerSettings.transcodingEnabled, streamFormat, streamBitrate, offlineTrackIds, tracks]);
 
   const playNext = useCallback(() => {
-    if (!tracks.length) return;
-    const index = tracks.findIndex((track) => track.id === currentTrackId);
-    if (shuffle && tracks.length > 1) {
+    const queue = activeQueueTracks.length ? activeQueueTracks : tracks;
+    if (!queue.length) return;
+    const index = queue.findIndex((track) => track.id === currentTrackId);
+    if (shuffle && queue.length > 1) {
       let nextIndex = index;
-      while (nextIndex === index) nextIndex = Math.floor(Math.random() * tracks.length);
-      playTrack(tracks[nextIndex]);
+      while (nextIndex === index) nextIndex = Math.floor(Math.random() * queue.length);
+      playTrack(queue[nextIndex]);
       return;
     }
     const nextIndex = index < 0 ? 0 : index + 1;
-    if (nextIndex >= tracks.length) {
-      if (repeatMode === "all") playTrack(tracks[0]);
+    if (nextIndex >= queue.length) {
+      if (repeatMode === "all") playTrack(queue[0]);
       else {
         audioRef.current?.pause();
         setIsPlaying(false);
@@ -1249,15 +1390,44 @@ function App() {
     }
     const index = tracks.findIndex((track) => track.id === currentTrackId);
     const previousIndex = index <= 0 ? (repeatMode === "all" ? tracks.length - 1 : 0) : index - 1;
-    if (tracks[previousIndex]) playTrack(tracks[previousIndex]);
-  }, [tracks, currentTrackId, repeatMode, playTrack]);
+    if (activeQueueTracks[previousIndex]) playTrack(activeQueueTracks[previousIndex]);
+  }, [tracks, activeQueueTracks, currentTrackId, repeatMode, playTrack]);
 
   const playPreviousTrack = useCallback(() => {
-    if (!tracks.length) return;
-    const index = tracks.findIndex((track) => track.id === currentTrackId);
-    const previousIndex = index <= 0 ? (repeatMode === "all" ? tracks.length - 1 : 0) : index - 1;
-    if (tracks[previousIndex]) playTrack(tracks[previousIndex]);
-  }, [tracks, currentTrackId, repeatMode, playTrack]);
+    const queue = activeQueueTracks.length ? activeQueueTracks : tracks;
+    if (!queue.length) return;
+    const index = queue.findIndex((track) => track.id === currentTrackId);
+    const previousIndex = index <= 0 ? (repeatMode === "all" ? queue.length - 1 : 0) : index - 1;
+    if (queue[previousIndex]) playTrack(queue[previousIndex]);
+  }, [tracks, activeQueueTracks, currentTrackId, repeatMode, playTrack]);
+
+  const resumeRemotePlayback = useCallback(() => {
+    const saved = remotePlaybackState;
+    const track = saved?.currentTrackId ? tracks.find((item) => item.id === saved.currentTrackId) : null;
+    if (!saved || !track) return;
+    const queue = Array.isArray(saved.queue) ? saved.queue.filter((id) => tracks.some((item) => item.id === id)).slice(0, 500) : [];
+    setPlaybackQueueIds(queue.includes(track.id) ? queue : [...queue.slice(0, 499), track.id]);
+    setRepeatMode(["off", "one", "all"].includes(saved.repeatMode) ? saved.repeatMode : "off");
+    setShuffle(Boolean(saved.shuffle));
+    playbackSyncPausedForRemoteRef.current = false;
+    playbackSyncLastPayloadRef.current = "";
+    pendingResumeRef.current = { trackId: track.id, positionSeconds: Math.max(0, Number(saved.positionSeconds) || 0) };
+    setRemotePlaybackState(null);
+    playTrack(track);
+    const audio = audioRef.current;
+    if (audio && audio.readyState >= 1) {
+      const position = Number(pendingResumeRef.current?.positionSeconds || 0);
+      audio.currentTime = Number.isFinite(audio.duration) && audio.duration > 0 ? Math.min(position, Math.max(0, audio.duration - 0.25)) : position;
+      setCurrentTime(audio.currentTime);
+      pendingResumeRef.current = null;
+    }
+  }, [remotePlaybackState, tracks, playTrack]);
+
+  const dismissRemotePlayback = useCallback(() => {
+    playbackSyncPausedForRemoteRef.current = false;
+    playbackSyncLastPayloadRef.current = "";
+    setRemotePlaybackState(null);
+  }, []);
 
   const togglePlayback = useCallback(() => {
     const audio = audioRef.current;
@@ -2638,6 +2808,17 @@ function App() {
         <button className={view === "settings" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("settings")}><SectionGlyph kind="server" size={21} /><span>Server</span></button>
       </nav>
 
+      {remotePlaybackState && remotePlaybackTrack && (
+        <div className="playback-resume-banner" role="status" aria-live="polite">
+          <div className="playback-resume-copy">
+            <span className="playback-resume-eyebrow">PLAYBACK ON ANOTHER DEVICE</span>
+            <strong>{remotePlaybackTrack.title}</strong>
+            <span>{remotePlaybackTrack.artist} · Resume at {Math.floor(Math.max(0, Number(remotePlaybackState.positionSeconds) || 0) / 60)}:{String(Math.floor(Math.max(0, Number(remotePlaybackState.positionSeconds) || 0) % 60)).padStart(2, "0")}</span>
+          </div>
+          <button className="primary-button playback-resume-action" type="button" onClick={resumeRemotePlayback}>Continue here</button>
+          <button className="secondary-button playback-resume-dismiss" type="button" onClick={dismissRemotePlayback} aria-label="Dismiss cross-device playback prompt">Dismiss</button>
+        </div>
+      )}
       <PlayerBar
         audioRef={audioRef}
         trackTint={playerTint}
@@ -2666,6 +2847,9 @@ function App() {
         preload="auto"
         playsInline
         onPlay={() => {
+          playbackSyncPausedForRemoteRef.current = false;
+          setRemotePlaybackState(null);
+          playbackSyncLastPayloadRef.current = "";
           setIsPlaying(true);
           if (currentTrack && nowPlayingTrackRef.current !== currentTrack.id) {
             nowPlayingTrackRef.current = currentTrack.id;
@@ -2703,7 +2887,17 @@ function App() {
             }).catch(() => { scrobbledTrackRef.current = ""; });
           }
         }}
-        onLoadedMetadata={(event) => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
+        onLoadedMetadata={(event) => {
+          const audio = event.currentTarget;
+          setDuration(Number.isFinite(audio.duration) ? audio.duration : 0);
+          const pending = pendingResumeRef.current;
+          if (pending && pending.trackId === currentTrackId) {
+            const desired = Math.max(0, Number(pending.positionSeconds) || 0);
+            audio.currentTime = Number.isFinite(audio.duration) && audio.duration > 0 ? Math.min(desired, Math.max(0, audio.duration - 0.25)) : desired;
+            setCurrentTime(audio.currentTime);
+            pendingResumeRef.current = null;
+          }
+        }}
         onEnded={() => {
           if (repeatMode === "one" && audioRef.current) {
             audioRef.current.currentTime = 0;
