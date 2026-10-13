@@ -17,6 +17,7 @@ test("creates durable YouTube jobs and sanitizes metadata overrides", () => {
       }
     });
     assert.equal(job.status, "queued");
+    assert.equal(job.phase, "queued");
     assert.equal(job.progress, 0);
     assert.equal(job.bitrate, "128k");
     assert.equal(job.url, "https://www.youtube.com/watch?v=abcdefghijk");
