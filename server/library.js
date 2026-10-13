@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { sha256File } from "./fingerprints.js";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const metadataScript = path.join(moduleDir, "metadata.py");
@@ -73,15 +74,10 @@ function readMetadata(filePath, musicRoot) {
   });
 }
 
+// Preserve the existing import API while routing exact hashes through the
+// fingerprint provider interface. All current database/API fields remain sha256.
 export async function hashFile(filePath) {
-  const hash = crypto.createHash("sha256");
-  await new Promise((resolve, reject) => {
-    const stream = fs.createReadStream(filePath);
-    stream.on("data", (chunk) => hash.update(chunk));
-    stream.on("error", reject);
-    stream.on("end", resolve);
-  });
-  return hash.digest("hex");
+  return sha256File(filePath);
 }
 
 async function walkAudioFiles(root) {
