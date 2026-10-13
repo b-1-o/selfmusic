@@ -90,7 +90,7 @@ test("stale writes return a revision conflict without overwriting newer state", 
 test("invalid queue references and playback fields are rejected", () => {
   const db = setup();
   try {
-    const missingTrack = savePlaybackState(db, "user-a", snapshot({ queue: ["not-in-library"] }));
+    const missingTrack = savePlaybackState(db, "user-a", snapshot({ queue: ["not-in-library"], currentTrackId: null }));
     assert.equal(missingTrack.ok, false);
     assert.equal(missingTrack.status, 400);
     assert.equal(missingTrack.error, "unknown_track");
