@@ -179,9 +179,18 @@ start_server() {
     red "Dependencies are missing. Run: bash ./install.sh"
     exit 1
   fi
+  # Rebuild UI when source is newer than the last production build (or build is missing).
+  need_build=0
   if [ ! -f "$ROOT_DIR/dist/index.html" ]; then
-    printf 'Production frontend build is missing; building it now...\n'
-    npm run build
+    need_build=1
+  else
+    if find "$ROOT_DIR/src" -type f -newer "$ROOT_DIR/dist/index.html" 2>/dev/null | grep -q .; then
+      need_build=1
+    fi
+  fi
+  if [ "$need_build" -eq 1 ]; then
+    printf 'Building frontend (src changed or dist missing)...\n'
+    (cd "$ROOT_DIR" && npm run build)
   fi
 
   if ! command -v node >/dev/null 2>&1; then
