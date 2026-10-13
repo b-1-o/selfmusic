@@ -98,3 +98,10 @@ test("dismissal keys merged from other devices are synchronized back to the acco
   assert.ok(app.includes("keys.some((key) => !remoteKeys.includes(key))"));
   assert.ok(app.includes('fetch("/api/preferences/dismissed-playback", {'));
 });
+
+test("Import tabs exclude the blank direct-URL subtab", async () => {
+  const source = await readSource("src/components/Add/AddTabs.jsx");
+  const ids = [...source.matchAll(/id: "([^"]+)", label:/g)].map((match) => match[1]);
+  assert.deepEqual(ids, ["import", "youtube", "offline"]);
+  assert.ok(!source.includes('label: "From URL"'));
+});

@@ -81,6 +81,12 @@ test("reopening a persisted database does not reapply migrations or lose existin
       0,
       "test-device"
     );
+    const savedAppearance = { theme: "light", wallpaperDataUrl: "data:image/png;base64,iVBORw0KGgo=" };
+    const savedDismissals = { keys: ['["device-a","persisted-track"]'] };
+    db.prepare("INSERT INTO user_preferences(user_id, preference_key, value_json) VALUES (?, ?, ?)")
+      .run("persisted-user", "appearance", JSON.stringify(savedAppearance));
+    db.prepare("INSERT INTO user_preferences(user_id, preference_key, value_json) VALUES (?, ?, ?)")
+      .run("persisted-user", "dismissed-playback", JSON.stringify(savedDismissals));
     closeDatabase(db);
     db = createDatabase(databasePath);
 
@@ -93,6 +99,14 @@ test("reopening a persisted database does not reapply migrations or lose existin
       .get("persisted-user");
     assert.equal(state.revision, 3);
     assert.equal(state.positionSeconds, 73.25);
+    assert.deepEqual(
+      JSON.parse(db.prepare("SELECT value_json FROM user_preferences WHERE user_id = ? AND preference_key = ?").get("persisted-user", "appearance").value_json),
+      savedAppearance
+    );
+    assert.deepEqual(
+      JSON.parse(db.prepare("SELECT value_json FROM user_preferences WHERE user_id = ? AND preference_key = ?").get("persisted-user", "dismissed-playback").value_json),
+      savedDismissals
+    );
   } finally {
     closeDatabase(db);
     fs.rmSync(directory, { recursive: true, force: true });
