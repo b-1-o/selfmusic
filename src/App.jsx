@@ -2220,8 +2220,6 @@ function App() {
                     </div>
                   </div>
                 )}
-              </div>
-
 
                 <div className="settings-card">
                   <div className="settings-card-head"><span className="settings-icon"><FolderOpen size={19} /></span><span className="settings-overline">MUSIC COLLECTION</span></div>
