@@ -17,6 +17,7 @@ from any device on your network or through a tunnel you control.
 * Optional YouTube search using the official YouTube Data API v3.
 * Legacy password login plus admin-managed user accounts and HMAC-signed session cookies.
 * One-command native setup, with optional Docker deployment and private remote access through Tailscale.
+* Installable PWA shell, lock-screen/media controls where supported, and explicit per-device offline audio downloads.
 
 ## Quick start
 
@@ -352,6 +353,8 @@ Keep the `tailscale-state` volume: it stores the container node's identity. Do n
 * Last.fm requires server-side API credentials and a callback URL that can reach SelfMusic. Retries use a lightweight SQLite queue rather than a distributed queue.
 * The YouTube conversion queue is deliberately small (three queued/running jobs) and progress is approximate. Some videos are unavailable due to regional, account, or rights-holder restrictions.
 * The Subsonic-compatible API implements a documented minimal method set; client-specific extensions and advanced behaviors may vary.
+* Offline audio is cached per browser/device only after the user explicitly saves each track. Browser storage can be evicted; offline copies are not server backups and are not synced to another device.
+* The playback queue and listening position are not yet synchronized across devices. Media Session and background playback need manual verification on each target mobile browser/OS.
 * Upload supports up to 20 audio files per batch and 250 MB per file. Direct URL import accepts one HTTPS audio asset per request, up to 250 MB.
 * Native YouTube-to-MP3 imports require `yt-dlp` and `ffmpeg` on `PATH` (or `YT_DLP_PATH` for the downloader). The Docker image includes these tools.
 * Docker builds need disk space for Node.js, FFmpeg, Python, yt-dlp, and the build cache.
@@ -365,7 +368,7 @@ npm test
 npm run build
 ```
 
-GitHub Actions runs the same checks on pull requests. Tests cover SQLite migrations, metadata indexing, persistent playlists/favorites/history, Subsonic auth, secret encryption, and YouTube job validation.
+GitHub Actions runs syntax checks, the test suite, the Vite production build, Python helper compilation, a Docker image build, and Windows installer parsing on pull requests. Tests cover SQLite migrations, metadata indexing, persistent playlists/favorites/history, Subsonic auth, secret encryption, YouTube job validation, and PWA/offline-cache contracts. See [docs/ROADMAP.md](docs/ROADMAP.md) for limitations and planned follow-ups.
 
 ## Troubleshooting
 
