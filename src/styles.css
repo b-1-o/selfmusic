@@ -2686,3 +2686,16 @@ html, body, #root {
   .youtube-download-button { min-height:44px; }
   .youtube-job-progress { padding:11px; }
 }
+
+
+.smart-playlist-card {
+  display:block;
+  width:100%;
+  min-width:0;
+  text-align:left;
+  cursor:pointer;
+  transition:transform .18s ease,border-color .18s ease,background .18s ease;
+}
+.smart-playlist-card:hover { transform:translateY(-2px); border-color:color-mix(in srgb,var(--user-accent) 35%,var(--line-strong)); }
+.smart-playlist-card .text-button { display:inline-flex; align-items:center; gap:6px; margin-top:8px; }
+.app-shell[data-theme="light"] .smart-playlist-card { color:var(--text); }
