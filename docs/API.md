@@ -146,6 +146,14 @@ Configure LASTFM_API_KEY, LASTFM_API_SECRET and LASTFM_CALLBACK_URL in .env. Eac
 - POST /api/lastfm/now-playing publishes the current track.
 - POST /api/lastfm/scrobble queues eligible plays. A track becomes eligible after more than half its duration or more than four minutes. Queue entries are retried if Last.fm is unavailable.
 
+## PWA, Media Session and offline playback
+
+The client registers the service worker in production and uses the web app manifest for installation. The player exposes Media Session metadata and play/pause/previous/next/seek actions on compatible browsers.
+
+Offline audio is a client feature rather than a separate API endpoint. While signed in and online, use the download icon next to a track to save the full audio response in the browser's Cache API. The Offline Downloads screen shows saved items and allows removing their local copies. Saved audio is served through an internal service-worker route; normal private `/api/*` responses are not added to the generic application cache.
+
+Offline copies are scoped to the browser/device and may be evicted by the browser or operating system. They are not synchronized to other devices and are not part of the server's SQLite or music-folder backups. The server-side playback queue/current position is not synchronized between phone and desktop yet. Background playback and lock-screen controls depend on the target browser/OS and require a real-device smoke test.
+
 ## Subsonic-compatible API
 
 JSON endpoints are available at /rest/<method>.view. For token/salt authentication, t = MD5(password + salt), where salt is a random string. Standard direct-password parameter p is also supported; token/salt is preferable.
