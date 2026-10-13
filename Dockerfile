@@ -1,5 +1,8 @@
 # Build the Vite client with the complete dependency set.
-FROM node:20-slim AS build
+FROM node:22-bookworm-slim AS build
+# The build stage only bundles frontend assets; the runtime image supplies Python/yt-dlp.
+ENV YOUTUBE_DL_SKIP_PYTHON_CHECK=1 \
+    YOUTUBE_DL_SKIP_DOWNLOAD=1
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --no-audit --no-fund
@@ -8,13 +11,15 @@ COPY public ./public
 COPY src ./src
 RUN npm run build
 
-FROM node:20-slim AS runtime
+FROM node:22-bookworm-slim AS runtime
 ENV NODE_ENV=production \
     PORT=8787 \
-    MUSIC_DIR=/app/music
+    MUSIC_DIR=/app/music \
+    YOUTUBE_DL_SKIP_PYTHON_CHECK=1 \
+    YOUTUBE_DL_SKIP_DOWNLOAD=1
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg python3 python3-pip tini \
-    && python3 -m pip install --break-system-packages --no-cache-dir yt-dlp \
+    && python3 -m pip install --break-system-packages --no-cache-dir yt-dlp mutagen \
     && ln -sf "$(command -v yt-dlp)" /usr/bin/yt-dlp \
     && rm -rf /var/lib/apt/lists/* /root/.cache/pip
 WORKDIR /app

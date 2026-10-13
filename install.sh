@@ -10,7 +10,7 @@ yellow() { printf '\033[1;33m%s\033[0m\n' "$1"; }
 red() { printf '\033[1;31mERROR: %s\033[0m\n' "$1" >&2; }
 
 if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
-  red "Node.js 20.19+ and npm are required for native installation."
+  red "Node.js 22.13+ and npm are required for native installation."
   case "$(uname -s 2>/dev/null || true)" in
     Darwin*) printf 'Install Node.js from https://nodejs.org/ or with Homebrew.\n' ;;
     *) printf 'CachyOS / Arch: sudo pacman -S nodejs npm\n'; printf 'Other Linux: https://nodejs.org/en/download\n' ;;
@@ -19,7 +19,7 @@ if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
 fi
 
 if ! node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 20 || (major === 20 && minor >= 19) ? 0 : 1)'; then
-  red "Detected Node.js $(node --version); SelfMusic requires Node.js 20.19 or later."
+  red "Detected Node.js $(node --version); SelfMusic requires Node.js 22.13 or later."
   exit 1
 fi
 

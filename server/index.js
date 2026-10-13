@@ -12,15 +12,29 @@ import multer from "multer";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { create as createYoutubeDl } from "youtube-dl-exec";
-
-const youtubedl = createYoutubeDl(process.env.YT_DLP_PATH || (process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp"));
+import { createDatabase } from "./database.js";
+import { getTracks as readTracks, getTrackRow, hashFile, listAlbums, listArtists, scanLibrary } from "./library.js";
+import { mountCollectionRoutes } from "./collections.js";
+import { getTranscodedFile, originalSupportsFormat, parseTranscodeOptions, transcodingEnabled } from "./transcoder.js";
+import { encryptSecret } from "./secret.js";
+import { mountSubsonicRoutes } from "./subsonic.js";
+import { flushQueue as flushLastFmQueue, mountLastFmRoutes } from "./lastfm.js";
+import { createYoutubeJob, mountYoutubeJobRoutes } from "./youtube-jobs.js";
+import { mountPlaybackSyncRoutes } from "./playback-sync.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 dotenv.config({ path: path.join(projectRoot, ".env") });
+const youtubedl = createYoutubeDl(process.env.YT_DLP_PATH || (process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp"));
 
 const app = express();
 const port = Number.parseInt(process.env.PORT || "8787", 10);
 const musicRoot = path.resolve(projectRoot, process.env.MUSIC_DIR || "music");
+const databasePath = process.env.DATABASE_PATH === ":memory:"
+  ? ":memory:"
+  : path.resolve(projectRoot, process.env.DATABASE_PATH || "data/selfmusic.sqlite");
+const coverCacheDir = path.resolve(projectRoot, process.env.COVER_CACHE_DIR || "data/artwork");
+const transcodeCacheDir = path.resolve(projectRoot, process.env.TRANSCODE_CACHE_DIR || "data/transcodes");
+const db = createDatabase(databasePath);
 const configuredSessionSecret = process.env.SESSION_SECRET || "";
 const hasPersistentSessionSecret = configuredSessionSecret.length >= 32 && !configuredSessionSecret.toLowerCase().includes("replace-with");
 const sessionSecret = hasPersistentSessionSecret ? configuredSessionSecret : crypto.randomBytes(32).toString("hex");
@@ -44,6 +58,13 @@ const mimeTypes = {
 };
 const artNames = ["cover.webp", "cover.jpg", "cover.jpeg", "cover.png", "folder.webp", "folder.jpg", "folder.jpeg", "folder.png"];
 const loginAttempts = new Map();
+const youtubeSearchCache = new Map();
+
+function configuredDuplicateStrategy() {
+  const strategy = String(process.env.DUPLICATE_STRATEGY || "keep").toLowerCase();
+  return ["skip", "keep", "ask"].includes(strategy) ? strategy : "keep";
+}
+
 
 const audioMimeToExtension = {
   "audio/mpeg": ".mp3",
@@ -253,7 +274,7 @@ function describeYtdlpError(error) {
 
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
-app.use(express.json({ limit: "16kb" }));
+app.use(express.json({ limit: "2mb" }));
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "same-origin");
@@ -263,8 +284,81 @@ app.use((req, res, next) => {
 });
 app.use("/api", enforceSameOriginMutation);
 
+const genericRateLimitBuckets = new Map();
+function rateLimitApi(req, res, next) {
+  const windowMs = Math.max(10000, Number.parseInt(process.env.API_RATE_LIMIT_WINDOW_MS || "60000", 10) || 60000);
+  const max = Math.max(10, Number.parseInt(process.env.API_RATE_LIMIT_MAX || "60", 10) || 60);
+  const ip = req.ip || req.socket.remoteAddress || "unknown";
+  const normalizedPath = String(req.path || "/").replace(/\/[A-Za-z0-9_-]{24,}(?=\/|$)/g, "/:id");
+  const key = ip + ":" + normalizedPath;
+  const now = Date.now();
+  let bucket = genericRateLimitBuckets.get(key);
+  if (!bucket || now - bucket.startedAt >= windowMs) bucket = { startedAt: now, count: 0 };
+  bucket.count += 1;
+  genericRateLimitBuckets.set(key, bucket);
+  if (genericRateLimitBuckets.size > 10000) {
+    for (const [entryKey, entry] of genericRateLimitBuckets) {
+      if (now - entry.startedAt >= windowMs * 2) genericRateLimitBuckets.delete(entryKey);
+    }
+  }
+  if (bucket.count > max) {
+    res.setHeader("Retry-After", String(Math.ceil((windowMs - (now - bucket.startedAt)) / 1000)));
+    return res.status(429).json({ error: "rate_limited", message: "Too many API requests. Try again shortly." });
+  }
+  next();
+}
+app.use("/api", rateLimitApi);
+
+const rateLimitBuckets = new Map();
+function rateLimitHeavyApi(req, res, next) {
+  const requestPath = String(req.originalUrl || req.url || "").split("?")[0];
+  const heavy = /^\/api\/(?:youtube\/(?:search|download)|import-url|upload|library\/scan|duplicates(?:\/merge)?|duplicates\/[^/]+)$/.test(requestPath);
+  if (!heavy) return next();
+  const windowMs = Math.max(10000, Number.parseInt(process.env.API_RATE_LIMIT_WINDOW_MS || "60000", 10) || 60000);
+  const max = Math.max(1, Number.parseInt(process.env.HEAVY_API_RATE_LIMIT_MAX || "8", 10) || 8);
+  const key = (req.ip || req.socket.remoteAddress || "unknown") + ":" + requestPath;
+  const now = Date.now();
+  let bucket = rateLimitBuckets.get(key);
+  if (!bucket || now - bucket.startedAt >= windowMs) bucket = { startedAt: now, count: 0 };
+  bucket.count += 1;
+  rateLimitBuckets.set(key, bucket);
+  if (rateLimitBuckets.size > 5000) {
+    for (const [entryKey, entry] of rateLimitBuckets) {
+      if (now - entry.startedAt >= windowMs * 2) rateLimitBuckets.delete(entryKey);
+    }
+  }
+  if (bucket.count > max) {
+    res.setHeader("Retry-After", String(Math.ceil((windowMs - (now - bucket.startedAt)) / 1000)));
+    return res.status(429).json({ error: "rate_limited", message: "Too many requests for this operation. Try again later." });
+  }
+  next();
+}
+app.use("/api", rateLimitHeavyApi);
+
+app.use((req, res, next) => {
+  const started = Date.now();
+  res.on("finish", () => {
+    if (res.statusCode >= 400 || /^\/api\/(?:youtube|import-url|upload)/.test(req.path)) {
+      console.info("[SelfMusic] request", JSON.stringify({
+        method: req.method, path: req.path, status: res.statusCode,
+        durationMs: Date.now() - started
+      }));
+    }
+  });
+  next();
+});
+
 function isConfigured() {
-  return typeof process.env.SELF_MUSIC_PASSWORD === "string" && process.env.SELF_MUSIC_PASSWORD.length >= 8 && !process.env.SELF_MUSIC_PASSWORD.toLowerCase().includes("replace-with");
+  const legacyPasswordConfigured =
+    typeof process.env.SELF_MUSIC_PASSWORD === "string" &&
+    process.env.SELF_MUSIC_PASSWORD.length >= 8 &&
+    !process.env.SELF_MUSIC_PASSWORD.toLowerCase().includes("replace-with");
+  if (legacyPasswordConfigured) return true;
+  try {
+    return Number(db.prepare("SELECT COUNT(*) AS count FROM users").get().count) > 0;
+  } catch {
+    return false;
+  }
 }
 
 function constantTimeTextCompare(left, right) {
@@ -273,29 +367,68 @@ function constantTimeTextCompare(left, right) {
   return crypto.timingSafeEqual(a, b);
 }
 
-function createSessionToken() {
+function createSessionToken(userId = "legacy") {
   const expiresAt = String(Math.floor(Date.now() / 1000) + sessionLifetimeSeconds);
-  const signature = crypto.createHmac("sha256", sessionSecret).update(expiresAt).digest("base64url");
-  return expiresAt + "." + signature;
+  if (userId === "legacy") {
+    const signature = crypto.createHmac("sha256", sessionSecret).update(expiresAt).digest("base64url");
+    return expiresAt + "." + signature;
+  }
+  const signedValue = userId + "." + expiresAt;
+  const signature = crypto.createHmac("sha256", sessionSecret).update(signedValue).digest("base64url");
+  return signedValue + "." + signature;
+}
+
+function getSessionInfo(req) {
+  const cookies = String(req.headers.cookie || "").split(";").map((part) => part.trim());
+  const entry = cookies.find((part) => part.startsWith(sessionCookie + "="));
+  if (!entry) return { status: "missing", userId: null };
+
+  const token = entry.slice(sessionCookie.length + 1);
+  const parts = token.split(".");
+  let userId = "legacy";
+  let expiresAt;
+  let signature;
+  let signedValue;
+  if (parts.length === 2) {
+    [expiresAt, signature] = parts;
+    signedValue = expiresAt;
+  } else if (parts.length === 3) {
+    [userId, expiresAt, signature] = parts;
+    signedValue = userId + "." + expiresAt;
+  } else {
+    return { status: "invalid", userId: null };
+  }
+  const expiresAtNumber = Number(expiresAt);
+  if (!expiresAt || !signature || !Number.isSafeInteger(expiresAtNumber) || expiresAtNumber <= Math.floor(Date.now() / 1000)) {
+    return { status: "invalid", userId: null };
+  }
+  const expected = crypto.createHmac("sha256", sessionSecret).update(signedValue).digest("base64url");
+  return constantTimeTextCompare(signature, expected)
+    ? { status: "valid", userId }
+    : { status: "invalid", userId: null };
 }
 
 function getSessionStatus(req) {
-  const cookies = String(req.headers.cookie || "").split(";").map((part) => part.trim());
-  const entry = cookies.find((part) => part.startsWith(sessionCookie + "="));
-  if (!entry) return "missing";
-
-  const token = entry.slice(sessionCookie.length + 1);
-  const [expiresAt, signature] = token.split(".");
-  const expiresAtNumber = Number(expiresAt);
-  if (!expiresAt || !signature || !Number.isSafeInteger(expiresAtNumber) || expiresAtNumber <= Math.floor(Date.now() / 1000)) {
-    return "invalid";
-  }
-  const expected = crypto.createHmac("sha256", sessionSecret).update(expiresAt).digest("base64url");
-  return constantTimeTextCompare(signature, expected) ? "valid" : "invalid";
+  return getSessionInfo(req).status;
 }
 
-function hasValidSession(req) {
-  return getSessionStatus(req) === "valid";
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString("base64url");
+  const derived = crypto.scryptSync(password, salt, 64).toString("base64url");
+  return "scrypt$" + salt + "$" + derived;
+}
+
+function verifyPassword(password, encoded) {
+  if (typeof encoded !== "string") return false;
+  const [algorithm, salt, expectedText] = encoded.split("$");
+  if (algorithm !== "scrypt" || !salt || !expectedText) return false;
+  try {
+    const expected = Buffer.from(expectedText, "base64url");
+    const actual = crypto.scryptSync(password, salt, expected.length);
+    return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+  } catch {
+    return false;
+  }
 }
 
 function sessionRequestIsSecure(req) {
@@ -350,8 +483,26 @@ function requireAuth(req, res, next) {
   if (!isConfigured()) {
     return res.status(503).json({ error: "server_not_configured", message: "Set SELF_MUSIC_PASSWORD in .env before using the library." });
   }
-  if (!hasValidSession(req)) {
+  const session = getSessionInfo(req);
+  if (session.status !== "valid") {
     return res.status(401).json({ error: "unauthorized", message: "Sign in to access your music library." });
+  }
+  if (session.userId === "legacy") {
+    req.authUser = { id: "legacy", username: "owner", role: "admin", legacy: true };
+    return next();
+  }
+  const user = db.prepare("SELECT id, username, role, created_at AS createdAt FROM users WHERE id = ?").get(session.userId);
+  if (!user) {
+    setSessionCookie(req, res, "", 0);
+    return res.status(401).json({ error: "unauthorized", message: "This account no longer exists. Sign in again." });
+  }
+  req.authUser = user;
+  next();
+}
+
+function requireAdmin(req, res, next) {
+  if (req.authUser?.role !== "admin") {
+    return res.status(403).json({ error: "admin_required", message: "Administrator access is required for this operation." });
   }
   next();
 }
@@ -369,58 +520,28 @@ function safeTrackPath(id) {
   return absolutePath;
 }
 
-async function findTracks() {
-  const tracks = [];
-  async function walk(folder) {
-    if (tracks.length >= 20000) return;
-    let entries;
-    try {
-      entries = await fs.promises.readdir(folder, { withFileTypes: true });
-    } catch (error) {
-      if (error.code === "ENOENT") return;
-      throw error;
-    }
-
-    entries.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }));
-    for (const entry of entries) {
-      if (tracks.length >= 20000) break;
-      if (entry.name.startsWith(".") || entry.isSymbolicLink()) continue;
-      const absolutePath = path.join(folder, entry.name);
-      if (entry.isDirectory()) {
-        await walk(absolutePath);
-        continue;
-      }
-      if (!entry.isFile() || !supportedExtensions.has(path.extname(entry.name).toLowerCase())) continue;
-
-      const relativePath = path.relative(musicRoot, absolutePath);
-      const parent = path.dirname(relativePath);
-      const title = path.basename(entry.name, path.extname(entry.name))
-        .replace(/[_]+/g, " ")
-        .replace(/^\d{1,3}\s*[-_.]\s*/, "")
-        .trim();
-      const artist = parent === "." ? "Unknown artist" : path.basename(parent);
-      tracks.push({
-        id: Buffer.from(relativePath).toString("base64url"),
-        title: title || entry.name,
-        artist,
-        album: parent === "." ? "Local library" : parent.split(path.sep).join(" / "),
-        streamUrl: "/api/stream/" + Buffer.from(relativePath).toString("base64url"),
-        artworkUrl: "/api/artwork/" + Buffer.from(relativePath).toString("base64url")
-      });
-    }
-  }
-
-  await walk(musicRoot);
-  return tracks;
+async function findTracks(query = {}, options = {}) {
+  await scanLibrary(db, musicRoot, { coverCacheDir, ...options });
+  return readTracks(db, query);
 }
-
+mountCollectionRoutes(app, { db, requireAuth, findTracks });
+mountPlaybackSyncRoutes(app, { db, requireAuth });
+mountSubsonicRoutes(app, { db, musicRoot, requireFindTracks: findTracks, resolveTrackFile });
+mountLastFmRoutes(app, { db, requireAuth });
+mountYoutubeJobRoutes(app, { db, requireAuth, requireAdmin, projectRoot, musicRoot, coverCacheDir, workDir: path.join(projectRoot, "data") });
 async function resolveTrackFile(id) {
+  if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,2048}$/.test(id)) return null;
   const filePath = safeTrackPath(id);
   if (!filePath) return null;
   try {
-    const stats = await fs.promises.stat(filePath);
-    if (!stats.isFile() || !supportedExtensions.has(path.extname(filePath).toLowerCase())) return null;
-    return { filePath, stats };
+    const entryStats = await fs.promises.lstat(filePath);
+    if (entryStats.isSymbolicLink() || !entryStats.isFile() || !supportedExtensions.has(path.extname(filePath).toLowerCase())) return null;
+    const rootRealPath = await fs.promises.realpath(musicRoot);
+    const fileRealPath = await fs.promises.realpath(filePath);
+    const relative = path.relative(rootRealPath, fileRealPath);
+    if (!relative || relative === "." || relative.startsWith(".." + path.sep) || path.isAbsolute(relative)) return null;
+    const stats = await fs.promises.stat(fileRealPath);
+    return { filePath: fileRealPath, stats };
   } catch {
     return null;
   }
@@ -447,7 +568,7 @@ app.post("/api/auth/login", (req, res) => {
   if (!isConfigured()) {
     return res.status(503).json({
       error: "server_not_configured",
-      message: "Create .env from .env.example, set a password of at least 8 characters, then restart SelfMusic."
+      message: "Create .env from .env.example, set SELF_MUSIC_PASSWORD and SESSION_SECRET, then restart SelfMusic."
     });
   }
 
@@ -459,18 +580,111 @@ app.post("/api/auth/login", (req, res) => {
   }
 
   const password = typeof req.body?.password === "string" ? req.body.password : "";
-  if (!constantTimeTextCompare(password, process.env.SELF_MUSIC_PASSWORD)) {
+  const username = typeof req.body?.username === "string" ? req.body.username.trim() : "";
+  let userId = null;
+  let user = null;
+  if (username) {
+    user = db.prepare("SELECT id, password_hash FROM users WHERE username = ? COLLATE NOCASE").get(username);
+    if (user && verifyPassword(password, user.password_hash)) userId = user.id;
+  } else if (constantTimeTextCompare(password, process.env.SELF_MUSIC_PASSWORD)) {
+    userId = "legacy";
+  }
+
+  if (!userId) {
     if (!attempt || now - attempt.startedAt >= 15 * 60 * 1000) {
       loginAttempts.set(key, { startedAt: now, count: 1 });
     } else {
       attempt.count += 1;
     }
-    return res.status(401).json({ error: "invalid_password", message: "That password did not match." });
+    return res.status(401).json({ error: "invalid_credentials", message: "The username or password did not match." });
   }
 
   loginAttempts.delete(key);
-  setSessionCookie(req, res, createSessionToken());
-  res.json({ authenticated: true });
+  setSessionCookie(req, res, createSessionToken(userId));
+  res.json({
+    authenticated: true,
+    user: user ? { id: user.id, username, role: db.prepare("SELECT role FROM users WHERE id = ?").get(user.id)?.role || "user" } : { id: "legacy", username: "owner", role: "admin" }
+  });
+});
+
+app.get("/api/auth/profile", requireAuth, (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ user: { id: req.authUser.id, username: req.authUser.username, role: req.authUser.role, legacy: Boolean(req.authUser.legacy) } });
+});
+
+app.post("/api/auth/register", requireAuth, (req, res) => {
+  if (req.authUser.role !== "admin") {
+    return res.status(403).json({ error: "admin_required", message: "Only an administrator can create accounts." });
+  }
+  const username = typeof req.body?.username === "string" ? req.body.username.trim() : "";
+  const password = typeof req.body?.password === "string" ? req.body.password : "";
+  const role = req.body?.role === "admin" ? "admin" : "user";
+  if (!/^[A-Za-z0-9._-]{3,32}$/.test(username)) {
+    return res.status(400).json({ error: "invalid_username", message: "Username must be 3–32 characters using letters, numbers, dot, underscore or hyphen." });
+  }
+  if (password.length < 12 || password.length > 128) {
+    return res.status(400).json({ error: "invalid_password", message: "Account passwords must be 12–128 characters." });
+  }
+  try {
+    const id = crypto.randomUUID();
+    let encryptedPassword;
+    try {
+      encryptedPassword = encryptSecret(password);
+    } catch (error) {
+      return res.status(503).json({ error: "secret_encryption_unavailable", message: error.message });
+    }
+    db.prepare("INSERT INTO users(id, username, password_hash, subsonic_secret, role) VALUES (?, ?, ?, ?, ?)").run(id, username, hashPassword(password), encryptedPassword, role);
+    console.info("[SelfMusic] account created", JSON.stringify({ id, role }));
+    res.status(201).json({ user: { id, username, role } });
+  } catch (error) {
+    if (String(error?.code || "").includes("CONSTRAINT")) {
+      return res.status(409).json({ error: "username_taken", message: "That username is already in use." });
+    }
+    throw error;
+  }
+});
+
+app.get("/api/admin/users", requireAuth, (req, res) => {
+  if (req.authUser.role !== "admin") return res.status(403).json({ error: "admin_required" });
+  const users = db.prepare("SELECT id, username, role, created_at AS createdAt FROM users ORDER BY created_at, username COLLATE NOCASE").all();
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ users });
+});
+
+app.patch("/api/admin/users/:id", requireAuth, (req, res) => {
+  if (req.authUser.role !== "admin") return res.status(403).json({ error: "admin_required" });
+  const id = String(req.params.id || "");
+  const role = req.body?.role;
+  if (!["admin", "user"].includes(role)) return res.status(400).json({ error: "invalid_role" });
+  if (id === req.authUser.id && role !== "admin") return res.status(400).json({ error: "cannot_demote_self", message: "You cannot remove your own administrator role." });
+  if (role !== "admin") {
+    const target = db.prepare("SELECT role FROM users WHERE id = ?").get(id);
+    const adminCount = Number(db.prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'admin'").get().count);
+    if (target?.role === "admin" && adminCount <= 1) {
+      return res.status(409).json({ error: "last_admin_required", message: "At least one managed administrator account must remain." });
+    }
+  }
+  const result = db.prepare("UPDATE users SET role = ? WHERE id = ?").run(role, id);
+  if (!result.changes) return res.status(404).json({ error: "user_not_found" });
+  res.json({ updated: true, id, role });
+});
+
+app.delete("/api/admin/users/:id", requireAuth, (req, res) => {
+  if (req.authUser.role !== "admin") return res.status(403).json({ error: "admin_required" });
+  const id = String(req.params.id || "");
+  if (!id || id === req.authUser.id || id === "legacy") return res.status(400).json({ error: "cannot_delete_user", message: "An administrator cannot delete their own account." });
+  const result = db.prepare("DELETE FROM users WHERE id = ?").run(id);
+  if (!result.changes) return res.status(404).json({ error: "user_not_found" });
+  db.prepare("DELETE FROM playlists WHERE user_id = ?").run(id);
+  db.prepare("DELETE FROM favorites WHERE user_id = ?").run(id);
+  db.prepare("DELETE FROM play_history WHERE user_id = ?").run(id);
+  db.prepare("DELETE FROM lastfm_accounts WHERE user_id = ?").run(id);
+  db.prepare("DELETE FROM lastfm_pending_auth WHERE user_id = ?").run(id);
+  db.prepare("DELETE FROM scrobble_queue WHERE user_id = ?").run(id);
+  db.prepare("DELETE FROM youtube_jobs WHERE user_id = ?").run(id);
+  db.prepare("DELETE FROM playback_states WHERE user_id = ?").run(id);
+  console.info("[SelfMusic] account deleted", JSON.stringify({ id }));
+  res.status(204).end();
 });
 
 app.post("/api/auth/logout", (req, res) => {
@@ -525,7 +739,12 @@ const audioUpload = multer({
   }
 });
 
-app.post("/api/upload", requireAuth, (req, res, next) => {
+app.post("/api/upload", requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    await findTracks();
+  } catch (error) {
+    return next(error);
+  }
   audioUpload.array("files", 20)(req, res, async (error) => {
     if (error) {
       const receivedFiles = Array.isArray(req.files) ? req.files : [];
@@ -557,19 +776,50 @@ app.post("/api/upload", requireAuth, (req, res, next) => {
       });
     }
 
+    const duplicateStrategy = configuredDuplicateStrategy();
+    const accepted = [];
+    const skipped = [];
+    const duplicateMatches = [];
+    for (const file of files) {
+      let sha256;
+      try { sha256 = await hashFile(file.path); }
+      catch (error) {
+        await Promise.all(files.map((item) => fs.promises.unlink(item.path).catch(() => {})));
+        return next(error);
+      }
+      const existing = db.prepare("SELECT id, title, artist, album FROM tracks WHERE sha256 = ? LIMIT 10").all(sha256);
+      if (existing.length && duplicateStrategy === "skip") {
+        await fs.promises.unlink(file.path).catch(() => {});
+        skipped.push({ name: file.filename, reason: "duplicate", matches: existing });
+        continue;
+      }
+      if (existing.length) duplicateMatches.push({ name: file.filename, sha256, strategy: duplicateStrategy, matches: existing });
+      accepted.push(file);
+    }
+    try {
+      await findTracks();
+    } catch (error) {
+      console.error("[SelfMusic] uploaded files could not be indexed immediately:", error.message);
+    }
+
     res.setHeader("Cache-Control", "no-store");
     res.status(201).json({
-      uploaded: files.length,
+      uploaded: accepted.length,
+      skipped: skipped.length,
+      duplicateStrategy,
+      duplicates: duplicateMatches,
       destination: "Uploads",
-      files: files.map((file) => ({ name: file.filename, bytes: file.size }))
+      files: accepted.map((file) => ({ name: file.filename, bytes: file.size })),
+      skippedFiles: skipped
     });
   });
 });
 
-app.post("/api/import-url", requireAuth, async (req, res, next) => {
+app.post("/api/import-url", requireAuth, requireAdmin, async (req, res, next) => {
   let targetPath = null;
   let targetCreated = false;
   try {
+    await findTracks();
     let url = validateImportUrl(req.body?.url);
     let response = null;
     let redirects = 0;
@@ -663,12 +913,25 @@ app.post("/api/import-url", requireAuth, async (req, res, next) => {
       throw new Error("The source returned an empty file.");
     }
 
+    const sha256 = await hashFile(targetPath);
+    const duplicateMatches = db.prepare("SELECT id, title, artist, album, relative_path AS path FROM tracks WHERE sha256 = ? LIMIT 10").all(sha256);
+    const duplicateStrategy = configuredDuplicateStrategy();
+    if (duplicateMatches.length && duplicateStrategy === "skip") {
+      await fs.promises.unlink(targetPath).catch(() => {});
+      targetCreated = false;
+      res.setHeader("Cache-Control", "no-store");
+      return res.status(200).json({ imported: false, skipped: true, reason: "duplicate", duplicateStrategy, duplicates: duplicateMatches });
+    }
+
+    await findTracks();
     res.setHeader("Cache-Control", "no-store");
     res.status(201).json({
       imported: true,
       name: path.basename(targetPath),
       bytes: bytesReceived,
-      destination: "Uploads"
+      destination: "Uploads",
+      duplicateStrategy,
+      duplicates: duplicateStrategy === "ask" ? duplicateMatches : []
     });
   } catch (error) {
     if (targetPath && !targetCreated) await fs.promises.unlink(targetPath).catch(() => {});
@@ -708,7 +971,137 @@ app.get("/api/tracks", requireAuth, async (_req, res, next) => {
   }
 });
 
-app.delete("/api/tracks/:id", requireAuth, async (req, res, next) => {
+app.get("/api/artists", requireAuth, async (_req, res, next) => {
+  try {
+    await findTracks();
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ artists: listArtists(db) });
+  } catch (error) { next(error); }
+});
+
+app.get("/api/albums", requireAuth, async (req, res, next) => {
+  try {
+    await findTracks();
+    const artistId = typeof req.query.artistId === "string" ? req.query.artistId : null;
+    if (artistId && !/^[A-Za-z0-9_-]{1,128}$/.test(artistId)) {
+      return res.status(400).json({ error: "invalid_artist_id", message: "The artist ID is invalid." });
+    }
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ albums: listAlbums(db, artistId) });
+  } catch (error) { next(error); }
+});
+
+app.get("/api/search", requireAuth, async (req, res, next) => {
+  try {
+    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    if (q.length < 1 || q.length > 100) {
+      return res.status(400).json({ error: "invalid_query", message: "Search must contain 1–100 characters." });
+    }
+    const tracks = await findTracks({ q });
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ tracks, total: tracks.length });
+  } catch (error) { next(error); }
+});
+
+app.post("/api/library/scan", requireAuth, requireAdmin, async (_req, res, next) => {
+  try {
+    const tracks = await findTracks({}, { force: true });
+    console.info("[SelfMusic] library scan complete", JSON.stringify({ tracks: tracks.length }));
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ scanned: true, tracks: tracks.length });
+  } catch (error) { next(error); }
+});
+
+app.get("/api/duplicates", requireAuth, requireAdmin, async (_req, res, next) => {
+  try {
+    await findTracks();
+    const groups = db.prepare("SELECT sha256, COUNT(*) AS count FROM tracks WHERE sha256 IS NOT NULL GROUP BY sha256 HAVING COUNT(*) > 1 ORDER BY count DESC").all();
+    const readGroup = db.prepare("SELECT id, title, artist, album, relative_path AS path, size_bytes AS bytes, added_at AS addedAt FROM tracks WHERE sha256 = ? ORDER BY added_at, relative_path");
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ groups: groups.map((group) => ({ sha256: group.sha256, count: group.count, tracks: readGroup.all(group.sha256) })) });
+  } catch (error) { next(error); }
+});
+
+app.post("/api/duplicates/merge", requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const keepId = typeof req.body?.keepId === "string" ? req.body.keepId : "";
+    const duplicateIds = req.body?.duplicateIds;
+    if (!keepId || !Array.isArray(duplicateIds) || duplicateIds.length < 1 || duplicateIds.length > 100 ||
+        duplicateIds.some((id) => typeof id !== "string" || id === keepId) ||
+        new Set(duplicateIds).size !== duplicateIds.length) {
+      return res.status(400).json({ error: "invalid_duplicate_merge", message: "Choose one keeper and 1–100 distinct duplicate track IDs." });
+    }
+    await findTracks();
+    const keeper = getTrackRow(db, keepId);
+    if (!keeper?.sha256) return res.status(404).json({ error: "track_not_found" });
+    const duplicates = duplicateIds.map((id) => getTrackRow(db, id));
+    if (duplicates.some((row) => !row || row.sha256 !== keeper.sha256)) {
+      return res.status(409).json({ error: "not_identical_files", message: "Only tracks with identical SHA-256 content can be merged." });
+    }
+    const filesToRemove = [];
+    for (const duplicate of duplicates) {
+      const file = await resolveTrackFile(duplicate.id);
+      if (!file) return res.status(409).json({ error: "duplicate_file_missing", message: "A duplicate file is no longer available." });
+      filesToRemove.push({ duplicate, file });
+    }
+    const insertFavorite = db.prepare("INSERT OR IGNORE INTO favorites(user_id, track_id) SELECT user_id, ? FROM favorites WHERE track_id = ?");
+    const playlists = db.prepare("SELECT playlist_id, position FROM playlist_tracks WHERE track_id = ? ORDER BY position");
+    const existing = db.prepare("SELECT 1 AS found FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?");
+    const maxPosition = db.prepare("SELECT COALESCE(MAX(position), -1) + 1 AS position FROM playlist_tracks WHERE playlist_id = ?");
+    const insertPlaylistTrack = db.prepare("INSERT OR IGNORE INTO playlist_tracks(playlist_id, track_id, position) VALUES (?, ?, ?)");
+    const moveHistory = db.prepare("UPDATE play_history SET track_id = ? WHERE track_id = ?");
+    const deleteTrackRow = db.prepare("DELETE FROM tracks WHERE id = ?");
+    db.exec("BEGIN IMMEDIATE;");
+    try {
+      for (const { duplicate } of filesToRemove) {
+        insertFavorite.run(keeper.id, duplicate.id);
+        for (const row of playlists.all(duplicate.id)) {
+          if (existing.get(row.playlist_id, keeper.id)) continue;
+          const nextPosition = Number(maxPosition.get(row.playlist_id).position);
+          insertPlaylistTrack.run(row.playlist_id, keeper.id, nextPosition);
+        }
+        moveHistory.run(keeper.id, duplicate.id);
+        deleteTrackRow.run(duplicate.id);
+      }
+      db.exec("COMMIT;");
+    } catch (error) {
+      db.exec("ROLLBACK;");
+      throw error;
+    }
+    for (const { file } of filesToRemove) await fs.promises.unlink(file.filePath).catch((error) => {
+      console.error("[SelfMusic] merged duplicate file cleanup failed", error.message);
+    });
+    console.info("[SelfMusic] duplicates merged", JSON.stringify({ keepId, removedCount: duplicates.length }));
+    res.json({ merged: true, kept: keepId, removed: duplicates.length });
+  } catch (error) { next(error); }
+});
+
+app.delete("/api/duplicates/:id", requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const row = getTrackRow(db, req.params.id);
+    const file = await resolveTrackFile(req.params.id);
+    if (!row || !file) return res.status(404).json({ error: "track_not_found" });
+    await fs.promises.unlink(file.filePath);
+    db.prepare("DELETE FROM tracks WHERE id = ?").run(row.id);
+    console.info("[SelfMusic] duplicate track deleted", JSON.stringify({ id: row.id }));
+    res.json({ deleted: true, id: row.id });
+  } catch (error) {
+    if (error?.code === "ENOENT") return res.status(404).json({ error: "track_not_found" });
+    next(error);
+  }
+});
+
+app.get("/api/player/settings", requireAuth, (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json({
+    transcodingEnabled: transcodingEnabled(),
+    formats: ["original", "mp3", "opus", "aac"],
+    defaultBitrate: process.env.DEFAULT_BITRATE || "192k",
+    bitrates: ["64k", "96k", "128k", "160k", "192k", "256k", "320k"]
+  });
+});
+
+app.delete("/api/tracks/:id", requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const track = await resolveTrackFile(req.params.id);
     if (!track) {
@@ -773,6 +1166,20 @@ app.get("/api/network/addresses", requireAuth, (_req, res) => {
   res.json({ local: [...local], tailscale: [...tailscale] });
 });
 
+function parseIsoDuration(value) {
+  const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/.exec(String(value || ""));
+  if (!match) return null;
+  const seconds = Number(match[1] || 0) * 3600 + Number(match[2] || 0) * 60 + Number(match[3] || 0);
+  return Number.isFinite(seconds) ? Math.round(seconds) : null;
+}
+
+function pruneYoutubeSearchCache(now = Date.now()) {
+  for (const [key, entry] of youtubeSearchCache) {
+    if (entry.expiresAt <= now) youtubeSearchCache.delete(key);
+  }
+  while (youtubeSearchCache.size > 250) youtubeSearchCache.delete(youtubeSearchCache.keys().next().value);
+}
+
 app.get("/api/youtube/search", requireAuth, async (req, res, next) => {
   try {
     const apiKey = process.env.YOUTUBE_API_KEY;
@@ -789,6 +1196,14 @@ app.get("/api/youtube/search", requireAuth, async (req, res, next) => {
         error: "invalid_query",
         message: "Enter a search with 2–100 characters."
       });
+    }
+
+    const cacheKey = query.toLocaleLowerCase();
+    pruneYoutubeSearchCache();
+    const cached = youtubeSearchCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      res.setHeader("Cache-Control", "private, max-age=60");
+      return res.json({ ...cached.payload, cached: true });
     }
 
     const url = new URL("https://www.googleapis.com/youtube/v3/search");
@@ -826,11 +1241,35 @@ app.get("/api/youtube/search", requireAuth, async (req, res, next) => {
         title: String(item.snippet?.title || "Untitled video"),
         channelTitle: String(item.snippet?.channelTitle || "YouTube"),
         description: String(item.snippet?.description || ""),
-        thumbnail: String(item.snippet?.thumbnails?.medium?.url || item.snippet?.thumbnails?.default?.url || "")
+        thumbnail: String(item.snippet?.thumbnails?.medium?.url || item.snippet?.thumbnails?.default?.url || ""),
+        duration: null
       }));
 
-    res.setHeader("Cache-Control", "no-store");
-    res.json({ items, totalResults: payload.pageInfo?.totalResults || items.length });
+    if (items.length) {
+      const detailsUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
+      detailsUrl.searchParams.set("key", apiKey);
+      detailsUrl.searchParams.set("part", "contentDetails");
+      detailsUrl.searchParams.set("id", items.map((item) => item.videoId).join(","));
+      try {
+        const detailsResponse = await fetch(detailsUrl, { signal: AbortSignal.timeout(7000) });
+        if (detailsResponse.ok) {
+          const detailsPayload = await detailsResponse.json();
+          const durationById = new Map((detailsPayload.items || []).map((item) => [item.id, parseIsoDuration(item.contentDetails?.duration)]));
+          for (const item of items) item.duration = durationById.get(item.videoId) ?? null;
+        }
+      } catch (error) {
+        console.warn("[SelfMusic] YouTube duration lookup failed:", error.message);
+      }
+    }
+
+    const resultPayload = { items, totalResults: payload.pageInfo?.totalResults || items.length, cached: false };
+    const cacheSeconds = Math.min(3600, Math.max(0, Number.parseInt(process.env.YOUTUBE_CACHE_TTL_SECONDS || "300", 10) || 300));
+    if (cacheSeconds > 0) {
+      youtubeSearchCache.set(cacheKey, { payload: resultPayload, expiresAt: Date.now() + cacheSeconds * 1000 });
+      pruneYoutubeSearchCache();
+    }
+    res.setHeader("Cache-Control", "private, max-age=60");
+    res.json(resultPayload);
   } catch (error) {
     if (error.name === "TimeoutError" || error.name === "AbortError") {
       return res.status(504).json({ error: "youtube_timeout", message: "YouTube search took too long. Try again." });
@@ -916,10 +1355,26 @@ async function ensureYoutubeArtwork(info, targetPath) {
 // Download audio from a YouTube URL and convert to MP3 using yt-dlp.
 // POST /api/youtube/download   body: { url: "https://www.youtube.com/watch?v=..." }
 // ─────────────────────────────────────────────────────────────────────────────
-app.post("/api/youtube/download", requireAuth, async (req, res, next) => {
+app.post("/api/youtube/download", requireAuth, requireAdmin, async (req, res, next) => {
   let targetPath = null;
   try {
+    if (req.body?.async === true || String(req.query.async || "").toLowerCase() === "true") {
+      try {
+        const job = createYoutubeJob(db, {
+          projectRoot,
+          musicRoot,
+          coverCacheDir,
+          workDir: path.join(projectRoot, "data")
+        }, req.authUser.id, req.body || {});
+        res.setHeader("Cache-Control", "no-store");
+        return res.status(202).json({ queued: true, job });
+      } catch (error) {
+        const status = error.code === "INVALID_YOUTUBE_URL" || error.code === "INVALID_YOUTUBE_BITRATE" ? 400 : error.code === "YOUTUBE_QUEUE_FULL" ? 429 : 500;
+        return res.status(status).json({ error: String(error.code || "youtube_job_failed").toLowerCase(), message: error.message || "Could not queue this download." });
+      }
+    }
     const rawUrl = typeof req.body?.url === "string" ? req.body.url.trim() : "";
+
     if (!rawUrl || rawUrl.length > 2048) {
       return res.status(400).json({
         error: "invalid_youtube_url",
@@ -932,6 +1387,7 @@ app.post("/api/youtube/download", requireAuth, async (req, res, next) => {
         message: "That does not look like a valid YouTube video URL."
       });
     }
+    await findTracks();
 
     const ytdlpCommon = {
       noWarnings: true,
@@ -1029,6 +1485,18 @@ app.post("/api/youtube/download", requireAuth, async (req, res, next) => {
       });
     }
 
+    const outputSha256 = await hashFile(targetPath);
+    const duplicateMatches = db.prepare("SELECT id, title, artist, album, relative_path AS path FROM tracks WHERE sha256 = ? LIMIT 10").all(outputSha256);
+    const duplicateStrategy = configuredDuplicateStrategy();
+    if (duplicateMatches.length && duplicateStrategy === "skip") {
+      const outputDir = path.dirname(targetPath);
+      const outputStem = path.basename(targetPath, ".mp3");
+      await fs.promises.unlink(targetPath).catch(() => {});
+      await Promise.all([".jpg", ".jpeg", ".png", ".webp"].map((ext) => fs.promises.unlink(path.join(outputDir, outputStem + ext)).catch(() => {})));
+      res.setHeader("Cache-Control", "no-store");
+      return res.status(200).json({ downloaded: false, skipped: true, reason: "duplicate", duplicateStrategy, duplicates: duplicateMatches });
+    }
+
     let artworkName = null;
     try {
       artworkName = await ensureYoutubeArtwork(info, targetPath);
@@ -1037,6 +1505,8 @@ app.post("/api/youtube/download", requireAuth, async (req, res, next) => {
       console.warn("[SelfMusic] Could not save YouTube thumbnail:", artworkError?.message || artworkError);
     }
 
+    try { await findTracks(); }
+    catch (error) { console.error("[SelfMusic] downloaded audio could not be indexed immediately:", error.message); }
     res.setHeader("Cache-Control", "no-store");
     res.status(201).json({
       downloaded: true,
@@ -1045,7 +1515,9 @@ app.post("/api/youtube/download", requireAuth, async (req, res, next) => {
       durationSeconds,
       title: rawTitle,
       artwork: Boolean(artworkName),
-      destination: "Uploads"
+      destination: "Uploads",
+      duplicateStrategy,
+      duplicates: duplicateStrategy === "ask" ? duplicateMatches : []
     });
   } catch (error) {
     if (targetPath) await fs.promises.unlink(targetPath).catch(() => {});
@@ -1059,6 +1531,23 @@ app.get("/api/artwork/:id", requireAuth, async (req, res, next) => {
     const track = await resolveTrackFile(req.params.id);
     if (!track) return res.status(404).json({ error: "not_found" });
     const folder = path.dirname(track.filePath);
+    const catalogTrack = getTrackRow(db, req.params.id);
+    if (catalogTrack?.cover_path) {
+      const coverPath = path.resolve(catalogTrack.cover_path);
+      const cacheRoot = path.resolve(coverCacheDir);
+      if (coverPath.startsWith(cacheRoot + path.sep)) {
+        try {
+          const coverStats = await fs.promises.lstat(coverPath);
+          if (coverStats.isFile() && !coverStats.isSymbolicLink()) {
+            res.setHeader("Cache-Control", "private, max-age=3600");
+            res.type(mimeTypes[path.extname(coverPath).toLowerCase()] || "image/jpeg");
+            return fs.createReadStream(coverPath).pipe(res);
+          }
+        } catch {
+          // A stale embedded-cover cache entry should fall back to sidecar/folder art.
+        }
+      }
+    }
     const trackStem = path.basename(track.filePath, path.extname(track.filePath));
     for (const extension of [".jpg", ".jpeg", ".png", ".webp", ".avif"]) {
       const trackArtPath = path.join(folder, trackStem + extension);
@@ -1097,6 +1586,56 @@ app.get("/api/stream/:id", requireAuth, async (req, res, next) => {
     const track = await resolveTrackFile(req.params.id);
     if (!track) return res.status(404).json({ error: "track_not_found" });
 
+    const requestedFormat = typeof req.query.format === "string" ? req.query.format.toLowerCase() : "";
+    if (requestedFormat) {
+      let options;
+      try {
+        options = parseTranscodeOptions(requestedFormat, req.query.bitrate);
+      } catch (error) {
+        return res.status(400).json({ error: "invalid_transcode_options", message: error.message });
+      }
+      if (!originalSupportsFormat(track.filePath, options.format)) {
+        const trackRow = getTrackRow(db, req.params.id);
+        if (!trackRow) return res.status(404).json({ error: "track_not_found" });
+        let transcoded;
+        try {
+          transcoded = await getTranscodedFile(db, trackRow, track.filePath, transcodeCacheDir, options);
+        } catch (error) {
+          if (error.code === "TRANSCODE_DISABLED") return res.status(503).json({ error: error.code.toLowerCase(), message: error.message });
+          if (error.code === "FFMPEG_MISSING") return res.status(503).json({ error: error.code.toLowerCase(), message: error.message });
+          if (error.code === "TRANSCODE_TIMEOUT") return res.status(504).json({ error: error.code.toLowerCase(), message: error.message });
+          if (["INVALID_TRANSCODE_FORMAT", "INVALID_TRANSCODE_BITRATE"].includes(error.code)) return res.status(400).json({ error: error.code.toLowerCase(), message: error.message });
+          console.error("[SelfMusic] transcode failed", JSON.stringify({ trackId: req.params.id, code: error.code || "unknown", message: error.message }));
+          return res.status(500).json({ error: "transcode_failed", message: error.message || "Could not transcode this audio." });
+        }
+        const size = transcoded.stats.size;
+        res.setHeader("Content-Type", transcoded.options.mimeType);
+        res.setHeader("Accept-Ranges", "bytes");
+        res.setHeader("Cache-Control", "private, no-store");
+        res.setHeader("X-SelfMusic-Transcode-Cache", transcoded.cacheHit ? "HIT" : "MISS");
+        const requestedRange = req.headers.range;
+        if (!requestedRange) {
+          res.setHeader("Content-Length", size);
+          return fs.createReadStream(transcoded.filePath).pipe(res);
+        }
+        const match = /^bytes=(\\d*)-(\\d*)$/.exec(requestedRange);
+        if (!match || (!match[1] && !match[2])) {
+          res.setHeader("Content-Range", "bytes */" + size);
+          return res.status(416).end();
+        }
+        let startByte = match[1] ? Number(match[1]) : Math.max(0, size - Number(match[2]));
+        let endByte = match[2] ? Number(match[2]) : size - 1;
+        if (!Number.isSafeInteger(startByte) || !Number.isSafeInteger(endByte) || startByte >= size || startByte > endByte || endByte < 0) {
+          res.setHeader("Content-Range", "bytes */" + size);
+          return res.status(416).end();
+        }
+        endByte = Math.min(endByte, size - 1);
+        res.status(206);
+        res.setHeader("Content-Range", "bytes " + startByte + "-" + endByte + "/" + size);
+        res.setHeader("Content-Length", endByte - startByte + 1);
+        return fs.createReadStream(transcoded.filePath, { start: startByte, end: endByte }).pipe(res);
+      }
+    }
     const size = track.stats.size;
     const type = mimeTypes[path.extname(track.filePath).toLowerCase()] || "application/octet-stream";
     res.setHeader("Content-Type", type);
@@ -1156,15 +1695,41 @@ app.use((error, _req, res, _next) => {
   res.status(500).json({ error: "internal_error", message: "SelfMusic hit an unexpected error." });
 });
 
+function bootstrapAdminAccount() {
+  const username = String(process.env.BOOTSTRAP_ADMIN_USERNAME || "admin").trim();
+  const password = String(process.env.BOOTSTRAP_ADMIN_PASSWORD || "");
+  if (!password) return;
+  if (!/^[A-Za-z0-9._-]{3,32}$/.test(username) || password.length < 12 || password.length > 128) {
+    console.error("[SelfMusic] BOOTSTRAP_ADMIN_USERNAME must be 3–32 safe characters and BOOTSTRAP_ADMIN_PASSWORD must be 12–128 characters.");
+    return;
+  }
+  if (Number(db.prepare("SELECT COUNT(*) AS count FROM users").get().count) > 0) return;
+  try {
+    db.prepare("INSERT INTO users(id, username, password_hash, subsonic_secret, role) VALUES (?, ?, ?, ?, 'admin')").run(
+      crypto.randomUUID(), username, hashPassword(password), encryptSecret(password)
+    );
+    console.info("[SelfMusic] bootstrap administrator created", JSON.stringify({ username }));
+  } catch (error) {
+    console.error("[SelfMusic] could not create bootstrap administrator:", error.message);
+  }
+}
+
 fs.promises.mkdir(musicRoot, { recursive: true }).then(() => {
+  bootstrapAdminAccount();
   app.listen(port, "0.0.0.0", () => {
     console.log("SelfMusic server listening on http://localhost:" + port);
     console.log("Music folder: " + musicRoot);
+    console.log("SQLite database: " + databasePath);
     if (!isConfigured()) console.warn("Setup required: create .env and set SELF_MUSIC_PASSWORD to a password of at least 8 characters.");
     if (process.env.NODE_ENV === "production" && !hasPersistentSessionSecret) {
       console.warn("Set a random SESSION_SECRET of at least 32 characters in production so sessions remain valid after restarts.");
     }
   });
+}).then(() => {
+  const lastFmTimer = setInterval(() => {
+    flushLastFmQueue(db).catch((error) => console.warn("[SelfMusic] Last.fm queue worker failed", error.message));
+  }, 60000);
+  lastFmTimer.unref();
 }).catch((error) => {
   console.error("Could not prepare music directory:", error.message);
   process.exitCode = 1;

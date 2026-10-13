@@ -14,6 +14,7 @@ import {
   Library,
   Link2,
   ListMusic,
+  Plus,
   LockKeyhole,
   LogOut,
   Menu,
@@ -37,11 +38,21 @@ import {
   X,
   Youtube,
 } from "lucide-react";
+import AddTabs from "./components/Add/AddTabs.jsx";
+import FilterPanel, { FilterButton } from "./components/Library/FilterPanel.jsx";
+import TrackList from "./components/Library/TrackList.jsx";
+import SettingsTabs from "./components/Settings/SettingsTabs.jsx";
+import Navigation from "./components/Layout/Navigation.jsx";
+import Cover from "./components/Shared/Cover.jsx";
+import PlayerBar from "./components/Player/PlayerBar.jsx";
+import formatTime from "./utils/formatTime.js";
 
 const FAVORITES_KEY = "selfmusic:favorites:v1";
 const LAST_TRACK_KEY = "selfmusic:last-track:v1";
 const APPEARANCE_KEY = "selfmusic:appearance:v1";
 const REMOTE_WIZARD_KEY = "selfmusic:remote-wizard-seen:v1";
+const OFFLINE_AUDIO_CACHE = "selfmusic-offline-audio-v1";
+const OFFLINE_TRACKS_KEY = "selfmusic:offline-tracks:v1";
 const TAILSCALE_DOWNLOAD_URL = "https://tailscale.com/download";
 const TAILSCALE_QR_URL = "https://api.qrserver.com/v1/create-qr-code/?size=192x192&margin=8&data=" + encodeURIComponent(TAILSCALE_DOWNLOAD_URL);
 const SUPPORTED_UPLOAD_EXTENSIONS = new Set(["mp3", "m4a", "aac", "flac", "wav", "ogg", "opus", "webm"]);
@@ -52,7 +63,15 @@ const ACCENT_PRESETS = [
   { id: "ocean", label: "Ocean", color: "#87d7ee" },
   { id: "violet", label: "Violet", color: "#c5a9ff" },
   { id: "amber", label: "Amber", color: "#f4c27a" },
-  { id: "mint", label: "Mint", color: "#8fe0bf" },
+  { id: "silver", label: "Silver", color: "#c2cad7" },
+];
+
+const BACKGROUND_PRESETS = [
+  { id: "midnight", label: "Midnight", image: "radial-gradient(ellipse at 78% 12%, rgba(92, 74, 130, .24), transparent 38%), linear-gradient(145deg, #101018, #08090e 70%)" },
+  { id: "fog", label: "Fog", image: "radial-gradient(ellipse at 20% 15%, rgba(159, 174, 193, .18), transparent 42%), linear-gradient(145deg, #171b22, #0a0d13 78%)" },
+  { id: "dawn", label: "Dawn", image: "radial-gradient(ellipse at 80% 12%, rgba(195, 128, 151, .24), transparent 40%), linear-gradient(145deg, #1e1721, #0c0a12 75%)" },
+  { id: "neon", label: "Neon", image: "radial-gradient(ellipse at 80% 10%, rgba(78, 122, 177, .22), transparent 34%), radial-gradient(ellipse at 15% 85%, rgba(151, 89, 145, .12), transparent 44%), #090b12" },
+  { id: "minimal", label: "Minimal", image: "linear-gradient(145deg, #111116, #09090c)" },
 ];
 
 const clampNumber = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -182,12 +201,38 @@ function readLocalJson(key, fallback) {
   }
 }
 
-function formatTime(value) {
-  if (!Number.isFinite(value) || value < 0) return "0:00";
-  const minutes = Math.floor(value / 60);
-  const seconds = Math.floor(value % 60).toString().padStart(2, "0");
-  return minutes + ":" + seconds;
+function offlineTrackUrl(trackId) {
+  return "/__selfmusic_offline/" + encodeURIComponent(trackId);
 }
+
+function offlineCacheRequest(trackId) {
+  return new Request(new URL(offlineTrackUrl(trackId), window.location.origin).toString(), { method: "GET" });
+}
+
+async function readOfflineLibraryFromCache() {
+  if (!("caches" in window)) return { ids: [], tracks: [] };
+  const cache = await window.caches.open(OFFLINE_AUDIO_CACHE);
+  const requests = await cache.keys();
+  const cachedIds = new Set();
+  for (const request of requests) {
+    try {
+      const pathname = new URL(request.url).pathname;
+      const prefix = "/__selfmusic_offline/";
+      if (pathname.startsWith(prefix)) {
+        const encodedId = pathname.slice(prefix.length);
+        if (encodedId && !encodedId.includes("/")) cachedIds.add(decodeURIComponent(encodedId));
+      }
+    } catch {}
+  }
+
+  const stored = readLocalJson(OFFLINE_TRACKS_KEY, []);
+  const byId = new Map((Array.isArray(stored) ? stored : []).filter((track) => track && typeof track.id === "string").map((track) => [track.id, track]));
+  const tracks = [...cachedIds].map((id) => byId.get(id)).filter(Boolean);
+  try { localStorage.setItem(OFFLINE_TRACKS_KEY, JSON.stringify(tracks)); } catch {}
+  return { ids: [...cachedIds], tracks };
+}
+
+
 
 function parseYoutubeVideoId(value) {
   try {
@@ -233,68 +278,15 @@ async function readMessage(response) {
   }
 }
 
-function Cover({ track, large = false }) {
-  return (
-    <div className={"cover" + (large ? " cover-large" : "")}>
-      <img
-        src={track?.artworkUrl || "/icon.svg"}
-        alt=""
-        loading="lazy"
-        onError={(event) => {
-          if (event.currentTarget.dataset.fallback !== "1") {
-            event.currentTarget.dataset.fallback = "1";
-            event.currentTarget.src = "/icon.svg";
-          }
-        }}
-      />
-      <span className="cover-glow" />
-    </div>
-  );
-}
 
-const TrackRow = React.memo(function TrackRow({ track, index, active, playing, favorite, onPlay, onFavorite, onDelete, deleting }) {
-  return (
-    <div className={"track-row" + (active ? " track-row-active" : "")}>
-      <button className="track-index" aria-label={"Play " + track.title} onClick={() => onPlay(track)}>
-        {active && playing ? <AudioLines size={17} /> : <><span className="row-number">{index + 1}</span><Play className="row-play" size={16} fill="currentColor" /></>}
-      </button>
-      <button className="track-art" onClick={() => onPlay(track)} aria-label={"Play " + track.title}>
-        <Cover track={track} />
-      </button>
-      <button className="track-identity" onClick={() => onPlay(track)}>
-        <span className="track-title">{track.title}</span>
-        <span className="track-subtitle">{track.artist}</span>
-      </button>
-      <span className="track-album">{track.album}</span>
-      <button
-        className={"icon-button track-heart" + (favorite ? " is-favorite" : "")}
-        aria-label={favorite ? "Remove from favorites" : "Add to favorites"}
-        title={favorite ? "Remove from favorites" : "Add to favorites"}
-        onClick={() => onFavorite(track.id)}
-      >
-        <Heart size={17} fill={favorite ? "currentColor" : "none"} />
-      </button>
-      <button
-        className="icon-button track-delete"
-        type="button"
-        disabled={deleting}
-        aria-label={"Delete " + track.title + " from the server"}
-        title="Permanently delete this audio file from the server"
-        onClick={() => onDelete(track)}
-      >
-        {deleting ? <RefreshCw size={16} className="spin" /> : <Trash2 size={16} />}
-      </button>
-      <span className="track-duration">—:—</span>
-    </div>
-  );
-});
 
 function LoginScreen({ configured, checking, onLogin, error, serverUnavailable, appearance }) {
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
   return (
-    <div className="login-shell" data-accent={appearance.accent} data-glass={appearance.glass} style={{ "--user-accent": appearance.accentColor, "--user-accent-strong": darkenAccent(appearance.accentColor) }}>
+    <div className="login-shell" data-theme={appearance.theme} data-accent={appearance.accent} data-glass={appearance.glass} style={{ "--user-accent": appearance.accentColor, "--user-accent-strong": darkenAccent(appearance.accentColor), "--user-glass-opacity": appearance.glassOpacity + "%", "--user-glass-blur": appearance.glassBlur + "px", "--user-radius": appearance.cornerRadius + "px", "--user-wallpaper-blur": appearance.wallpaperBlur + "px" }}>
       <div className="login-orb login-orb-one" />
       <div className="login-orb login-orb-two" />
       <div className="login-card">
@@ -330,8 +322,20 @@ function LoginScreen({ configured, checking, onLogin, error, serverUnavailable, 
             <a className="text-link" href="https://github.com/b-1-o/selfmusic#run-the-home-server" target="_blank" rel="noreferrer">Open setup guide <ArrowUpRight size={15} /></a>
           </div>
         ) : (
-          <form className="login-form" onSubmit={(event) => { event.preventDefault(); onLogin(password); }}>
-            <label htmlFor="server-password">Server password</label>
+          <form className="login-form" onSubmit={(event) => { event.preventDefault(); onLogin({ username: username.trim(), password }); }}>
+            <label htmlFor="server-username">Username (optional for the server owner)</label>
+            <div className="password-wrap">
+              <input
+                id="server-username"
+                type="text"
+                autoComplete="username"
+                placeholder="Username for your account"
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                maxLength={32}
+              />
+            </div>
+            <label htmlFor="server-password">Password</label>
             <div className="password-wrap">
               <LockKeyhole size={17} />
               <input
@@ -362,6 +366,15 @@ function App() {
   const [configured, setConfigured] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
   const [serverUnavailable, setServerUnavailable] = useState(false);
+  const [offlineMode, setOfflineMode] = useState(false);
+  const [offlineTracks, setOfflineTracks] = useState(() => readLocalJson(OFFLINE_TRACKS_KEY, []));
+  const [offlineTrackIds, setOfflineTrackIds] = useState(() => {
+    const saved = readLocalJson(OFFLINE_TRACKS_KEY, []);
+    return Array.isArray(saved) ? saved.map((track) => track?.id).filter((id) => typeof id === "string") : [];
+  });
+  const [offlineBusyIds, setOfflineBusyIds] = useState([]);
+  const [offlineMessage, setOfflineMessage] = useState("");
+
   const [loginError, setLoginError] = useState("");
   const [tracks, setTracks] = useState([]);
   const [loadError, setLoadError] = useState("");
@@ -369,7 +382,7 @@ function App() {
   const [deletingTrackId, setDeletingTrackId] = useState("");
   const [trackActionMessage, setTrackActionMessage] = useState("");
   const [trackActionError, setTrackActionError] = useState(false);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(() => { try { return localStorage.getItem("selfmusic:library-search:v1") || ""; } catch { return ""; } });
   const searchInputRef = useRef(null);
   const [youtubeQuery, setYoutubeQuery] = useState("");
   const [youtubeUrl, setYoutubeUrl] = useState("");
@@ -378,9 +391,47 @@ function App() {
   const [youtubeLoading, setYoutubeLoading] = useState(false);
   const [youtubeError, setYoutubeError] = useState("");
   const [selectedYoutube, setSelectedYoutube] = useState(null);
+  const [youtubeJob, setYoutubeJob] = useState(null);
+  const [youtubeJobSource, setYoutubeJobSource] = useState("import");
+  const [youtubeJobStarting, setYoutubeJobStarting] = useState(false);
+  const youtubeJobRef = useRef(null);
+
   const [view, setView] = useState("home");
+  const [settingsSection, setSettingsSection] = useState("profile");
   const contentWrapRef = useRef(null);
-  const [favorites, setFavorites] = useState(() => readLocalJson(FAVORITES_KEY, []));
+  const [favorites, setFavorites] = useState([]);
+  const [profile, setProfile] = useState({ id: "legacy", username: "owner", role: "admin", legacy: true });
+  const [playlists, setPlaylists] = useState([]);
+  const [selectedPlaylist, setSelectedPlaylist] = useState(null);
+  const [selectedPlaylistTracks, setSelectedPlaylistTracks] = useState([]);
+  const [playlistName, setPlaylistName] = useState("");
+  const [playlistMessage, setPlaylistMessage] = useState("");
+  const [playlistError, setPlaylistError] = useState(false);
+  const [lastFmStatus, setLastFmStatus] = useState({ configured: false, connected: false, account: null });
+  const [lastFmMessage, setLastFmMessage] = useState("");
+  const [adminUsers, setAdminUsers] = useState([]);
+  const [newAccountUsername, setNewAccountUsername] = useState("");
+  const [newAccountPassword, setNewAccountPassword] = useState("");
+  const [newAccountRole, setNewAccountRole] = useState("user");
+  const [accountMessage, setAccountMessage] = useState("");
+  const [accountMessageError, setAccountMessageError] = useState(false);
+  const [libraryFilters, setLibraryFilters] = useState(() => ({ artist: "", album: "", year: "", genre: "", duration: "all", sort: "artist", offlineOnly: false, ...readLocalJson("selfmusic:library-filters:v1", {}) }));
+  const [libraryFiltersOpen, setLibraryFiltersOpen] = useState(false);
+  const [scanningLibrary, setScanningLibrary] = useState(false);
+  const [libraryScanMessage, setLibraryScanMessage] = useState("");
+  const [duplicateGroups, setDuplicateGroups] = useState([]);
+  const [duplicateLoading, setDuplicateLoading] = useState(false);
+  const [duplicateMessage, setDuplicateMessage] = useState("");
+  const [duplicateMessageError, setDuplicateMessageError] = useState(false);
+
+
+  const [playerSettings, setPlayerSettings] = useState({ transcodingEnabled: false, formats: ["original"], defaultBitrate: "192k", bitrates: ["128k", "192k"] });
+  const [streamFormat, setStreamFormat] = useState(() => readLocalJson("selfmusic:stream-quality:v1", {}).format || "original");
+  const [streamBitrate, setStreamBitrate] = useState(() => readLocalJson("selfmusic:stream-quality:v1", {}).bitrate || "192k");
+  const scrobbledTrackRef = useRef("");
+  const historyTrackRef = useRef("");
+  const nowPlayingTrackRef = useRef("");
+
   const [currentTrackId, setCurrentTrackId] = useState(() => localStorage.getItem(LAST_TRACK_KEY) || "");
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -390,6 +441,28 @@ function App() {
   const [muted, setMuted] = useState(false);
   const [shuffle, setShuffle] = useState(false);
   const [repeatMode, setRepeatMode] = useState("off");
+  const [playbackQueueIds, setPlaybackQueueIds] = useState([]);
+  const [remotePlaybackState, setRemotePlaybackState] = useState(null);
+  const [playbackSyncStatus, setPlaybackSyncStatus] = useState("connecting");
+  const [playbackDeviceId] = useState(() => {
+    const key = "selfmusic:playback-device:v1";
+    try {
+      const saved = localStorage.getItem(key);
+      if (saved) return saved;
+      const id = globalThis.crypto?.randomUUID?.() || ("device-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2));
+      localStorage.setItem(key, id);
+      return id;
+    } catch {
+      return "device-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
+    }
+  });
+  const playbackSyncRevisionRef = useRef(0);
+  const playbackSyncReadyRef = useRef(false);
+  const playbackSyncPayloadRef = useRef(null);
+  const playbackSyncPausedForRemoteRef = useRef(false);
+  const playbackSyncWriteRef = useRef(false);
+  const playbackSyncLastPayloadRef = useRef("");
+  const pendingResumeRef = useRef(null);
   const [copied, setCopied] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const uploadInputRef = useRef(null);
@@ -417,20 +490,193 @@ function App() {
       saturation: Number.isFinite(saved?.saturation) ? clampNumber(saved.saturation, 0, 100) : colorState.saturation,
       value: Number.isFinite(saved?.value) ? clampNumber(saved.value, 0, 100) : colorState.value,
       glass: ["liquid", "soft", "solid"].includes(saved?.glass) ? saved.glass : "liquid",
+      theme: ["dark", "light", "system"].includes(saved?.theme) ? saved.theme : "dark",
+      glassOpacity: Number.isFinite(saved?.glassOpacity) ? clampNumber(saved.glassOpacity, 35, 96) : 78,
+      glassBlur: Number.isFinite(saved?.glassBlur) ? clampNumber(saved.glassBlur, 0, 36) : 24,
+      cornerRadius: Number.isFinite(saved?.cornerRadius) ? clampNumber(saved.cornerRadius, 10, 32) : 20,
+      density: saved?.density === "compact" ? "compact" : "comfortable",
+      navPosition: ["auto", "left", "right", "bottom"].includes(saved?.navPosition) ? saved.navPosition : "auto",
+      backgroundPreset: BACKGROUND_PRESETS.some((preset) => preset.id === saved?.backgroundPreset) ? saved.backgroundPreset : "midnight",
+      wallpaperDataUrl: typeof saved?.wallpaperDataUrl === "string" && saved.wallpaperDataUrl.startsWith("data:image/") ? saved.wallpaperDataUrl : "",
+      wallpaperDim: Number.isFinite(saved?.wallpaperDim) ? clampNumber(saved.wallpaperDim, 5, 85) : 38,
+      animations: saved?.animations !== false,
+      animationSpeed: ["slow", "normal", "fast"].includes(saved?.animationSpeed) ? saved.animationSpeed : "normal",
     };
+  });
+  const [appearanceMessage, setAppearanceMessage] = useState("");
+  const [systemTheme, setSystemTheme] = useState(() => {
+    try { return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"; } catch { return "dark"; }
   });
   const [networkAddresses, setNetworkAddresses] = useState({ local: [], tailscale: [] });
   const [networkLoading, setNetworkLoading] = useState(false);
   const [networkError, setNetworkError] = useState("");
+  const [serverCheckBusy, setServerCheckBusy] = useState(false);
+  const [serverCheckMessage, setServerCheckMessage] = useState("");
+  const [installPromptEvent, setInstallPromptEvent] = useState(null);
+  const [pwaInstalled, setPwaInstalled] = useState(() => {
+    try {
+      return Boolean(window.matchMedia?.("(display-mode: standalone)").matches || navigator.standalone === true);
+    } catch {
+      return false;
+    }
+  });
+  const [pwaInstallMessage, setPwaInstallMessage] = useState("");
   const [remoteWizardOpen, setRemoteWizardOpen] = useState(() => localStorage.getItem(REMOTE_WIZARD_KEY) !== "1");
 
   const currentTrack = tracks.find((track) => track.id === currentTrackId) || null;
+  const remotePlaybackTrack = useMemo(
+    () => remotePlaybackState?.currentTrackId ? tracks.find((track) => track.id === remotePlaybackState.currentTrackId) || null : null,
+    [remotePlaybackState, tracks]
+  );
+  const activeQueueTracks = useMemo(() => {
+    if (!playbackQueueIds.length) return tracks;
+    const trackById = new Map(tracks.map((track) => [track.id, track]));
+    return playbackQueueIds.map((id) => trackById.get(id)).filter(Boolean);
+  }, [playbackQueueIds, tracks]);
+  const syncQueue = useMemo(() => {
+    const knownTrackIds = new Set(tracks.map((track) => track.id));
+    let queue = playbackQueueIds.length
+      ? playbackQueueIds.filter((id) => knownTrackIds.has(id))
+      : tracks.map((track) => track.id);
+    if (queue.length > 500) {
+      const currentIndex = queue.indexOf(currentTrackId);
+      const start = currentIndex >= 0 ? Math.max(0, Math.min(currentIndex - 250, queue.length - 500)) : 0;
+      queue = queue.slice(start, start + 500);
+    }
+    if (currentTrackId && knownTrackIds.has(currentTrackId) && !queue.includes(currentTrackId)) {
+      if (queue.length >= 500) queue = [...queue.slice(0, 499), currentTrackId];
+      else queue = [...queue, currentTrackId];
+    }
+    return queue;
+  }, [playbackQueueIds, tracks, currentTrackId]);
+  playbackSyncPayloadRef.current = {
+    queue: syncQueue,
+    currentTrackId: syncQueue.includes(currentTrackId) ? currentTrackId : null,
+    positionSeconds: Math.max(0, Math.min(86400, Number.isFinite(currentTime) ? currentTime : 0)),
+    isPlaying: Boolean(isPlaying && syncQueue.includes(currentTrackId)),
+    repeatMode: ["off", "one", "all"].includes(repeatMode) ? repeatMode : "off",
+    shuffle: Boolean(shuffle),
+    sourceDeviceId: playbackDeviceId
+  };
   const playerTint = useMemo(() => {
     const hex = /^#[0-9a-f]{6}$/i.test(appearance.accentColor) ? appearance.accentColor : "#f1a0ba";
     return [hex.slice(1, 3), hex.slice(3, 5), hex.slice(5, 7)]
       .map((channel) => Number.parseInt(channel, 16))
       .join(",");
   }, [appearance.accentColor]);
+
+  useEffect(() => {
+    if (!authenticated) {
+      playbackSyncReadyRef.current = false;
+      setPlaybackSyncStatus("offline");
+      return undefined;
+    }
+
+    let source;
+    try {
+      source = new EventSource("/api/playback/events");
+    } catch {
+      setPlaybackSyncStatus("offline");
+      return undefined;
+    }
+    const onPlaybackState = (event) => {
+      try {
+        const state = JSON.parse(event.data);
+        if (!state || !Number.isSafeInteger(Number(state.revision))) return;
+        playbackSyncRevisionRef.current = Number(state.revision);
+        playbackSyncReadyRef.current = true;
+        setPlaybackSyncStatus("connected");
+
+        if (state.sourceDeviceId && state.sourceDeviceId !== playbackDeviceId && state.currentTrackId) {
+          playbackSyncPausedForRemoteRef.current = true;
+          setRemotePlaybackState(state);
+        } else if (state.sourceDeviceId === playbackDeviceId || !state.currentTrackId) {
+          playbackSyncPausedForRemoteRef.current = false;
+          setRemotePlaybackState(null);
+        }
+      } catch {
+        // Ignore malformed events; EventSource will continue listening.
+      }
+    };
+    source.addEventListener("playback-state", onPlaybackState);
+    source.onopen = () => setPlaybackSyncStatus("connected");
+    source.onerror = () => setPlaybackSyncStatus("reconnecting");
+    return () => source.close();
+  }, [authenticated, playbackDeviceId]);
+
+  useEffect(() => {
+    if (!authenticated) return undefined;
+    const timer = window.setInterval(async () => {
+      if (!playbackSyncReadyRef.current || playbackSyncPausedForRemoteRef.current || playbackSyncWriteRef.current) return;
+      const payload = playbackSyncPayloadRef.current;
+      if (!payload) return;
+      const signature = JSON.stringify(payload);
+      if (signature === playbackSyncLastPayloadRef.current) return;
+
+      playbackSyncWriteRef.current = true;
+      try {
+        const response = await fetch("/api/playback/state", {
+          method: "PUT",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...payload, expectedRevision: playbackSyncRevisionRef.current })
+        });
+        const body = await response.json().catch(() => ({}));
+        if (response.status === 409 && body.state) {
+          playbackSyncRevisionRef.current = Number(body.state.revision) || 0;
+          if (body.state.sourceDeviceId && body.state.sourceDeviceId !== playbackDeviceId && body.state.currentTrackId) {
+            playbackSyncPausedForRemoteRef.current = true;
+            setRemotePlaybackState(body.state);
+          }
+          setPlaybackSyncStatus("connected");
+          playbackSyncLastPayloadRef.current = "";
+          return;
+        }
+        if (!response.ok || !body.state) throw new Error("Playback sync is unavailable.");
+        playbackSyncRevisionRef.current = Number(body.state.revision) || playbackSyncRevisionRef.current;
+        playbackSyncLastPayloadRef.current = signature;
+        setPlaybackSyncStatus("connected");
+      } catch {
+        setPlaybackSyncStatus("offline");
+      } finally {
+        playbackSyncWriteRef.current = false;
+      }
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [authenticated, playbackDeviceId]);
+
+  useEffect(() => {
+    const onBeforeInstallPrompt = (event) => {
+      event.preventDefault();
+      setInstallPromptEvent(event);
+    };
+    const onInstalled = () => {
+      setPwaInstalled(true);
+      setInstallPromptEvent(null);
+      setPwaInstallMessage("SelfMusic was installed on this device.");
+    };
+    const displayMode = window.matchMedia?.("(display-mode: standalone)");
+    const onDisplayModeChange = () => setPwaInstalled(Boolean(displayMode?.matches || navigator.standalone === true));
+    window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+    window.addEventListener("appinstalled", onInstalled);
+    displayMode?.addEventListener?.("change", onDisplayModeChange);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", onInstalled);
+      displayMode?.removeEventListener?.("change", onDisplayModeChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    const onOnline = () => setPlaybackSyncStatus("reconnecting");
+    const onOffline = () => setPlaybackSyncStatus("offline");
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, []);
 
   const refreshNetworkAddresses = useCallback(async () => {
     setNetworkLoading(true);
@@ -453,6 +699,66 @@ function App() {
       setNetworkLoading(false);
     }
   }, []);
+
+  const reconnectServer = useCallback(async () => {
+    setServerCheckBusy(true);
+    setServerCheckMessage("");
+    const startedAt = Date.now();
+    try {
+      const response = await fetch("/api/health", {
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache" }
+      });
+      if (!response.ok) throw new Error("The server returned HTTP " + response.status + ".");
+      const health = await response.json();
+      if (health?.ok !== true) throw new Error("The server health check did not confirm readiness.");
+      setServerUnavailable(false);
+      setServerCheckMessage(Date.now() - startedAt > 900 ? "Server reachable, but response was slow." : "Server is reachable.");
+      await refreshNetworkAddresses();
+      setPlaybackSyncStatus("reconnecting");
+    } catch (error) {
+      setServerUnavailable(true);
+      setPlaybackSyncStatus("offline");
+      setServerCheckMessage(error.message || "Could not reach the SelfMusic server.");
+    } finally {
+      setServerCheckBusy(false);
+    }
+  }, [refreshNetworkAddresses]);
+
+  const installSelfMusic = useCallback(async () => {
+    setPwaInstallMessage("");
+    if (pwaInstalled) {
+      setPwaInstallMessage("SelfMusic is already installed on this device.");
+      return;
+    }
+    if (installPromptEvent) {
+      try {
+        await installPromptEvent.prompt();
+        const choice = await installPromptEvent.userChoice;
+        if (choice?.outcome === "accepted") {
+          setPwaInstalled(true);
+          setPwaInstallMessage("Installation accepted. Follow your browser's confirmation.");
+        } else {
+          setPwaInstallMessage("Installation was dismissed. You can install it from the browser menu later.");
+        }
+      } catch {
+        setPwaInstallMessage("The browser could not open its install prompt. Use its menu to install SelfMusic.");
+      } finally {
+        setInstallPromptEvent(null);
+      }
+      return;
+    }
+
+    const userAgent = navigator.userAgent || "";
+    if (/iphone|ipad|ipod/i.test(userAgent)) {
+      setPwaInstallMessage("On iPhone or iPad: open Safari's Share menu, then choose Add to Home Screen.");
+    } else if (!/^https:$/i.test(window.location.protocol) && !["localhost", "127.0.0.1"].includes(window.location.hostname)) {
+      setPwaInstallMessage("Use the HTTPS server address to enable PWA installation, then open the browser menu.");
+    } else {
+      setPwaInstallMessage("Open the browser menu and choose Install app or Create shortcut. The exact wording depends on your browser.");
+    }
+  }, [installPromptEvent, pwaInstalled]);
 
   const closeRemoteWizard = useCallback(() => {
     setRemoteWizardOpen(false);
@@ -485,8 +791,27 @@ function App() {
   };
 
   useEffect(() => {
-    localStorage.setItem(APPEARANCE_KEY, JSON.stringify(appearance));
+    try { localStorage.setItem(APPEARANCE_KEY, JSON.stringify(appearance)); } catch {
+      setAppearanceMessage("This browser has reached its local storage limit. Choose a smaller wallpaper image.");
+    }
   }, [appearance]);
+
+  useEffect(() => {
+    const media = window.matchMedia?.("(prefers-color-scheme: light)");
+    if (!media) return undefined;
+    const update = (event) => setSystemTheme(event.matches ? "light" : "dark");
+    setSystemTheme(media.matches ? "light" : "dark");
+    media.addEventListener?.("change", update);
+    return () => media.removeEventListener?.("change", update);
+  }, []);
+
+  useEffect(() => {
+    try { localStorage.setItem("selfmusic:library-filters:v1", JSON.stringify(libraryFilters)); } catch { /* Filters remain usable if storage is disabled. */ }
+  }, [libraryFilters]);
+
+  useEffect(() => {
+    try { localStorage.setItem("selfmusic:library-search:v1", query); } catch { /* Search remains usable if storage is disabled. */ }
+  }, [query]);
 
   useEffect(() => {
     const container = contentWrapRef.current;
@@ -540,9 +865,22 @@ function App() {
       if (!response.ok) throw new Error(await readMessage(response));
       const body = await response.json();
       setTracks(body.tracks || []);
+      setOfflineMode(false);
       if (body.truncated) setLoadError("Your library is very large; only the first 20,000 tracks are shown.");
       setAuthenticated(true);
     } catch (error) {
+      try {
+        const saved = await readOfflineLibraryFromCache();
+        if (saved.tracks.length) {
+          setOfflineTracks(saved.tracks);
+          setOfflineTrackIds(saved.ids);
+          setTracks(saved.tracks);
+          setOfflineMode(true);
+          setProfile({ id: "offline", username: "Offline mode", role: "user", legacy: false });
+          setLoadError("");
+          return;
+        }
+      } catch {}
       setLoadError(error.message || "The music library could not be loaded.");
     } finally {
       setLoadingTracks(false);
@@ -608,6 +946,16 @@ function App() {
 
   useEffect(() => {
     let active = true;
+    readOfflineLibraryFromCache().then((saved) => {
+      if (!active) return;
+      setOfflineTracks(saved.tracks);
+      setOfflineTrackIds(saved.ids);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
     fetch("/api/auth/session", { credentials: "same-origin", cache: "no-store", headers: { "Cache-Control": "no-cache" } })
       .then((response) => {
         if (!response.ok) throw new Error("server_unavailable");
@@ -620,7 +968,25 @@ function App() {
         setChecking(false);
         if (state.authenticated) loadTracks();
       })
-      .catch(() => {
+      .catch(async () => {
+        if (!active) return;
+        try {
+          const saved = await readOfflineLibraryFromCache();
+          if (active && saved.tracks.length) {
+            setOfflineTracks(saved.tracks);
+            setOfflineTrackIds(saved.ids);
+            setTracks(saved.tracks);
+            setOfflineMode(true);
+            setConfigured(true);
+            setAuthenticated(true);
+            setProfile({ id: "offline", username: "Offline mode", role: "user", legacy: false });
+            setView("library");
+            setServerUnavailable(false);
+            setLoadError("");
+            setChecking(false);
+            return;
+          }
+        } catch {}
         if (!active) return;
         setServerUnavailable(true);
         setChecking(false);
@@ -629,8 +995,104 @@ function App() {
   }, [loadTracks]);
 
   useEffect(() => {
-    localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites));
-  }, [favorites]);
+    if (!offlineMode) return undefined;
+    const recoverConnection = async () => {
+      if (!navigator.onLine) return;
+      try {
+        const response = await fetch("/api/auth/session", { credentials: "same-origin", cache: "no-store", headers: { "Cache-Control": "no-cache" } });
+        if (!response.ok) return;
+        const state = await response.json();
+        setOfflineMode(false);
+        setServerUnavailable(false);
+        setConfigured(Boolean(state.configured));
+        setAuthenticated(Boolean(state.authenticated));
+        if (state.authenticated) {
+          await loadTracks();
+          try {
+            const profileResponse = await fetch("/api/auth/profile", { credentials: "same-origin", cache: "no-store" });
+            if (profileResponse.ok) {
+              const profileBody = await profileResponse.json();
+              setProfile(profileBody.user || { id: "legacy", username: "owner", role: "admin", legacy: true });
+            }
+          } catch {}
+        }
+      } catch {
+        // Keep the saved local library available until the server is reachable again.
+      }
+    };
+    window.addEventListener("online", recoverConnection);
+    return () => window.removeEventListener("online", recoverConnection);
+  }, [offlineMode, loadTracks]);
+
+  useEffect(() => {
+    if (!authenticated) return undefined;
+    let active = true;
+    const loadAccountData = async () => {
+      try {
+        const profileResponse = await fetch("/api/auth/profile", { credentials: "same-origin", cache: "no-store" });
+        if (profileResponse.status === 401) { setAuthenticated(false); return; }
+        if (!profileResponse.ok) throw new Error("Could not load account profile.");
+        const profileBody = await profileResponse.json();
+        const user = profileBody.user || { id: "legacy", username: "owner", role: "admin", legacy: true };
+        if (active) setProfile(user);
+        if (user.role === "admin") {
+          const usersResponse = await fetch("/api/admin/users", { credentials: "same-origin", cache: "no-store" });
+          if (active && usersResponse.ok) {
+            const usersBody = await usersResponse.json();
+            setAdminUsers(usersBody.users || []);
+          }
+        } else if (active) {
+          setAdminUsers([]);
+        }
+        if (user.role === "admin") {
+          const duplicatesResponse = await fetch("/api/duplicates", { credentials: "same-origin", cache: "no-store" });
+          if (active && duplicatesResponse.ok) setDuplicateGroups((await duplicatesResponse.json()).groups || []);
+        } else if (active) {
+          setDuplicateGroups([]);
+        }
+
+        let favoriteResponse = await fetch("/api/favorites", { credentials: "same-origin", cache: "no-store" });
+        let favoriteBody = favoriteResponse.ok ? await favoriteResponse.json() : { tracks: [] };
+        let serverFavoriteIds = (favoriteBody.tracks || []).map((track) => track.id);
+        if (user.legacy && serverFavoriteIds.length === 0) {
+          const previousFavorites = readLocalJson(FAVORITES_KEY, []);
+          for (const id of previousFavorites.slice(0, 500)) {
+            await fetch("/api/favorites/" + encodeURIComponent(id), { method: "POST", credentials: "same-origin" }).catch(() => {});
+          }
+          if (previousFavorites.length) {
+            favoriteResponse = await fetch("/api/favorites", { credentials: "same-origin", cache: "no-store" });
+            favoriteBody = favoriteResponse.ok ? await favoriteResponse.json() : { tracks: [] };
+            serverFavoriteIds = (favoriteBody.tracks || []).map((track) => track.id);
+          }
+        }
+        if (active) setFavorites(serverFavoriteIds);
+
+        const [playlistResponse, lastFmResponse, playerResponse] = await Promise.all([
+          fetch("/api/playlists", { credentials: "same-origin", cache: "no-store" }),
+          fetch("/api/lastfm/status", { credentials: "same-origin", cache: "no-store" }),
+          fetch("/api/player/settings", { credentials: "same-origin", cache: "no-store" }),
+        ]);
+        if (active && playlistResponse.ok) {
+          const body = await playlistResponse.json();
+          setPlaylists(body.playlists || []);
+        }
+        if (active && lastFmResponse.ok) setLastFmStatus(await lastFmResponse.json());
+        if (active && playerResponse.ok) setPlayerSettings(await playerResponse.json());
+        if (active && new URLSearchParams(window.location.search).get("lastfm") === "connected") {
+          setLastFmMessage("Last.fm connected successfully.");
+          window.history.replaceState({}, "", window.location.pathname + window.location.hash);
+        }
+      } catch {
+        // Library playback still works when optional account services are unavailable.
+      }
+    };
+    loadAccountData();
+    return () => { active = false; };
+  }, [authenticated]);
+
+  useEffect(() => {
+    localStorage.setItem("selfmusic:stream-quality:v1", JSON.stringify({ format: streamFormat, bitrate: streamBitrate }));
+  }, [streamFormat, streamBitrate]);
 
   useEffect(() => {
     if (currentTrackId) localStorage.setItem(LAST_TRACK_KEY, currentTrackId);
@@ -641,7 +1103,7 @@ function App() {
     if (audio) audio.volume = muted ? 0 : volume;
   }, [volume, muted]);
 
-  const handleLogin = useCallback(async (password) => {
+  const handleLogin = useCallback(async ({ username, password }) => {
     setLoginError("");
     setServerUnavailable(false);
     try {
@@ -650,7 +1112,7 @@ function App() {
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
         cache: "no-store",
-        body: JSON.stringify({ password }),
+        body: JSON.stringify(username ? { username, password } : { password }),
       });
       if (!response.ok) {
         setLoginError(await readMessage(response));
@@ -690,48 +1152,323 @@ function App() {
       await fetch("/api/auth/logout", { method: "POST" });
     } finally {
       audioRef.current?.pause();
+      try {
+        if ("caches" in window) await window.caches.delete(OFFLINE_AUDIO_CACHE);
+        localStorage.removeItem(OFFLINE_TRACKS_KEY);
+      } catch {
+        // The browser may reject storage cleanup; the session still needs to end.
+      }
+      setOfflineTracks([]);
+      setOfflineTrackIds([]);
+      setOfflineMode(false);
+      setOfflineMessage("");
       setIsPlaying(false);
       setAuthenticated(false);
       setTracks([]);
+      setFavorites([]);
+      setPlaylists([]);
+      setSelectedPlaylist(null);
+      setSelectedPlaylistTracks([]);
+      setProfile({ id: "legacy", username: "owner", role: "admin", legacy: true });
+      setLastFmStatus({ configured: false, connected: false, account: null });
       setView("home");
+    }
+  }, []);
+
+  const refreshPlaylists = useCallback(async () => {
+    const response = await fetch("/api/playlists", { credentials: "same-origin", cache: "no-store" });
+    if (response.status === 401) { setAuthenticated(false); return; }
+    if (!response.ok) throw new Error(await readMessage(response));
+    const body = await response.json();
+    setPlaylists(body.playlists || []);
+  }, []);
+
+  const createPlaylist = useCallback(async (name) => {
+    const response = await fetch("/api/playlists", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name.trim() }),
+    });
+    if (!response.ok) throw new Error(await readMessage(response));
+    const body = await response.json();
+    setPlaylists((items) => [body.playlist, ...items]);
+    setPlaylistName("");
+    setPlaylistMessage("Playlist created.");
+    setPlaylistError(false);
+    return body.playlist;
+  }, []);
+
+  const openSmartPlaylist = useCallback(async (kind) => {
+    try {
+      const response = await fetch("/api/playlists/smart/" + encodeURIComponent(kind), { credentials: "same-origin", cache: "no-store" });
+      if (!response.ok) throw new Error(await readMessage(response));
+      const body = await response.json();
+      setSelectedPlaylist(body);
+      setSelectedPlaylistTracks(body.tracks || []);
+      setPlaylistMessage("");
+      setPlaylistError(false);
+    } catch (error) {
+      setPlaylistMessage(error.message || "Could not load smart playlist.");
+      setPlaylistError(true);
+    }
+  }, []);
+
+  const openPlaylist = useCallback(async (playlist) => {
+    try {
+      const response = await fetch("/api/playlists/" + encodeURIComponent(playlist.id), { credentials: "same-origin", cache: "no-store" });
+      if (!response.ok) throw new Error(await readMessage(response));
+      const body = await response.json();
+      setSelectedPlaylist(body.playlist);
+      setSelectedPlaylistTracks(body.playlist.tracks || []);
+    } catch (error) {
+      setPlaylistMessage(error.message || "Could not open playlist.");
+      setPlaylistError(true);
+    }
+  }, []);
+
+  const addTrackToPlaylist = useCallback(async (playlistId, trackId) => {
+    const response = await fetch("/api/playlists/" + encodeURIComponent(playlistId) + "/tracks", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ trackId }),
+    });
+    if (!response.ok) throw new Error(await readMessage(response));
+    const body = await response.json();
+    if (selectedPlaylist?.id === playlistId) {
+      setSelectedPlaylistTracks(body.playlist.tracks || []);
+      setSelectedPlaylist(body.playlist);
+    }
+    await refreshPlaylists();
+    setPlaylistMessage("Track added to playlist.");
+    setPlaylistError(false);
+  }, [refreshPlaylists, selectedPlaylist]);
+
+  const removeTrackFromPlaylist = useCallback(async (playlistId, trackId) => {
+    const response = await fetch("/api/playlists/" + encodeURIComponent(playlistId) + "/tracks/" + encodeURIComponent(trackId), {
+      method: "DELETE", credentials: "same-origin",
+    });
+    if (!response.ok) throw new Error(await readMessage(response));
+    setSelectedPlaylistTracks((items) => items.filter((track) => track.id !== trackId));
+    await refreshPlaylists();
+    setPlaylistMessage("Track removed.");
+    setPlaylistError(false);
+  }, [refreshPlaylists]);
+
+  const deletePlaylist = useCallback(async (playlistId) => {
+    if (!window.confirm("Delete this playlist? The audio files will not be removed.")) return;
+    const response = await fetch("/api/playlists/" + encodeURIComponent(playlistId), { method: "DELETE", credentials: "same-origin" });
+    if (!response.ok) throw new Error(await readMessage(response));
+    setPlaylists((items) => items.filter((item) => item.id !== playlistId));
+    if (selectedPlaylist?.id === playlistId) {
+      setSelectedPlaylist(null);
+      setSelectedPlaylistTracks([]);
+    }
+    setPlaylistMessage("Playlist deleted.");
+    setPlaylistError(false);
+  }, [selectedPlaylist]);
+
+  const connectLastFm = useCallback(async () => {
+    setLastFmMessage("");
+    try {
+      const response = await fetch("/api/lastfm/connect", { method: "POST", credentials: "same-origin" });
+      if (!response.ok) throw new Error(await readMessage(response));
+      const body = await response.json();
+      if (body.authUrl) window.location.assign(body.authUrl);
+    } catch (error) {
+      setLastFmMessage(error.message || "Could not connect to Last.fm.");
+    }
+  }, []);
+
+  const disconnectLastFm = useCallback(async () => {
+    const response = await fetch("/api/lastfm/connect", { method: "DELETE", credentials: "same-origin" });
+    if (!response.ok) {
+      setLastFmMessage(await readMessage(response));
+      return;
+    }
+    setLastFmStatus({ configured: Boolean(lastFmStatus.configured), connected: false, account: null });
+    setLastFmMessage("Last.fm disconnected.");
+  }, [lastFmStatus.configured]);
+
+  const scanLibraryNow = useCallback(async () => {
+    setScanningLibrary(true);
+    setLibraryScanMessage("");
+    try {
+      const response = await fetch("/api/library/scan", { method: "POST", credentials: "same-origin", cache: "no-store" });
+      if (!response.ok) throw new Error(await readMessage(response));
+      const body = await response.json();
+      setLibraryScanMessage("Scan complete — " + body.tracks + " tracks indexed.");
+      await loadTracks();
+    } catch (error) {
+      setLibraryScanMessage(error.message || "Library scan failed.");
+    } finally {
+      setScanningLibrary(false);
+    }
+  }, [loadTracks]);
+
+  const refreshDuplicates = useCallback(async () => {
+    setDuplicateLoading(true);
+    setDuplicateMessage("");
+    try {
+      const response = await fetch("/api/duplicates", { credentials: "same-origin", cache: "no-store" });
+      if (!response.ok) throw new Error(await readMessage(response));
+      const body = await response.json();
+      setDuplicateGroups(body.groups || []);
+    } catch (error) {
+      setDuplicateMessage(error.message || "Could not scan for duplicates.");
+      setDuplicateMessageError(true);
+    } finally {
+      setDuplicateLoading(false);
+    }
+  }, []);
+
+  const mergeDuplicateGroup = useCallback(async (group) => {
+    if (!group.tracks || group.tracks.length < 2) return;
+    const keeper = group.tracks[0];
+    if (!window.confirm("Keep “" + keeper.title + "” and remove " + (group.tracks.length - 1) + " identical files? Favorites, playlists, and listening history will be moved to the retained track.")) return;
+    setDuplicateMessage("");
+    try {
+      const response = await fetch("/api/duplicates/merge", {
+        method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ keepId: keeper.id, duplicateIds: group.tracks.slice(1).map((track) => track.id) }),
+      });
+      if (!response.ok) throw new Error(await readMessage(response));
+      const body = await response.json();
+      setDuplicateMessage("Merged " + body.removed + " duplicate files.");
+      setDuplicateMessageError(false);
+      await Promise.all([refreshDuplicates(), loadTracks()]);
+    } catch (error) {
+      setDuplicateMessage(error.message || "Could not merge these duplicates.");
+      setDuplicateMessageError(true);
+    }
+  }, [loadTracks, refreshDuplicates]);
+
+  const deleteDuplicate = useCallback(async (track) => {
+    if (!window.confirm("Permanently delete “" + track.title + "” from disk? This cannot be undone.")) return;
+    setDuplicateMessage("");
+    try {
+      const response = await fetch("/api/duplicates/" + encodeURIComponent(track.id), { method: "DELETE", credentials: "same-origin" });
+      if (!response.ok) throw new Error(await readMessage(response));
+      setDuplicateMessage("Deleted duplicate file.");
+      setDuplicateMessageError(false);
+      await Promise.all([refreshDuplicates(), loadTracks()]);
+    } catch (error) {
+      setDuplicateMessage(error.message || "Could not delete this file.");
+      setDuplicateMessageError(true);
+    }
+  }, [loadTracks, refreshDuplicates]);
+
+  const createAccount = useCallback(async (event) => {
+    event.preventDefault();
+    setAccountMessage("");
+    try {
+      const response = await fetch("/api/auth/register", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: newAccountUsername, password: newAccountPassword, role: newAccountRole }),
+      });
+      if (!response.ok) throw new Error(await readMessage(response));
+      const body = await response.json();
+      setAdminUsers((items) => [...items, body.user]);
+      setNewAccountUsername("");
+      setNewAccountPassword("");
+      setNewAccountRole("user");
+      setAccountMessage("Created account " + body.user.username + ".");
+      setAccountMessageError(false);
+    } catch (error) {
+      setAccountMessage(error.message || "Could not create account.");
+      setAccountMessageError(true);
+    }
+  }, [newAccountUsername, newAccountPassword, newAccountRole]);
+
+  const changeAccountRole = useCallback(async (user, role) => {
+    try {
+      const response = await fetch("/api/admin/users/" + encodeURIComponent(user.id), {
+        method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role }),
+      });
+      if (!response.ok) throw new Error(await readMessage(response));
+      setAdminUsers((items) => items.map((item) => item.id === user.id ? { ...item, role } : item));
+    } catch (error) {
+      setAccountMessage(error.message || "Could not update account role.");
+      setAccountMessageError(true);
+    }
+  }, []);
+
+  const deleteAccount = useCallback(async (user) => {
+    if (!window.confirm("Delete account " + user.username + "? This removes that account's playlists, favorites, and history.")) return;
+    try {
+      const response = await fetch("/api/admin/users/" + encodeURIComponent(user.id), { method: "DELETE", credentials: "same-origin" });
+      if (!response.ok) throw new Error(await readMessage(response));
+      setAdminUsers((items) => items.filter((item) => item.id !== user.id));
+      setAccountMessage("Deleted account " + user.username + ".");
+      setAccountMessageError(false);
+    } catch (error) {
+      setAccountMessage(error.message || "Could not delete account.");
+      setAccountMessageError(true);
     }
   }, []);
 
   const playTrack = useCallback((track) => {
     if (!track || !audioRef.current) return;
+    playbackSyncPausedForRemoteRef.current = false;
+    setRemotePlaybackState(null);
+    if (pendingResumeRef.current?.trackId !== track.id) pendingResumeRef.current = null;
+    setPlaybackQueueIds((existing) => {
+      if (existing.includes(track.id)) return existing;
+      const ids = tracks.map((item) => item.id);
+      if (ids.length <= 500) return ids;
+      const trackIndex = Math.max(0, ids.indexOf(track.id));
+      const start = Math.max(0, Math.min(trackIndex - 250, ids.length - 500));
+      return ids.slice(start, start + 500);
+    });
+    playbackSyncLastPayloadRef.current = "";
     setSelectedYoutube(null);
     const audio = audioRef.current;
-    if (audio.getAttribute("src") !== track.streamUrl) {
+    const requestedFormat = playerSettings.transcodingEnabled ? streamFormat : "original";
+    const hasOfflineCopy = offlineTrackIds.includes(track.id) && "serviceWorker" in navigator && Boolean(navigator.serviceWorker.controller);
+    const streamUrl = hasOfflineCopy
+      ? offlineTrackUrl(track.id)
+      : requestedFormat === "original"
+        ? track.streamUrl
+        : track.streamUrl + "?format=" + encodeURIComponent(requestedFormat) + "&bitrate=" + encodeURIComponent(streamBitrate);
+    if (audio.getAttribute("src") !== streamUrl) {
       // Assigning src already starts resource selection; load() here can restart it.
-      audio.src = track.streamUrl;
+      audio.src = streamUrl;
     }
     lastUiTimeRef.current = 0;
+    scrobbledTrackRef.current = "";
+    historyTrackRef.current = "";
+    nowPlayingTrackRef.current = "";
     setCurrentTrackId(track.id);
     setCurrentTime(0);
     setDuration(0);
     audio.play().catch(() => setIsPlaying(false));
-  }, []);
+  }, [playerSettings.transcodingEnabled, streamFormat, streamBitrate, offlineTrackIds, tracks]);
 
   const playNext = useCallback(() => {
-    if (!tracks.length) return;
-    const index = tracks.findIndex((track) => track.id === currentTrackId);
-    if (shuffle && tracks.length > 1) {
+    const queue = activeQueueTracks.length ? activeQueueTracks : tracks;
+    if (!queue.length) return;
+    const index = queue.findIndex((track) => track.id === currentTrackId);
+    if (shuffle && queue.length > 1) {
       let nextIndex = index;
-      while (nextIndex === index) nextIndex = Math.floor(Math.random() * tracks.length);
-      playTrack(tracks[nextIndex]);
+      while (nextIndex === index) nextIndex = Math.floor(Math.random() * queue.length);
+      playTrack(queue[nextIndex]);
       return;
     }
     const nextIndex = index < 0 ? 0 : index + 1;
-    if (nextIndex >= tracks.length) {
-      if (repeatMode === "all") playTrack(tracks[0]);
+    if (nextIndex >= queue.length) {
+      if (repeatMode === "all") playTrack(queue[0]);
       else {
         audioRef.current?.pause();
         setIsPlaying(false);
       }
       return;
     }
-    playTrack(tracks[nextIndex]);
-  }, [tracks, currentTrackId, shuffle, repeatMode, playTrack]);
+    playTrack(queue[nextIndex]);
+  }, [tracks, activeQueueTracks, currentTrackId, shuffle, repeatMode, playTrack]);
 
   const playPrevious = useCallback(() => {
     const audio = audioRef.current;
@@ -740,17 +1477,47 @@ function App() {
       setCurrentTime(0);
       return;
     }
-    const index = tracks.findIndex((track) => track.id === currentTrackId);
-    const previousIndex = index <= 0 ? (repeatMode === "all" ? tracks.length - 1 : 0) : index - 1;
-    if (tracks[previousIndex]) playTrack(tracks[previousIndex]);
-  }, [tracks, currentTrackId, repeatMode, playTrack]);
+    const queue = activeQueueTracks.length ? activeQueueTracks : tracks;
+    const index = queue.findIndex((track) => track.id === currentTrackId);
+    const previousIndex = index <= 0 ? (repeatMode === "all" ? queue.length - 1 : 0) : index - 1;
+    if (queue[previousIndex]) playTrack(queue[previousIndex]);
+  }, [tracks, activeQueueTracks, currentTrackId, repeatMode, playTrack]);
 
   const playPreviousTrack = useCallback(() => {
-    if (!tracks.length) return;
-    const index = tracks.findIndex((track) => track.id === currentTrackId);
-    const previousIndex = index <= 0 ? (repeatMode === "all" ? tracks.length - 1 : 0) : index - 1;
-    if (tracks[previousIndex]) playTrack(tracks[previousIndex]);
-  }, [tracks, currentTrackId, repeatMode, playTrack]);
+    const queue = activeQueueTracks.length ? activeQueueTracks : tracks;
+    if (!queue.length) return;
+    const index = queue.findIndex((track) => track.id === currentTrackId);
+    const previousIndex = index <= 0 ? (repeatMode === "all" ? queue.length - 1 : 0) : index - 1;
+    if (queue[previousIndex]) playTrack(queue[previousIndex]);
+  }, [tracks, activeQueueTracks, currentTrackId, repeatMode, playTrack]);
+
+  const resumeRemotePlayback = useCallback(() => {
+    const saved = remotePlaybackState;
+    const track = saved?.currentTrackId ? tracks.find((item) => item.id === saved.currentTrackId) : null;
+    if (!saved || !track) return;
+    const queue = Array.isArray(saved.queue) ? saved.queue.filter((id) => tracks.some((item) => item.id === id)).slice(0, 500) : [];
+    setPlaybackQueueIds(queue.includes(track.id) ? queue : [...queue.slice(0, 499), track.id]);
+    setRepeatMode(["off", "one", "all"].includes(saved.repeatMode) ? saved.repeatMode : "off");
+    setShuffle(Boolean(saved.shuffle));
+    playbackSyncPausedForRemoteRef.current = false;
+    playbackSyncLastPayloadRef.current = "";
+    pendingResumeRef.current = { trackId: track.id, positionSeconds: Math.max(0, Number(saved.positionSeconds) || 0) };
+    setRemotePlaybackState(null);
+    playTrack(track);
+    const audio = audioRef.current;
+    if (audio && audio.readyState >= 1) {
+      const position = Number(pendingResumeRef.current?.positionSeconds || 0);
+      audio.currentTime = Number.isFinite(audio.duration) && audio.duration > 0 ? Math.min(position, Math.max(0, audio.duration - 0.25)) : position;
+      setCurrentTime(audio.currentTime);
+      pendingResumeRef.current = null;
+    }
+  }, [remotePlaybackState, tracks, playTrack]);
+
+  const dismissRemotePlayback = useCallback(() => {
+    playbackSyncPausedForRemoteRef.current = false;
+    playbackSyncLastPayloadRef.current = "";
+    setRemotePlaybackState(null);
+  }, []);
 
   const togglePlayback = useCallback(() => {
     const audio = audioRef.current;
@@ -865,18 +1632,140 @@ function App() {
   const filteredTracks = useMemo(() => {
     let list = tracks;
     if (view === "favorites") list = list.filter((track) => favorites.includes(track.id));
+    if (view === "offline") list = offlineTracks;
+    if (view === "library") {
+      if (libraryFilters.artist) list = list.filter((track) => track.artist === libraryFilters.artist);
+      if (libraryFilters.album) list = list.filter((track) => track.album === libraryFilters.album);
+      if (libraryFilters.year) list = list.filter((track) => String(track.year || "") === libraryFilters.year);
+      if (libraryFilters.genre) list = list.filter((track) => track.genre === libraryFilters.genre);
+      if (libraryFilters.offlineOnly) list = list.filter((track) => offlineTrackIds.includes(track.id));
+      if (libraryFilters.duration === "short") list = list.filter((track) => Number(track.duration || 0) > 0 && Number(track.duration) < 180);
+      if (libraryFilters.duration === "medium") list = list.filter((track) => Number(track.duration || 0) >= 180 && Number(track.duration) <= 300);
+      if (libraryFilters.duration === "long") list = list.filter((track) => Number(track.duration || 0) > 300);
+    }
     const normalized = query.trim().toLowerCase();
     if (normalized) {
       list = list.filter((track) =>
-        (track.title + " " + track.artist + " " + track.album).toLowerCase().includes(normalized),
+        (track.title + " " + track.artist + " " + track.album + " " + (track.albumArtist || "") + " " + (track.genre || "") + " " + (track.year || "")).toLowerCase().includes(normalized),
       );
     }
+    list = [...list];
+    const compare = (a, b, key) => String(a[key] || "").localeCompare(String(b[key] || ""), undefined, { numeric: true, sensitivity: "base" });
+    if (libraryFilters.sort === "title") list.sort((a, b) => compare(a, b, "title"));
+    else if (libraryFilters.sort === "album") list.sort((a, b) => compare(a, b, "album") || compare(a, b, "trackNumber") || compare(a, b, "title"));
+    else if (libraryFilters.sort === "year") list.sort((a, b) => Number(b.year || 0) - Number(a.year || 0) || compare(a, b, "title"));
+    else if (libraryFilters.sort === "duration") list.sort((a, b) => Number(a.duration || 0) - Number(b.duration || 0));
+    else if (libraryFilters.sort === "recent") list.sort((a, b) => String(b.addedAt || "").localeCompare(String(a.addedAt || "")));
+    else list.sort((a, b) => compare(a, b, "artist") || compare(a, b, "album") || compare(a, b, "trackNumber") || compare(a, b, "title"));
     return list;
-  }, [tracks, view, favorites, query]);
+  }, [tracks, view, favorites, query, libraryFilters, offlineTracks, offlineTrackIds]);
 
-  const toggleFavorite = useCallback((id) => {
-    setFavorites((items) => items.includes(id) ? items.filter((item) => item !== id) : [...items, id]);
-  }, []);
+  const toggleOfflineTrack = useCallback(async (track) => {
+    if (!track?.id || offlineBusyIds.includes(track.id)) return;
+    const trackId = track.id;
+    let cache;
+    let request;
+    let createdCacheEntry = false;
+    setOfflineBusyIds((current) => current.includes(trackId) ? current : [...current, trackId]);
+    try {
+      if (!("caches" in window)) throw new Error("This browser does not support offline audio storage.");
+      cache = await window.caches.open(OFFLINE_AUDIO_CACHE);
+      request = offlineCacheRequest(trackId);
+      const existing = await cache.match(request);
+      const stored = readLocalJson(OFFLINE_TRACKS_KEY, []);
+      if (existing) {
+        await cache.delete(request);
+        const next = (Array.isArray(stored) ? stored : []).filter((item) => item?.id !== trackId);
+        localStorage.setItem(OFFLINE_TRACKS_KEY, JSON.stringify(next));
+        setOfflineTracks(next);
+        setOfflineTrackIds((current) => current.filter((id) => id !== trackId));
+        setOfflineMessage("Removed the offline copy of “" + track.title + "”.");
+        return;
+      }
+
+      if (offlineMode || !navigator.onLine) {
+        throw new Error("Connect to your SelfMusic server to save this track first.");
+      }
+      const response = await fetch(track.streamUrl || ("/api/stream/" + encodeURIComponent(trackId)), {
+        method: "GET",
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      if (response.status === 401) {
+        setAuthenticated(false);
+        throw new Error("Sign in again before saving music for offline playback.");
+      }
+      if (!response.ok || response.status === 206) {
+        throw new Error("The server could not provide a complete audio file for offline storage.");
+      }
+
+      const bytes = Number(response.headers.get("content-length") || 0);
+      if (bytes > 0 && navigator.storage?.estimate) {
+        const estimate = await navigator.storage.estimate();
+        const available = Number(estimate.quota || 0) - Number(estimate.usage || 0);
+        const reserve = 8 * 1024 * 1024;
+        if (available > 0 && bytes + reserve > available) {
+          throw new Error("There may not be enough device storage for this track. Free space and try again.");
+        }
+      }
+
+      await cache.put(request, response);
+      createdCacheEntry = true;
+      const offlineTrack = {
+        id: trackId,
+        title: String(track.title || "Untitled track"),
+        artist: String(track.artist || "Unknown artist"),
+        album: String(track.album || "Unknown album"),
+        albumArtist: track.albumArtist || track.artist || "",
+        year: track.year || null,
+        genre: track.genre || null,
+        duration: Number(track.duration) || 0,
+        bitrate: track.bitrate || null,
+        sampleRate: track.sampleRate || null,
+        codec: track.codec || null,
+        bytes: bytes || track.bytes || 0,
+        sha256: track.sha256 || null,
+        streamUrl: track.streamUrl || ("/api/stream/" + encodeURIComponent(trackId)),
+        artworkUrl: track.artworkUrl || ("/api/artwork/" + encodeURIComponent(trackId)),
+        addedAt: track.addedAt || null,
+      };
+      const next = [offlineTrack, ...(Array.isArray(stored) ? stored : []).filter((item) => item?.id !== trackId)];
+      try {
+        localStorage.setItem(OFFLINE_TRACKS_KEY, JSON.stringify(next));
+      } catch {
+        throw new Error("The track was downloaded, but its offline metadata could not be saved. Free browser storage and try again.");
+      }
+      setOfflineTracks(next);
+      setOfflineTrackIds((current) => current.includes(trackId) ? current : [...current, trackId]);
+      setOfflineMessage("Saved “" + offlineTrack.title + "” on this device for offline playback.");
+    } catch (error) {
+      if (createdCacheEntry && cache && request) await cache.delete(request).catch(() => {});
+      const quotaError = error?.name === "QuotaExceededError";
+      setOfflineMessage(quotaError ? "Device storage is full. Remove unused offline tracks and try again." : (error.message || "Could not save this track offline."));
+    } finally {
+      setOfflineBusyIds((current) => current.filter((id) => id !== trackId));
+    }
+  }, [offlineBusyIds, offlineMode]);
+
+  const toggleFavorite = useCallback(async (id) => {
+    if (offlineMode) {
+      setOfflineMessage("Favorites sync to the server. You can keep listening offline and sync favorites when it is reachable again.");
+      return;
+    }
+    const wasFavorite = favorites.includes(id);
+    try {
+      const response = await fetch("/api/favorites/" + encodeURIComponent(id), {
+        method: wasFavorite ? "DELETE" : "POST",
+        credentials: "same-origin",
+      });
+      if (response.status === 401) { setAuthenticated(false); return; }
+      if (!response.ok) throw new Error(await readMessage(response));
+      setFavorites((items) => wasFavorite ? items.filter((item) => item !== id) : (items.includes(id) ? items : [...items, id]));
+    } catch (error) {
+      setPlaylistMessage(error.message || "Could not update favorites.");
+      setPlaylistError(true);
+    }
+  }, [favorites, offlineMode]);
 
   const handleSelectUploadFiles = useCallback((fileList) => {
     const nextFiles = Array.from(fileList || []);
@@ -963,9 +1852,54 @@ function App() {
     }
   }, [selectedUploadFiles, uploading, loadTracks]);
 
+  const startYoutubeDownload = useCallback(async (input, source = "import") => {
+    if (youtubeJobRef.current) {
+      const status = youtubeJobRef.current.status;
+      if (status === "queued" || status === "running") {
+        const message = "A YouTube download is already in progress. Wait for it to finish first.";
+        if (source === "import") { setUrlImportError(true); setUrlImportMessage(message); }
+        else setYoutubeError(message);
+        return;
+      }
+    }
+    setYoutubeJobStarting(true);
+    setYoutubeJobSource(source);
+    setUrlImportError(false);
+    if (source === "import") setUrlImportMessage("Adding the download to the queue…");
+    else setYoutubeError("");
+    try {
+      const response = await fetch("/api/youtube/download", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...input, async: true, bitrate: streamBitrate }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (response.status === 401) setAuthenticated(false);
+        throw new Error(payload.message || "Could not queue this YouTube download.");
+      }
+      const job = payload.job || payload;
+      youtubeJobRef.current = job;
+      setYoutubeJob(job);
+      if (source === "import") setUrlImportMessage("Queued “" + (job.title || "YouTube audio") + "”. Progress will appear here.");
+      else setYoutubeError("");
+    } catch (error) {
+      const message = error.message || "YouTube download failed. Check the URL and try again.";
+      if (source === "import") {
+        setUrlImportError(true);
+        setUrlImportMessage(message);
+      } else {
+        setYoutubeError(message);
+      }
+    } finally {
+      setYoutubeJobStarting(false);
+    }
+  }, [streamBitrate]);
+
   const downloadFromYoutube = useCallback(async () => {
     const url = audioUrl.trim();
-    if (!url || importingUrl) return;
+    if (!url || importingUrl || youtubeJobStarting) return;
     if (!parseYoutubeVideoId(url)) {
       setUrlImportError(true);
       setUrlImportMessage("That is not a valid YouTube video link.");
@@ -975,27 +1909,50 @@ function App() {
     setUrlImportMessage("");
     setUrlImportError(false);
     try {
-      const response = await fetch("/api/youtube/download", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        if (response.status === 401) setAuthenticated(false);
-        throw new Error(payload.message || "Could not download from YouTube.");
-      }
-      setUrlImportMessage("Saved " + payload.name + (payload.artwork ? " with cover" : "") + " to music/Uploads (" + formatBytes(payload.bytes) + ").");
-      setUrlImportError(false);
-      setAudioUrl("");
-      await loadTracks();
-    } catch (error) {
-      setUrlImportError(true);
-      setUrlImportMessage(error.message || "YouTube download failed. Check the link and try again.");
+      await startYoutubeDownload({ url }, "import");
     } finally {
       setImportingUrl(false);
     }
-  }, [audioUrl, importingUrl, loadTracks]);
+  }, [audioUrl, importingUrl, youtubeJobStarting, startYoutubeDownload]);
+
+  useEffect(() => {
+    const jobId = youtubeJob?.id;
+    if (!authenticated || !jobId || !["queued", "running"].includes(youtubeJob.status)) return undefined;
+    const stream = new EventSource("/api/youtube/status/" + encodeURIComponent(jobId), { withCredentials: true });
+    stream.addEventListener("status", (event) => {
+      let status;
+      try { status = JSON.parse(event.data); } catch { return; }
+      youtubeJobRef.current = status;
+      setYoutubeJob(status);
+      if (status.status === "completed") {
+        stream.close();
+        const result = status.result || {};
+        const message = "Saved " + (result.name || status.title || "YouTube audio") + " to music/Uploads (" + formatBytes(result.bytes || 0) + ").";
+        if (youtubeJobSource === "import") {
+          setUrlImportMessage(message);
+          setUrlImportError(false);
+          setAudioUrl("");
+        } else {
+          setYoutubeError("");
+        }
+        loadTracks().catch(() => {});
+      } else if (status.status === "failed" || status.status === "cancelled") {
+        stream.close();
+        const message = status.error?.message || "YouTube download failed.";
+        if (youtubeJobSource === "import") {
+          setUrlImportMessage(message);
+          setUrlImportError(true);
+        } else {
+          setYoutubeError(message);
+        }
+      }
+    });
+    stream.onerror = () => {
+      // EventSource reconnects automatically while the job is active.
+    };
+    return () => stream.close();
+  }, [authenticated, youtubeJob?.id, youtubeJob?.status, youtubeJobSource, loadTracks]);
+
 
   const copyText = useCallback(async (text) => {
     try {
@@ -1007,6 +1964,13 @@ function App() {
     }
   }, []);
 
+  const resolvedTheme = appearance.theme === "system" ? systemTheme : appearance.theme;
+  const presetBackground = BACKGROUND_PRESETS.find((preset) => preset.id === appearance.backgroundPreset)?.image || BACKGROUND_PRESETS[0].image;
+  const backgroundImage = appearance.wallpaperDataUrl
+    ? "linear-gradient(rgba(7, 8, 12, " + (appearance.wallpaperDim / 100) + "), rgba(7, 8, 12, " + (appearance.wallpaperDim / 100) + ")), url('" + appearance.wallpaperDataUrl + "')"
+    : presetBackground;
+  const motionDuration = appearance.animationSpeed === "slow" ? "360ms" : appearance.animationSpeed === "fast" ? "140ms" : "220ms";
+
   if (!authenticated) {
     return (
       <LoginScreen
@@ -1015,15 +1979,15 @@ function App() {
         onLogin={handleLogin}
         error={loginError}
         serverUnavailable={serverUnavailable}
-        appearance={appearance}
+        appearance={{ ...appearance, theme: resolvedTheme }}
       />
     );
   }
 
-  const pageTitle = view === "home" ? "Listen now" : view === "library" ? "Your library" : view === "favorites" ? "Liked tracks" : view === "youtube" ? "Explore YouTube" : view === "import" ? "Import music" : "Server settings";
+  const pageTitle = view === "home" ? "Listen now" : view === "library" ? "Your library" : view === "favorites" ? "Liked tracks" : view === "offline" ? "Offline downloads" : view === "playlists" ? "Playlists" : view === "youtube" ? "Explore YouTube" : view === "import" ? "Add music" : view === "server" ? "Server" : view === "settings" ? "Settings" : "SelfMusic";
 
   return (
-    <div className="app-shell" data-accent={appearance.accent} data-glass={appearance.glass} style={{ "--user-accent": appearance.accentColor, "--user-accent-strong": darkenAccent(appearance.accentColor) }}>
+    <div className="app-shell" data-view={view} data-settings-section={settingsSection} data-nav-position={appearance.navPosition} data-theme={resolvedTheme} data-accent={appearance.accent} data-glass={appearance.glass} data-animations={appearance.animations ? "on" : "off"} data-density={appearance.density} style={{ "--user-accent": appearance.accentColor, "--user-accent-strong": darkenAccent(appearance.accentColor), "--user-glass-opacity": appearance.glassOpacity + "%", "--user-glass-blur": appearance.glassBlur + "px", "--user-radius": appearance.cornerRadius + "px", "--user-background-image": backgroundImage, "--user-wallpaper-blur": appearance.wallpaperBlur + "px", "--user-motion-duration": motionDuration }}>
       <aside className={"sidebar" + (mobileMenuOpen ? " sidebar-open" : "")}>
         <div className="brand">
           <span className="brand-mark"><AudioLines size={22} strokeWidth={2.2} /></span>
@@ -1033,23 +1997,14 @@ function App() {
 
         <div className="sidebar-section">
           <p className="sidebar-label">YOUR SPACE</p>
-          <nav className="side-nav" aria-label="Main navigation">
-            <button className={view === "home" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("home"); setMobileMenuOpen(false); }}>
-              <SectionGlyph kind="home" size={19} /> <span>Home</span>
-            </button>
-            <button className={view === "library" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("library"); setMobileMenuOpen(false); }}>
-              <SectionGlyph kind="library" size={19} /> <span>Library</span><span className="nav-count">{tracks.length}</span>
-            </button>
-            <button className={view === "import" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("import"); setMobileMenuOpen(false); }}>
-              <SectionGlyph kind="import" size={19} /> <span>Import music</span>
-            </button>
-            <button className={view === "favorites" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("favorites"); setMobileMenuOpen(false); }}>
-              <SectionGlyph kind="liked" size={19} /> <span>Liked tracks</span>
-            </button>
-            <button className={view === "youtube" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("youtube"); setMobileMenuOpen(false); }}>
-              <SectionGlyph kind="youtube" size={19} /> <span>Explore YouTube</span>
-            </button>
-          </nav>
+          <Navigation
+            variant="desktop"
+            view={view}
+            onNavigate={(nextView) => { setView(nextView); setMobileMenuOpen(false); }}
+            role={profile.role}
+            offlineMode={offlineMode}
+            trackCount={tracks.length}
+          />
         </div>
 
         <div className="sidebar-library">
@@ -1058,13 +2013,20 @@ function App() {
             <div className="collection-art"><SectionGlyph kind="library" size={29} /></div>
             <span><strong>Home library</strong><small>{tracks.length} {tracks.length === 1 ? "track" : "tracks"}</small></span>
           </button>
+          <div className="sidebar-collection-links">
+            <button className={view === "favorites" ? "sidebar-collection-link nav-active" : "sidebar-collection-link"} onClick={() => setView("favorites")}><Heart size={15} /><span>Liked tracks</span><span>{favorites.length}</span></button>
+            <button className={view === "playlists" ? "sidebar-collection-link nav-active" : "sidebar-collection-link"} onClick={() => setView("playlists")}><ListMusic size={15} /><span>Playlists</span><span>{playlists.length}</span></button>
+          </div>
           {!tracks.length && <p className="sidebar-hint">Add audio files to your server's music folder to begin.</p>}
         </div>
 
         <div className="sidebar-bottom">
-          <div className="connection-status"><span className="status-pip" /><span>Home server connected</span></div>
+          <div className="connection-status"><span className="status-pip" /><span>{serverUnavailable || offlineMode ? "Home server unreachable" : playbackSyncStatus === "connected" ? "Home server connected" : "Sync reconnecting"}</span></div>
+          <button className={view === "server" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("server"); setMobileMenuOpen(false); }}>
+            <SectionGlyph kind="server" size={19} /><span>Server</span>
+          </button>
           <button className={view === "settings" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("settings"); setMobileMenuOpen(false); }}>
-            <SectionGlyph kind="server" size={19} /><span>Server settings</span>
+            <Palette size={19} /><span>Settings</span>
           </button>
           <button className="nav-item logout-item" onClick={handleLogout}><LogOut size={18} /><span>Sign out</span></button>
           <div className="sidebar-version">SELFMUSIC <span>v0.1.0</span></div>
@@ -1080,15 +2042,30 @@ function App() {
           <div className="topbar-right">
             <label className="search-box">
               <Search size={17} />
-              <input ref={searchInputRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search your music" aria-label="Search music" />
+              <input ref={searchInputRef} list="music-search-suggestions" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search your music" aria-label="Search music" />
               {query && <button className="search-clear" onClick={() => setQuery("")} aria-label="Clear search"><X size={14} /></button>}
               <kbd>⌘ K</kbd>
             </label>
-            <div className="avatar-pill"><span className="avatar-glyph">S</span><span>My server</span></div>
+            <datalist id="music-search-suggestions">
+              {Array.from(new Set(tracks.slice(0, 500).flatMap((track) => [track.title, track.artist, track.album, track.genre, track.year && String(track.year)]).filter(Boolean))).slice(0, 250).map((value) => <option key={value} value={value} />)}
+            </datalist>
+            <div className="avatar-pill"><span className="avatar-glyph">{String(profile.username || "S").slice(0, 1).toUpperCase()}</span><span>{profile.username || "My server"}</span></div>
           </div>
         </header>
 
         <div className="content-wrap" ref={contentWrapRef}>
+          {["import", "offline", "youtube"].includes(view) && <AddTabs view={view} onNavigate={setView} isAdmin={profile.role === "admin" && !offlineMode} />}
+          {offlineMode && (
+            <div className="offline-mode-banner" role="status">
+              <Download size={16} /><span><strong>Offline mode</strong> — the home server cannot be reached. Playing local copies still works.</span>
+              <button className="ghost-button offline-retry-button" type="button" onClick={() => window.location.reload()}><RefreshCw size={14} /> Retry server</button>
+            </div>
+          )}
+          {offlineMessage && (
+            <div className="offline-mode-banner offline-mode-feedback" role="status">
+              <span>{offlineMessage}</span><button className="icon-button" type="button" aria-label="Dismiss offline message" onClick={() => setOfflineMessage("")}><X size={14} /></button>
+            </div>
+          )}
           {view === "home" && (
             <>
               <section className="hero-panel">
@@ -1099,7 +2076,7 @@ function App() {
                   <p>Your music collection, streamed from your own home server. No algorithm deciding what you hear.</p>
                   <div className="hero-actions">
                     <button className="primary-button" onClick={() => tracks.length ? playTrack(currentTrack || tracks[0]) : setView("library")}><Play size={17} fill="currentColor" /> {tracks.length ? "Start listening" : "Explore library"}</button>
-                    <button className="ghost-button" onClick={() => setView("settings")}><Server size={16} /> Server details</button>
+                    <button className="ghost-button" onClick={() => setView("server")}><Server size={16} /> Server details</button>
                   </div>
                 </div>
                 <div className="hero-visual" aria-hidden="true">
@@ -1143,24 +2120,44 @@ function App() {
                   emptyTitle={query ? "No matches found" : "Your first track is waiting"}
                   emptyCopy={query ? "Try another title, artist, or album name." : "Put your own music files in the server's music folder, then refresh the library."}
                   onSettings={() => setView("settings")}
+                  canManage={profile.role === "admin" && !offlineMode}
+                  currentTime={currentTime}
+                  duration={duration}
+                  offlineTrackIds={offlineTrackIds}
+                  offlineBusyIds={offlineBusyIds}
+                  onOffline={toggleOfflineTrack}
                 />
               </section>
             </>
           )}
 
-          {(view === "library" || view === "favorites") && (
+          {(view === "library" || view === "favorites" || view === "offline") && (
             <section className="page-section">
               <div className="page-intro">
-                <div className="intro-icon"><SectionGlyph kind={view === "favorites" ? "liked" : "library"} size={29} /></div>
-                <p className="eyebrow">{view === "favorites" ? "THE ONES YOU KEEP" : "ALL YOUR AUDIO IN ONE PLACE"}</p>
-                <h1>{view === "favorites" ? "Liked tracks" : "Your library"}</h1>
-                <p>{view === "favorites" ? "Your personal shortlist, saved on this device." : "Music stored on your home server, ready when you are."}</p>
+                <div className="intro-icon">{view === "offline" ? <Download size={29} /> : <SectionGlyph kind={view === "favorites" ? "liked" : "library"} size={29} />}</div>
+                <p className="eyebrow">{view === "favorites" ? "THE ONES YOU KEEP" : view === "offline" ? "SAVED TO THIS DEVICE" : "ALL YOUR AUDIO IN ONE PLACE"}</p>
+                <h1>{view === "favorites" ? "Liked tracks" : view === "offline" ? "Offline downloads" : "Your library"}</h1>
+                <p>{view === "favorites" ? "Your personal shortlist, saved on this device." : view === "offline" ? "These complete audio files are stored on this device and can play without connecting to your home server." : offlineMode ? "Your server is unreachable. Only tracks explicitly saved for offline playback are shown." : "Music stored on your home server, ready when you are."}</p>
                 <div className="intro-meta"><span><Disc3 size={14} /> {filteredTracks.length} tracks</span><span className="meta-separator" /><span><ShieldCheck size={14} /> Private library</span></div>
               </div>
               <div className="library-toolbar">
                 <button className="primary-button" onClick={() => filteredTracks.length && playTrack(filteredTracks[0])} disabled={!filteredTracks.length}><Play size={16} fill="currentColor" /> Play all</button>
                 <button className="ghost-button" onClick={loadTracks}><RefreshCw size={15} className={loadingTracks ? "spin" : ""} /> Refresh</button>
+                {view === "library" && <FilterButton filters={libraryFilters} open={libraryFiltersOpen} onToggle={() => setLibraryFiltersOpen((open) => !open)} />}
+                {view === "library" && profile.role === "admin" && !offlineMode && <button className="ghost-button" type="button" disabled={scanningLibrary} onClick={scanLibraryNow}><RefreshCw size={15} className={scanningLibrary ? "spin" : ""} /> {scanningLibrary ? "Scanning library…" : "Rescan library"}</button>}
               </div>
+              {view === "library" && !offlineMode && libraryScanMessage && <div className="upload-feedback" role="status"><span className="upload-feedback-icon"><Check size={17} /></span><span>{libraryScanMessage}</span></div>}
+              {view === "library" && (
+                <FilterPanel
+                  tracks={tracks}
+                  filters={libraryFilters}
+                  setFilters={setLibraryFilters}
+                  open={libraryFiltersOpen}
+                  onClose={() => setLibraryFiltersOpen(false)}
+                  query={query}
+                  setQuery={setQuery}
+                />
+              )}
               <TrackList
                 tracks={filteredTracks}
                 loading={loadingTracks}
@@ -1182,7 +2179,155 @@ function App() {
                 emptyTitle={view === "favorites" ? "Nothing liked yet" : query ? "No matches found" : "Your library is empty"}
                 emptyCopy={view === "favorites" ? "Tap the heart beside any track to keep it here." : "Add audio files to your server's music folder, then refresh."}
                 onSettings={() => setView("settings")}
+                canManage={profile.role === "admin" && !offlineMode}
+                currentTime={currentTime}
+                duration={duration}
+                offlineTrackIds={offlineTrackIds}
+                offlineBusyIds={offlineBusyIds}
+                onOffline={toggleOfflineTrack}
               />
+            </section>
+          )}
+
+          {view === "playlists" && (
+            <section className="page-section playlist-page">
+              <div className="page-intro">
+                <div className="intro-icon"><ListMusic size={29} /></div>
+                <p className="eyebrow">YOUR MUSIC, YOUR ORDER</p>
+                <h1>Playlists</h1>
+                <p>Create persistent collections, reorder tracks, and export or import M3U files.</p>
+              </div>
+
+              <div className="settings-grid">
+                <div className="settings-card">
+                  <div className="settings-card-head"><span className="settings-icon"><Plus size={19} /></span><span className="settings-overline">NEW COLLECTION</span></div>
+                  <h3>Create a playlist</h3>
+                  <form className="url-import-block" onSubmit={async (event) => {
+                    event.preventDefault();
+                    try { await createPlaylist(playlistName); }
+                    catch (error) { setPlaylistMessage(error.message || "Could not create playlist."); setPlaylistError(true); }
+                  }}>
+                    <label htmlFor="playlist-name">Playlist name</label>
+                    <div className="url-import-row">
+                      <input id="playlist-name" type="text" value={playlistName} maxLength={100} placeholder="Late night listening" onChange={(event) => setPlaylistName(event.target.value)} required />
+                      <button className="primary-button" type="submit" disabled={!playlistName.trim()}><Plus size={15} /> Create</button>
+                    </div>
+                  </form>
+                  <div className="settings-footnote">Playlists and track order are saved to the SelfMusic database and follow your signed-in account.</div>
+                </div>
+
+                <div className="settings-card">
+                  <div className="settings-card-head"><span className="settings-icon settings-icon-blue"><FolderOpen size={19} /></span><span className="settings-overline">M3U EXCHANGE</span></div>
+                  <h3>Import an M3U playlist</h3>
+                  <p>Import an existing .m3u file. Entries are matched against files already indexed in your library; external paths are never opened.</p>
+                  <label className="settings-action" htmlFor="m3u-import-file"><Upload size={15} /> Choose M3U file <input id="m3u-import-file" type="file" accept=".m3u,.m3u8,audio/x-mpegurl,application/vnd.apple.mpegurl" onChange={async (event) => {
+                    const file = event.target.files?.[0];
+                    if (!file) return;
+                    try {
+                      if (file.size > 1024 * 1024) throw new Error("M3U files must be 1 MB or smaller.");
+                      const content = await file.text();
+                      const name = playlistName.trim() || file.name.replace(/\.m3u8?$/i, "") || "Imported playlist";
+                      const response = await fetch("/api/playlists/import.m3u", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, content }) });
+                      if (!response.ok) throw new Error(await readMessage(response));
+                      const body = await response.json();
+                      await refreshPlaylists();
+                      setPlaylistMessage("Imported " + body.importedTracks + " tracks.");
+                      setPlaylistError(false);
+                    } catch (error) {
+                      setPlaylistMessage(error.message || "Could not import this playlist.");
+                      setPlaylistError(true);
+                    } finally {
+                      event.target.value = "";
+                    }
+                  }} /></label>
+                  <div className="settings-footnote">M3U exports include relative library paths and can be downloaded from each playlist below.</div>
+                </div>
+              </div>
+
+              {playlistMessage && <div className={"upload-feedback" + (playlistError ? " upload-feedback-error" : "")} role={playlistError ? "alert" : "status"}><span className="upload-feedback-icon">{playlistError ? <CircleAlert size={17} /> : <Check size={17} />}</span><span>{playlistMessage}</span></div>}
+
+              <div className="section-heading playlist-heading">
+                <div><p className="eyebrow">AUTO-UPDATED</p><h2>Smart playlists</h2></div>
+              </div>
+              <div className="settings-grid smart-playlist-grid">
+                {[
+                  { kind: "recently-added", name: "Recently added", subtitle: "Latest tracks in your library" },
+                  { kind: "frequently-played", name: "Frequently played", subtitle: "Your most-played tracks" },
+                  { kind: "recently-played", name: "Recently played", subtitle: "Your latest listening history" },
+                ].map((item) => (
+                  <button className={"settings-card smart-playlist-card" + (selectedPlaylist?.smartType === item.kind ? " playlist-card-active" : "")} type="button" key={item.kind} onClick={() => openSmartPlaylist(item.kind)}>
+                    <div className="settings-card-head"><span className="settings-icon"><AudioLines size={18} /></span><span className="settings-overline">SMART PLAYLIST</span></div>
+                    <h3>{item.name}</h3><p>{item.subtitle}</p><span className="text-button"><Play size={14} /> Open smart playlist</span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="section-heading playlist-heading">
+                <div><p className="eyebrow">SAVED COLLECTIONS</p><h2>Your playlists</h2></div>
+                <div className="section-heading-actions"><span className="muted-count">{playlists.length} playlists</span><button className="text-button" type="button" onClick={() => refreshPlaylists().catch((error) => { setPlaylistMessage(error.message); setPlaylistError(true); })}><RefreshCw size={14} /> Refresh</button></div>
+              </div>
+              {playlists.length ? (
+                <div className="settings-grid playlist-grid">
+                  {playlists.map((playlist) => (
+                    <div className={"settings-card playlist-card" + (selectedPlaylist?.id === playlist.id ? " playlist-card-active" : "")} key={playlist.id}>
+                      <div className="settings-card-head"><span className="settings-icon"><ListMusic size={18} /></span><span className="settings-overline">PLAYLIST</span></div>
+                      <h3>{playlist.name}</h3>
+                      <p>{playlist.trackCount || 0} tracks · Updated {new Date(playlist.updatedAt || playlist.createdAt).toLocaleDateString()}</p>
+                      <div className="playlist-card-actions">
+                        <button className="primary-button" type="button" onClick={() => openPlaylist(playlist)}><ListMusic size={15} /> Open</button>
+                        <a className="ghost-button" href={"/api/playlists/" + encodeURIComponent(playlist.id) + "/export.m3u"} download><Download size={15} /> Export M3U</a>
+                        <button className="icon-button" type="button" title="Delete playlist" aria-label={"Delete playlist " + playlist.name} onClick={() => deletePlaylist(playlist.id).catch((error) => { setPlaylistMessage(error.message); setPlaylistError(true); })}><Trash2 size={15} /></button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : <div className="empty-state"><ListMusic size={24} /><h3>No playlists yet</h3><p>Create one above, then add tracks from your library.</p></div>}
+
+              {selectedPlaylist && (
+                <section className="section-block selected-playlist">
+                  <div className="section-heading">
+                    <div><p className="eyebrow">NOW EDITING</p><h2>{selectedPlaylist.name}</h2><p className="muted-count">{selectedPlaylistTracks.length} tracks</p></div>
+                    <div className="section-heading-actions"><button className="ghost-button" type="button" onClick={() => setSelectedPlaylist(null)}>Close</button></div>
+                  </div>
+                  <div className="settings-card playlist-track-panel">
+                    <h3>Tracks in this playlist</h3>
+                    {selectedPlaylistTracks.length ? selectedPlaylistTracks.map((track, index) => (
+                      <div className="playlist-track-row" key={track.id}>
+                        <button className="track-art" type="button" onClick={() => playTrack(track)} aria-label={"Play " + track.title}><Cover track={track} /></button>
+                        <button className="track-identity" type="button" onClick={() => playTrack(track)}><span className="track-title">{track.title}</span><span className="track-subtitle">{track.artist} · {track.album}</span></button>
+                        <span className="playlist-track-position">{index + 1}</span>
+                        {!selectedPlaylist.smartType && (<button className="icon-button" type="button" title="Move up" aria-label={"Move " + track.title + " up"} disabled={index === 0} onClick={async () => {
+                          const ids = selectedPlaylistTracks.map((item) => item.id);
+                          [ids[index - 1], ids[index]] = [ids[index], ids[index - 1]];
+                          try {
+                            const response = await fetch("/api/playlists/" + encodeURIComponent(selectedPlaylist.id) + "/tracks/order", { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trackIds: ids }) });
+                            if (!response.ok) throw new Error(await readMessage(response));
+                            setSelectedPlaylistTracks(await response.json().then((body) => body.tracks || []));
+                          } catch (error) { setPlaylistMessage(error.message); setPlaylistError(true); }
+                        }}><ArrowUpRight size={15} /></button> )}
+
+                        {!selectedPlaylist.smartType && (<button className="icon-button" type="button" title="Remove track" aria-label={"Remove " + track.title + " from playlist"} onClick={() => removeTrackFromPlaylist(selectedPlaylist.id, track.id).catch((error) => { setPlaylistMessage(error.message); setPlaylistError(true); })}><X size={15} /></button> )}
+
+                      </div>
+                    )) : <p className="settings-footnote">This playlist is empty. Add something from your library below.</p>}
+                  </div>
+
+                  {!selectedPlaylist.smartType && (
+                  <div className="settings-card playlist-track-panel">
+                    <h3>Add tracks from your library</h3>
+                    <div className="playlist-add-library">
+                      {tracks.filter((track) => !selectedPlaylistTracks.some((item) => item.id === track.id) && (!query.trim() || (track.title + " " + track.artist + " " + track.album).toLowerCase().includes(query.trim().toLowerCase()))).slice(0, 100).map((track) => (
+                        <div className="playlist-track-row" key={track.id}>
+                          <button className="track-art" type="button" onClick={() => playTrack(track)} aria-label={"Play " + track.title}><Cover track={track} /></button>
+                          <button className="track-identity" type="button" onClick={() => playTrack(track)}><span className="track-title">{track.title}</span><span className="track-subtitle">{track.artist} · {track.album}</span></button>
+                          <button className="icon-button" type="button" title="Add to playlist" aria-label={"Add " + track.title + " to playlist"} onClick={() => addTrackToPlaylist(selectedPlaylist.id, track.id).catch((error) => { setPlaylistMessage(error.message); setPlaylistError(true); })}><Plus size={16} /></button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  )}
+                </section>
+              )}
             </section>
           )}
 
@@ -1254,7 +2399,7 @@ function App() {
                     </div>
                     {youtubeUrlError && <p className="youtube-url-error" role="alert">{youtubeUrlError}</p>}
                   </form>
-                  <div className="youtube-privacy-line"><ShieldCheck size={14} /> The API key stays on your server. Search results are not saved.</div>
+                  <div className="youtube-privacy-line"><ShieldCheck size={14} /> The API key stays on your server. Search results are cached briefly.</div>
                 </div>
                 <div className="youtube-hero-orb" aria-hidden="true"><div className="youtube-orb-core"><Youtube size={37} /></div><div className="youtube-orb-ring ring-one" /><div className="youtube-orb-ring ring-two" /></div>
               </div>
@@ -1268,7 +2413,14 @@ function App() {
                   {youtubeError && (
                     <div className="youtube-message">
                       <CircleAlert size={18} />
-                      <div><strong>{youtubeError}</strong><span>To enable search, add a YouTube Data API v3 key as YOUTUBE_API_KEY in the server's .env file, then restart SelfMusic.</span></div>
+                      <div>
+                        <strong>{youtubeError}</strong>
+                        <span>{youtubeError.toLowerCase().includes("youtube_api_key")
+                          ? "Open Settings → Integrations, add YOUTUBE_API_KEY to the server's private .env file, then restart SelfMusic. You can still open a direct YouTube video link here."
+                          : youtubeError.toLowerCase().includes("quota")
+                            ? "The search quota for your YouTube API key has been reached. Try again tomorrow or review quota usage in Google Cloud."
+                            : "Check the server connection and YouTube Data API v3 configuration in Settings → Integrations, then try again. Direct video links can still open in the official player."}</span>
+                      </div>
                     </div>
                   )}
                   {youtubeLoading && <div className="youtube-empty"><RefreshCw className="spin" size={23} /><strong>Looking through YouTube</strong><span>Searching embeddable videos…</span></div>}
@@ -1285,6 +2437,7 @@ function App() {
                           </span>
                           <span className="youtube-result-title">{item.title}</span>
                           <span className="youtube-result-channel">{item.channelTitle}</span>
+                          {item.duration != null && <span className="youtube-result-duration">{Math.floor(item.duration / 60)}:{String(Math.floor(item.duration % 60)).padStart(2, "0")}</span>}
                         </button>
                       ))}
                     </div>
@@ -1308,6 +2461,13 @@ function App() {
                       </div>
                       <div className="youtube-selected-meta"><strong>{selectedYoutube.title}</strong><span>{selectedYoutube.channelTitle}</span></div>
                       <a className="youtube-watch-link" href={"https://www.youtube.com/watch?v=" + selectedYoutube.videoId} target="_blank" rel="noreferrer"><Youtube size={15} /> Watch on YouTube <ArrowUpRight size={15} /></a>
+                      {profile.role === "admin" && (
+                        <button className="youtube-download-button" type="button" disabled={youtubeJobStarting || ["queued", "running"].includes(youtubeJob?.status)} onClick={() => startYoutubeDownload({ videoId: selectedYoutube.videoId, metadata: { title: selectedYoutube.title, artist: selectedYoutube.channelTitle } }, "explore")}>
+                          {youtubeJobStarting || ["queued", "running"].includes(youtubeJob?.status) ? <RefreshCw size={15} className="spin" /> : <Download size={15} />}
+                          <span>{youtubeJobStarting ? "Queueing…" : ["queued", "running"].includes(youtubeJob?.status) ? "Download in progress" : "Download MP3"}</span>
+                        </button>
+                      )}
+
                     </>
                   ) : (
                     <div className="youtube-player-empty"><div className="youtube-player-art"><Youtube size={35} /></div><strong>Pick a video to play</strong><span>Your selection appears here inside the official YouTube player.</span></div>
@@ -1318,7 +2478,7 @@ function App() {
             </section>
           )}
 
-          {view === "import" && (
+          {view === "import" && profile.role === "admin" && (
             <section className="page-section import-page">
               <div className="page-intro">
                 <div className="intro-icon"><SectionGlyph kind="import" size={29} /></div>
@@ -1390,6 +2550,17 @@ function App() {
                   )}
                   {uploadMessage && <div className={"upload-feedback" + (uploadError ? " upload-feedback-error" : "")}><span className="upload-feedback-icon">{uploadError ? <CircleAlert size={17} /> : <Check size={17} />}</span><span>{uploadMessage}</span>{!uploadError && <button type="button" className="text-button" onClick={() => setView("library")}>Open library <ArrowUpRight size={14} /></button>}</div>}
 
+                  {youtubeJob && (
+                    <div className={"youtube-job-progress" + (youtubeJob.status === "failed" ? " youtube-job-failed" : "")} role="status">
+                      <div className="youtube-job-progress-head">
+                        <span className="youtube-job-icon">{youtubeJob.status === "completed" ? <Check size={16} /> : youtubeJob.status === "failed" ? <CircleAlert size={16} /> : <Download size={16} />}</span>
+                        <div><strong>{youtubeJob.status === "queued" ? "Queued for download" : youtubeJob.status === "running" ? (youtubeJob.phase === "metadata" ? "Reading video metadata" : youtubeJob.phase === "download" ? "Downloading audio" : youtubeJob.phase === "conversion" ? "Converting audio" : youtubeJob.phase === "indexing" ? "Adding to library" : "Processing audio") : youtubeJob.status === "completed" ? "Download complete" : "Download failed"}</strong><small>{youtubeJob.title || "YouTube audio"}</small></div>
+                        <b>{Math.round(youtubeJob.progress || 0)}%</b>
+                      </div>
+                      <div className="upload-progress-track"><span style={{ width: Math.max(0, Math.min(100, Number(youtubeJob.progress) || 0)) + "%" }} /></div>
+                      {youtubeJob.status === "failed" && youtubeJob.error?.message && <p className="form-error">{youtubeJob.error.message}</p>}
+                    </div>
+                  )}
                   <div className="url-import-divider"><span>OR DOWNLOAD FROM YOUTUBE</span></div>
                   <form className="url-import-block" onSubmit={(event) => { event.preventDefault(); downloadFromYoutube(); }}>
                     <label htmlFor="audio-import-url">YouTube video URL</label>
@@ -1449,23 +2620,150 @@ function App() {
             </section>
           )}
 
-          {view === "settings" && (
+          {(view === "settings" || view === "server") && (
             <section className="page-section settings-page">
               <div className="page-intro">
                 <div className="intro-icon"><SectionGlyph kind="server" size={29} /></div>
-                <p className="eyebrow">YOUR HOME INFRASTRUCTURE</p>
-                <h1>Server settings</h1>
-                <p>Keep the library private, and make it reachable when you leave home.</p>
+                <p className="eyebrow">{view === "server" ? "CONNECTION & AVAILABILITY" : "YOUR PERSONAL MUSIC SPACE"}</p>
+                <h1>{view === "server" ? "Server" : "Settings"}</h1>
+                <p>{view === "server" ? "Connection details for this device and your private home server." : "Tune your profile, appearance, playback, library, and integrations."}</p>
               </div>
 
-              <div className="settings-status-card">
+              {view === "settings" && <SettingsTabs active={settingsSection} onChange={setSettingsSection} />}
+
+              <div className={"settings-status-card settings-status-" + (serverUnavailable || !navigator.onLine ? "offline" : playbackSyncStatus === "connected" ? "online" : "degraded")}>
                 <div className="settings-status-icon"><span className="status-pip" /></div>
-                <div className="settings-status-copy"><span className="settings-overline">SERVER STATUS</span><h3>Connected to your home server</h3><p>The player uses a secure session cookie for library and audio requests.</p></div>
-                <span className="status-badge"><span /> Online</span>
+                <div className="settings-status-copy">
+                  <span className="settings-overline">SERVER STATUS</span>
+                  <h3>{serverUnavailable || !navigator.onLine ? "Server unreachable" : playbackSyncStatus === "connected" ? "Connected and syncing" : "Server connected · sync reconnecting"}</h3>
+                  <p>The active server URL is <code>{window.location.origin}</code>.</p>
+                  <p>Connection: {(/\.ts\.net$/i.test(window.location.hostname) || /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(window.location.hostname)) ? "Tailscale private network" : (["localhost", "127.0.0.1"].includes(window.location.hostname) || networkAddresses.local.includes(window.location.hostname)) ? "Local machine / home network" : "External domain or reverse proxy"}</p>
+                  <p>Tailscale: {networkAddresses.tailscale.length ? "detected (" + networkAddresses.tailscale[0] + ")" : "no Tailscale IPv4 detected on this host"}</p>
+                  {serverCheckMessage && <p className={serverUnavailable ? "form-error" : "settings-footnote"} role="status">{serverCheckMessage}</p>}
+                  {networkError && <p className="form-error" role="status">{networkError}</p>}
+                </div>
+                <div className="settings-status-actions">
+                  <span className={"status-badge " + (serverUnavailable || !navigator.onLine ? "status-badge-offline" : playbackSyncStatus === "connected" ? "" : "status-badge-degraded")}><span />{serverUnavailable || !navigator.onLine ? "Offline" : playbackSyncStatus === "connected" ? "Online" : "Degraded"}</span>
+                  <button className="settings-action settings-reconnect-button" type="button" onClick={reconnectServer} disabled={serverCheckBusy}>
+                    <RefreshCw size={15} className={serverCheckBusy ? "spin" : ""} /> {serverCheckBusy ? "Checking…" : "Reconnect"}
+                  </button>
+                </div>
               </div>
 
               <div className="settings-grid">
-                <div className="settings-card">
+                <div className="settings-card" data-settings-section="profile">
+                  <div className="settings-card-head"><span className="settings-icon"><AudioLines size={19} /></span><span className="settings-overline">SIGNED-IN ACCOUNT</span></div>
+                  <h3>{profile.username || "Server owner"}</h3>
+                  <p>You are signed in with the <strong>{profile.role || "user"}</strong> role. Preferences for playback stay on this browser; playlists, favorites, and history are stored on the server.</p>
+                  <div className="settings-action"><ShieldCheck size={15} /> Account role <span>{profile.role || "user"}</span></div>
+                  <button className="settings-action" type="button" onClick={handleLogout}><LogOut size={15} /> Sign out of this account</button>
+                </div>
+
+                <div className="settings-card" data-settings-section="player">
+                  <div className="settings-card-head"><span className="settings-icon settings-icon-blue"><AudioLines size={19} /></span><span className="settings-overline">STREAM QUALITY</span></div>
+                  <h3>Audio format and bitrate</h3>
+                  <p>Original files avoid transcoding. Alternate formats use the server's FFmpeg cache and require <code>TRANSCODE_ENABLED=true</code>.</p>
+                  <label className="appearance-control-label" htmlFor="stream-format-select"><strong>Format</strong><span>Choose what the player requests</span></label>
+                  <select id="stream-format-select" value={streamFormat} onChange={(event) => setStreamFormat(event.target.value)}>
+                    <option value="original">Original audio</option>
+                    <option value="mp3" disabled={!playerSettings.transcodingEnabled}>MP3</option>
+                    <option value="opus" disabled={!playerSettings.transcodingEnabled}>Opus</option>
+                    <option value="aac" disabled={!playerSettings.transcodingEnabled}>AAC</option>
+                  </select>
+                  <label className="appearance-control-label" htmlFor="stream-bitrate-select"><strong>Target bitrate</strong><span>Used only when transcoding</span></label>
+                  <select id="stream-bitrate-select" value={streamBitrate} onChange={(event) => setStreamBitrate(event.target.value)}>
+                    {(playerSettings.bitrates || ["96k", "128k", "160k", "192k", "256k", "320k"]).map((bitrate) => <option value={bitrate} key={bitrate}>{bitrate}</option>)}
+                  </select>
+                  <div className="info-note"><ShieldCheck size={16} /><span>{playerSettings.transcodingEnabled ? "Transcoding is enabled." : "Transcoding is currently disabled by the server administrator."}</span></div>
+                </div>
+
+                <div className="settings-card" data-settings-section="integrations">
+                  <div className="settings-card-head"><span className="settings-icon"><Globe2 size={19} /></span><span className="settings-overline">LAST.FM SCROBBLING</span></div>
+                  <h3>{lastFmStatus.connected ? "Last.fm connected" : "Connect your Last.fm account"}</h3>
+                  <p>{lastFmStatus.connected ? "Scrobbles will be sent for eligible tracks on this account." : "Authorize Last.fm to send now-playing updates and scrobbles from this profile."}</p>
+                  {lastFmStatus.connected && <div className="settings-action"><Check size={15} /> Connected account <span>{lastFmStatus.account?.username || "Last.fm user"}</span></div>}
+                  {lastFmMessage && <p className={lastFmMessage.toLowerCase().includes("could not") || lastFmMessage.toLowerCase().includes("failed") ? "form-error" : "settings-footnote"} role="status">{lastFmMessage}</p>}
+                  {!lastFmStatus.connected ? (
+                    <button className="settings-action" type="button" disabled={!lastFmStatus.configured} onClick={connectLastFm}><Globe2 size={15} /> Authorize Last.fm <ArrowUpRight size={15} /></button>
+                  ) : (
+                    <button className="settings-action" type="button" onClick={disconnectLastFm}><X size={15} /> Disconnect Last.fm</button>
+                  )}
+                  {!lastFmStatus.configured && <p className="settings-footnote">To enable scrobbling, create an API app at <a href="https://www.last.fm/api/account/create" target="_blank" rel="noreferrer">Last.fm API</a>. Add <code>LASTFM_API_KEY</code>, <code>LASTFM_API_SECRET</code>, and <code>LASTFM_CALLBACK_URL</code> to the server project's private <code>.env</code>; the callback must match your Last.fm app settings. Restart SelfMusic, then return here and choose Authorize Last.fm.</p>}
+                </div>
+
+                <div className="settings-card" data-settings-section="integrations">
+                  <div className="settings-card-head"><span className="settings-icon settings-icon-blue"><Youtube size={19} /></span><span className="settings-overline">YOUTUBE SEARCH</span></div>
+                  <h3>Explore YouTube integration</h3>
+                  <p>Search needs a server-side YouTube Data API v3 key. Without it, search returns HTTP 503. Direct video links still use the official player; MP3 downloads use the separate yt-dlp tool.</p>
+                  <ol className="integration-steps">
+                    <li>Enable YouTube Data API v3 in Google Cloud.</li>
+                    <li>Add <code>YOUTUBE_API_KEY=your-key</code> to the project’s private <code>.env</code>.</li>
+                    <li>Restart SelfMusic, then try Explore YouTube again.</li>
+                  </ol>
+                  <a className="settings-action settings-link" href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer">Open Google Cloud credentials <ArrowUpRight size={15} /></a>
+                </div>
+
+                {profile.role === "admin" && (
+                  <div className="settings-card settings-card-wide duplicate-manager" data-settings-section="library">
+                    <div className="settings-card-head"><span className="settings-icon"><Copy size={19} /></span><span className="settings-overline">LIBRARY INTEGRITY</span></div>
+                    <h3>Duplicate audio files</h3>
+                    <p>Files are grouped only when their SHA-256 hashes match exactly. Merging transfers favorites, playlists and history to the retained track before deleting duplicate files.</p>
+                    <div className="duplicate-toolbar">
+                      <span className="settings-footnote">{duplicateGroups.length} duplicate groups</span>
+                      <button className="settings-action duplicate-refresh" type="button" disabled={duplicateLoading} onClick={refreshDuplicates}><RefreshCw size={15} className={duplicateLoading ? "spin" : ""} /> Scan for duplicates</button>
+                    </div>
+                    {duplicateMessage && <p className={duplicateMessageError ? "form-error" : "settings-footnote"} role="status">{duplicateMessage}</p>}
+                    {duplicateGroups.length ? (
+                      <div className="duplicate-groups">
+                        {duplicateGroups.map((group) => (
+                          <div className="duplicate-group" key={group.sha256}>
+                            <div className="duplicate-group-heading">
+                              <div><strong>{group.count} identical files</strong><small>SHA-256: {group.sha256}</small></div>
+                              <button className="primary-button" type="button" onClick={() => mergeDuplicateGroup(group)}><Copy size={14} /> Keep first, merge</button>
+                            </div>
+                            {group.tracks.map((track, index) => (
+                              <div className="admin-user-row duplicate-track-row" key={track.id}>
+                                <div><strong>{track.title}</strong><small>{track.artist} · {track.album} · {track.path}</small></div>
+                                <span className="duplicate-size">{index === 0 ? "Keep" : (Number(track.bytes) / 1024 / 1024).toFixed(1) + " MB"}</span>
+                                {index > 0 && <button className="icon-button" type="button" title="Delete this duplicate" aria-label={"Delete duplicate " + track.title} onClick={() => deleteDuplicate(track)}><Trash2 size={15} /></button>}
+                                {index === 0 && <span className="duplicate-retained"><Check size={14} /> Primary</span>}
+                              </div>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    ) : <p className="settings-footnote">No identical files found in the indexed library. Run a scan after importing music to update the result.</p>}
+                  </div>
+                )}
+
+                {profile.role === "admin" && (
+                  <div className="settings-card settings-card-wide" data-settings-section="profile">
+                    <div className="settings-card-head"><span className="settings-icon"><LockKeyhole size={19} /></span><span className="settings-overline">ADMINISTRATION</span></div>
+                    <h3>Manage user accounts</h3>
+                    <p>Create a separate login for another household member or device. A User can listen without managing the server; an Admin can also manage files and accounts. Use a unique password of at least 12 characters and share it privately.</p>
+                    <form className="account-create-form" onSubmit={createAccount}>
+                      <label htmlFor="new-account-username">Username</label>
+                      <input id="new-account-username" type="text" value={newAccountUsername} onChange={(event) => setNewAccountUsername(event.target.value)} minLength={3} maxLength={32} pattern="[A-Za-z0-9._-]+" autoComplete="off" required />
+                      <label htmlFor="new-account-password">Temporary password</label>
+                      <input id="new-account-password" type="password" value={newAccountPassword} onChange={(event) => setNewAccountPassword(event.target.value)} minLength={12} maxLength={128} autoComplete="new-password" required />
+                      <label htmlFor="new-account-role">Role</label>
+                      <select id="new-account-role" value={newAccountRole} onChange={(event) => setNewAccountRole(event.target.value)}><option value="user">User — stream only</option><option value="admin">Admin — manage server</option></select>
+                      <button className="primary-button" type="submit"><Plus size={15} /> Create account</button>
+                    </form>
+                    {accountMessage && <p className={accountMessageError ? "form-error" : "settings-footnote"} role="status">{accountMessage}</p>}
+                    <div className="admin-user-list">
+                      {adminUsers.map((user) => (
+                        <div className="admin-user-row" key={user.id}>
+                          <div><strong>{user.username}</strong><small>Created {new Date(user.createdAt).toLocaleDateString()}</small></div>
+                          <select aria-label={"Role for " + user.username} value={user.role} disabled={user.id === profile.id} onChange={(event) => changeAccountRole(user, event.target.value)}><option value="user">User</option><option value="admin">Admin</option></select>
+                          {user.id !== profile.id && <button className="icon-button" type="button" title={"Delete " + user.username} aria-label={"Delete account " + user.username} onClick={() => deleteAccount(user)}><Trash2 size={15} /></button>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="settings-card" data-settings-section="library">
                   <div className="settings-card-head"><span className="settings-icon"><FolderOpen size={19} /></span><span className="settings-overline">MUSIC COLLECTION</span></div>
                   <h3>Where your files live</h3>
                   <p>Put supported audio files into the folder configured by <code>MUSIC_DIR</code>. By default, that is <code>./music</code> in the project directory.</p>
@@ -1473,7 +2771,7 @@ function App() {
                   <button className="settings-action" onClick={loadTracks}><RefreshCw size={15} className={loadingTracks ? "spin" : ""} /> Scan library <span>{tracks.length} tracks</span></button>
                 </div>
 
-                <div className="settings-card">
+                <div className="settings-card" data-settings-section="integrations">
                   <div className="settings-card-head"><span className="settings-icon settings-icon-blue"><Globe2 size={19} /></span><span className="settings-overline">REMOTE ACCESS</span></div>
                   <h3>Listen outside your Wi-Fi</h3>
                   <p>Set up Tailscale on this computer and your phone. No router port forwarding and no shared auth key are needed for the normal native setup.</p>
@@ -1481,7 +2779,26 @@ function App() {
                   {networkAddresses.tailscale.length > 0 && <div className="info-note"><ShieldCheck size={16} /><span>Tailscale detected: {networkAddresses.tailscale[0]}</span></div>}
                 </div>
 
-                <div className="settings-card settings-card-wide appearance-settings-card">
+                <div className="settings-card" data-settings-section="offline">
+                  <div className="settings-card-head"><span className="settings-icon"><Download size={19} /></span><span className="settings-overline">OFFLINE AUDIO</span></div>
+                  <h3>{offlineTrackIds.length} saved {offlineTrackIds.length === 1 ? "track" : "tracks"} on this device</h3>
+                  <p>Offline copies live in this browser's storage and do not automatically appear on another device. Open Offline from Add to save or remove individual tracks.</p>
+                  <button className="settings-action" type="button" onClick={() => setView("offline")}><Download size={15} /> Manage offline tracks <ArrowUpRight size={15} /></button>
+                  <p className="settings-footnote">Cache-size limits and automatic downloads are not configurable yet. Browser storage may be cleared by the operating system.</p>
+                </div>
+
+                <div className="settings-card" data-settings-section="advanced">
+                  <div className="settings-card-head"><span className="settings-icon"><Download size={19} /></span><span className="settings-overline">INSTALLABLE PLAYER</span></div>
+                  <h3>{pwaInstalled ? "SelfMusic is installed" : "Install SelfMusic"}</h3>
+                  <p>Open your music server in an app-like window. Playback and offline downloads remain available where your browser supports them.</p>
+                  <button className="settings-action pwa-install-button" type="button" onClick={installSelfMusic} disabled={pwaInstalled}>
+                    <Smartphone size={16} /> {pwaInstalled ? "Installed on this device" : installPromptEvent ? "Install app" : "Show install instructions"}
+                  </button>
+                  {pwaInstallMessage && <p className="settings-footnote" role="status">{pwaInstallMessage}</p>}
+                  {!pwaInstalled && <p className="settings-footnote">On iOS, use Safari's Share menu and choose Add to Home Screen. HTTPS is required for most install and service-worker features.</p>}
+                </div>
+
+                <div className="settings-card settings-card-wide appearance-settings-card" data-settings-section="appearance">
                   <div className="settings-card-head"><span className="settings-icon"><Palette size={19} /></span><span className="settings-overline">PERSONALIZE YOUR PLAYER</span></div>
                   <h3>Make SelfMusic yours</h3>
                   <p>Your appearance is saved in this browser. It changes the interface, not your music files or server settings.</p>
@@ -1559,14 +2876,130 @@ function App() {
                       ))}
                     </div>
                   </div>
-                  <button className="text-button appearance-reset" type="button" onClick={() => setAppearance({ accent: "rose", accentColor: ACCENT_PRESETS[0].color, ...hexToHsv(ACCENT_PRESETS[0].color), glass: "liquid" })}>Reset appearance</button>
+                  <div className="appearance-control">
+                    <div className="appearance-control-label"><strong>Color scheme</strong><span>Dark, light, or follow the device</span></div>
+                    <div className="appearance-glass-options theme-options" role="group" aria-label="Color scheme">
+                      <button type="button" className={"appearance-glass-option" + (appearance.theme === "dark" ? " appearance-glass-option-active" : "")} onClick={() => setAppearance((value) => ({ ...value, theme: "dark" }))} aria-pressed={appearance.theme === "dark"}><span className="theme-preview theme-preview-dark" /><strong>Dark</strong><small>OLED-friendly</small></button>
+                      <button type="button" className={"appearance-glass-option" + (appearance.theme === "light" ? " appearance-glass-option-active" : "")} onClick={() => setAppearance((value) => ({ ...value, theme: "light" }))} aria-pressed={appearance.theme === "light"}><span className="theme-preview theme-preview-light" /><strong>Light</strong><small>Bright surfaces</small></button>
+                      <button type="button" className={"appearance-glass-option" + (appearance.theme === "system" ? " appearance-glass-option-active" : "")} onClick={() => setAppearance((value) => ({ ...value, theme: "system" }))} aria-pressed={appearance.theme === "system"}><span className="theme-preview theme-preview-system" /><strong>System</strong><small>Follow device</small></button>
+                    </div>
+                  </div>
+                  <div className="appearance-control">
+                    <div className="appearance-control-label"><strong>Background presets</strong><span>Choose the mood of your music space</span></div>
+                    <div className="background-presets" role="group" aria-label="Background presets">
+                      {BACKGROUND_PRESETS.map((preset) => (
+                        <button type="button" key={preset.id} className={"background-preset" + (appearance.backgroundPreset === preset.id && !appearance.wallpaperDataUrl ? " background-preset-active" : "")} onClick={() => setAppearance((value) => ({ ...value, backgroundPreset: preset.id, wallpaperDataUrl: "" }))} aria-pressed={appearance.backgroundPreset === preset.id}>
+                          <span style={{ backgroundImage: preset.image }} /><strong>{preset.label}</strong>
+                        </button>
+                      ))}
+                    </div>
+                    <label className="wallpaper-upload">
+                      <span><Upload size={15} /> Use your own wallpaper <small>(PNG, JPEG, WebP · up to 1 MB)</small></span>
+                      <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (!file) return;
+                        if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 1024 * 1024) {
+                          setAppearanceMessage("Choose a PNG, JPEG, or WebP image up to 1 MB so it fits browser storage.");
+                          event.target.value = "";
+                          return;
+                        }
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                          if (typeof reader.result === "string") {
+                            setAppearance((value) => ({ ...value, wallpaperDataUrl: reader.result }));
+                            setAppearanceMessage("Wallpaper saved in this browser.");
+                          }
+                        };
+                        reader.onerror = () => setAppearanceMessage("Could not read this image. Try another file.");
+                        reader.readAsDataURL(file);
+                      }} />
+                    </label>
+                    {appearance.wallpaperDataUrl && <button className="text-button" type="button" onClick={() => setAppearance((value) => ({ ...value, wallpaperDataUrl: "" }))}>Remove wallpaper</button>}
+                    {appearance.wallpaperDataUrl && <label className="appearance-range-label"><span>Wallpaper dimming</span><strong>{appearance.wallpaperDim}%</strong><input className="range-input" type="range" min="5" max="85" step="5" value={appearance.wallpaperDim} onChange={(event) => setAppearance((value) => ({ ...value, wallpaperDim: Number(event.target.value) }))} /></label>}
+                    {appearance.wallpaperDataUrl && <label className="appearance-range-label"><span>Wallpaper blur</span><strong>{appearance.wallpaperBlur}px</strong><input className="range-input" type="range" min="0" max="18" step="1" value={appearance.wallpaperBlur} onChange={(event) => setAppearance((value) => ({ ...value, wallpaperBlur: Number(event.target.value) }))} /></label>}
+                  </div>
+                  <div className="appearance-control">
+                    <div className="appearance-control-label"><strong>Glass and layout</strong><span>Adjust how the controls feel</span></div>
+                    <label className="appearance-range-label"><span>Panel opacity</span><strong>{appearance.glassOpacity}%</strong><input className="range-input" type="range" min="35" max="96" step="1" value={appearance.glassOpacity} onChange={(event) => setAppearance((value) => ({ ...value, glassOpacity: Number(event.target.value) }))} /></label>
+                    <label className="appearance-range-label"><span>Blur</span><strong>{appearance.glassBlur}px</strong><input className="range-input" type="range" min="0" max="36" step="1" value={appearance.glassBlur} onChange={(event) => setAppearance((value) => ({ ...value, glassBlur: Number(event.target.value) }))} /></label>
+                    <label className="appearance-range-label"><span>Corner radius</span><strong>{appearance.cornerRadius}px</strong><input className="range-input" type="range" min="10" max="32" step="1" value={appearance.cornerRadius} onChange={(event) => setAppearance((value) => ({ ...value, cornerRadius: Number(event.target.value) }))} /></label>
+                    <label className="appearance-range-label">Interface density<select value={appearance.density} onChange={(event) => setAppearance((value) => ({ ...value, density: event.target.value }))}><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select></label>
+                    <label className="appearance-range-label">Desktop navigation position<select value={appearance.navPosition} onChange={(event) => setAppearance((value) => ({ ...value, navPosition: event.target.value }))}><option value="auto">Adaptive (sidebar / phone bottom)</option><option value="left">Sidebar on the left</option><option value="right">Sidebar on the right</option><option value="bottom">Bottom navigation</option></select></label>
+                    <label className="appearance-check-row"><input type="checkbox" checked={appearance.animations} onChange={(event) => setAppearance((value) => ({ ...value, animations: event.target.checked }))} /><span>Enable interface animations</span></label>
+                    <label className="appearance-range-label">Animation speed<select value={appearance.animationSpeed} disabled={!appearance.animations} onChange={(event) => setAppearance((value) => ({ ...value, animationSpeed: event.target.value }))}><option value="slow">Slow and soft</option><option value="normal">Balanced</option><option value="fast">Fast</option></select></label>
+                    {appearanceMessage && <p className="settings-footnote" role="status">{appearanceMessage}</p>}
+                  </div>
+                  <div className="appearance-theme-actions">
+                    <button className="ghost-button" type="button" onClick={() => {
+                      try {
+                        const blob = new Blob([JSON.stringify({ format: "selfmusic-theme", version: 1, appearance }, null, 2)], { type: "application/json" });
+                        const url = URL.createObjectURL(blob);
+                        const anchor = document.createElement("a");
+                        anchor.href = url;
+                        anchor.download = "selfmusic-theme.json";
+                        anchor.click();
+                        URL.revokeObjectURL(url);
+                        setAppearanceMessage("Theme exported. Import this JSON on another browser to copy the design.");
+                      } catch {
+                        setAppearanceMessage("Theme export failed in this browser.");
+                      }
+                    }}><Download size={15} /> Export theme</button>
+                    <label className="ghost-button theme-import-button"><Upload size={15} /> Import theme
+                      <input type="file" accept="application/json,.json" onChange={async (event) => {
+                        const file = event.target.files?.[0];
+                        if (!file) return;
+                        try {
+                          if (file.size > 2 * 1024 * 1024) throw new Error("Theme file is larger than 2 MB.");
+                          const parsed = JSON.parse(await file.text());
+                          const incoming = parsed?.appearance;
+                          if (parsed?.format !== "selfmusic-theme" || parsed?.version !== 1 || !incoming || typeof incoming !== "object") throw new Error("This is not a supported SelfMusic theme file.");
+                          if (incoming.wallpaperDataUrl && (typeof incoming.wallpaperDataUrl !== "string" || !/^data:image\/(png|jpeg|webp);base64,/.test(incoming.wallpaperDataUrl) || incoming.wallpaperDataUrl.length > 1450000)) throw new Error("The theme wallpaper is invalid or too large.");
+                          const accentColor = /^#[0-9a-f]{6}$/i.test(incoming.accentColor || "") ? incoming.accentColor : ACCENT_PRESETS[0].color;
+                          const next = {
+                            ...appearance,
+                            accent: ACCENT_PRESETS.some((item) => item.id === incoming.accent) ? incoming.accent : "custom",
+                            accentColor,
+                            ...hexToHsv(accentColor),
+                            glass: ["liquid", "soft", "solid"].includes(incoming.glass) ? incoming.glass : "liquid",
+                            theme: ["dark", "light", "system"].includes(incoming.theme) ? incoming.theme : "dark",
+                            glassOpacity: clampNumber(Number.isFinite(Number(incoming.glassOpacity)) ? Number(incoming.glassOpacity) : 78, 35, 96),
+                            glassBlur: clampNumber(Number.isFinite(Number(incoming.glassBlur)) ? Number(incoming.glassBlur) : 24, 0, 36),
+                            cornerRadius: clampNumber(Number.isFinite(Number(incoming.cornerRadius)) ? Number(incoming.cornerRadius) : 20, 10, 32),
+                            density: incoming.density === "compact" ? "compact" : "comfortable",
+                            navPosition: ["auto", "left", "right", "bottom"].includes(incoming.navPosition) ? incoming.navPosition : "auto",
+                            backgroundPreset: BACKGROUND_PRESETS.some((preset) => preset.id === incoming.backgroundPreset) ? incoming.backgroundPreset : "midnight",
+                            wallpaperDataUrl: incoming.wallpaperDataUrl || "",
+                            wallpaperDim: clampNumber(Number(incoming.wallpaperDim) || 38, 5, 85),
+                            animations: incoming.animations !== false,
+                            animationSpeed: ["slow", "normal", "fast"].includes(incoming.animationSpeed) ? incoming.animationSpeed : "normal",
+                          };
+                          setAppearance(next);
+                          setAppearanceMessage("Theme imported and saved in this browser.");
+                        } catch (error) {
+                          setAppearanceMessage(error.message || "Could not import this theme file.");
+                        } finally {
+                          event.target.value = "";
+                        }
+                      }} />
+                    </label>
+                    <button className="text-button appearance-reset" type="button" onClick={() => { setAppearance({ accent: "rose", accentColor: ACCENT_PRESETS[0].color, ...hexToHsv(ACCENT_PRESETS[0].color), glass: "liquid", theme: "dark", glassOpacity: 78, glassBlur: 24, cornerRadius: 20, density: "comfortable", navPosition: "auto", backgroundPreset: "midnight", wallpaperDataUrl: "", wallpaperDim: 38, wallpaperBlur: 0, animations: true, animationSpeed: "normal" }); setAppearanceMessage(""); }}>Reset appearance</button>
+                  </div>
                 </div>
 
-                <div className="settings-card settings-card-wide">
+                <div className="settings-card settings-card-wide" data-settings-section="about">
+                  <div className="settings-card-head"><span className="settings-icon"><AudioLines size={19} /></span><span className="settings-overline">ABOUT SELFMUSIC</span></div>
+                  <h3>SelfMusic · v0.1.0</h3>
+                  <p>Your personal music space, hosted on your own machine. Your server keeps the original files while this browser stores the current appearance preferences and local offline copies.</p>
+                  <div className="settings-action"><Server size={15} /> Active server <span>{window.location.origin}</span></div>
+                  <a className="settings-action settings-link" href="https://github.com/b-1-o/selfmusic" target="_blank" rel="noreferrer"><Globe2 size={15} /> Source code and release notes <ArrowUpRight size={15} /></a>
+                  <p className="settings-footnote">Appearance and wallpaper preferences currently stay in this browser. Export a theme from Settings → Appearance and import it on another device to copy the look; server-side preference sync is not implemented yet.</p>
+                </div>
+
+                <div className="settings-card settings-card-wide" data-settings-section="advanced">
                   <div className="settings-card-head"><span className="settings-icon"><LockKeyhole size={19} /></span><span className="settings-overline">SECURITY CHECKLIST</span></div>
                   <h3>Before you use it remotely</h3>
                   <div className="security-checklist">
-                    <div><Check size={16} /><span>Set a unique password with at least 8 characters.</span></div>
+                    <div><Check size={16} /><span>Use unique passwords of at least 12 characters for managed accounts.</span></div>
                     <div><Check size={16} /><span>Set <code>SESSION_SECRET</code> in your local <code>.env</code> file.</span></div>
                     <div><Check size={16} /><span>Use HTTPS with a private access policy and never commit <code>.env</code>.</span></div>
                     <div><Check size={16} /><span>Keep the operating system and Node.js updated.</span></div>
@@ -1576,7 +3009,7 @@ function App() {
                 </div>
               </div>
 
-              <div className="settings-footer"><span><ShieldCheck size={15} /> Self-hosted means you control the machine and its uptime.</span><button className="text-button" onClick={handleLogout}>Sign out <LogOut size={14} /></button></div>
+              {view === "settings" && <div className="settings-footer"><span><ShieldCheck size={15} /> Self-hosted means you control the machine and its uptime.</span><button className="text-button" onClick={handleLogout}>Sign out <LogOut size={14} /></button></div>}
             </section>
           )}
         </div>
@@ -1618,14 +3051,32 @@ function App() {
         </div>
       )}
 
-      <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
-        <button className={view === "home" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("home")}><SectionGlyph kind="home" size={21} /><span>Home</span></button>
-        <button className={view === "library" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("library")}><SectionGlyph kind="library" size={21} /><span>Library</span></button>
-        <button className={view === "import" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("import")}><SectionGlyph kind="import" size={21} /><span>Import</span></button>
-        <button className={view === "youtube" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("youtube")}><SectionGlyph kind="youtube" size={21} /><span>YouTube</span></button>
-        <button className={view === "settings" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("settings")}><SectionGlyph kind="server" size={21} /><span>Server</span></button>
-      </nav>
+      <Navigation
+        variant="mobile"
+        view={view}
+        onNavigate={setView}
+        role={profile.role}
+        offlineMode={offlineMode}
+        trackCount={tracks.length}
+      />
 
+      {authenticated && playbackSyncStatus !== "connected" && (
+        <div className={"playback-sync-notice playback-sync-" + playbackSyncStatus} role="status" aria-live="polite">
+          <span className="playback-sync-dot" />
+          {playbackSyncStatus === "offline" ? "Playback sync offline" : "Reconnecting playback sync…"}
+        </div>
+      )}
+      {remotePlaybackState && remotePlaybackTrack && (
+        <div className="playback-resume-banner" role="status" aria-live="polite">
+          <div className="playback-resume-copy">
+            <span className="playback-resume-eyebrow">PLAYBACK ON ANOTHER DEVICE</span>
+            <strong>{remotePlaybackTrack.title}</strong>
+            <span>{remotePlaybackTrack.artist} · Resume at {Math.floor(Math.max(0, Number(remotePlaybackState.positionSeconds) || 0) / 60)}:{String(Math.floor(Math.max(0, Number(remotePlaybackState.positionSeconds) || 0) % 60)).padStart(2, "0")}</span>
+          </div>
+          <button className="primary-button playback-resume-action" type="button" onClick={resumeRemotePlayback}>Continue here</button>
+          <button className="secondary-button playback-resume-dismiss" type="button" onClick={dismissRemotePlayback} aria-label="Dismiss cross-device playback prompt">Dismiss</button>
+        </div>
+      )}
       <PlayerBar
         audioRef={audioRef}
         trackTint={playerTint}
@@ -1653,7 +3104,26 @@ function App() {
         ref={audioRef}
         preload="auto"
         playsInline
-        onPlay={() => setIsPlaying(true)}
+        onPlay={() => {
+          playbackSyncPausedForRemoteRef.current = false;
+          setRemotePlaybackState(null);
+          playbackSyncLastPayloadRef.current = "";
+          setIsPlaying(true);
+          if (currentTrack && nowPlayingTrackRef.current !== currentTrack.id) {
+            nowPlayingTrackRef.current = currentTrack.id;
+            if (historyTrackRef.current !== currentTrack.id) {
+              historyTrackRef.current = currentTrack.id;
+              fetch("/api/history", {
+                method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ trackId: currentTrack.id, positionSeconds: 0 }),
+              }).catch(() => {});
+            }
+            fetch("/api/lastfm/now-playing", {
+              method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ trackId: currentTrack.id, durationSeconds: currentTrack.duration }),
+            }).catch(() => {});
+          }
+        }}
         onPause={() => setIsPlaying(false)}
         onTimeUpdate={(event) => {
           const nextTime = event.currentTarget.currentTime;
@@ -1662,8 +3132,30 @@ function App() {
             lastUiTimeRef.current = nextTime;
             setCurrentTime(nextTime);
           }
+          const trackId = currentTrackId;
+          const knownDuration = Number(event.currentTarget.duration || duration || 0);
+          const qualifiesForScrobble = knownDuration > 0 && (nextTime > knownDuration * 0.5 || nextTime > 240);
+          if (qualifiesForScrobble && trackId && scrobbledTrackRef.current !== trackId) {
+            scrobbledTrackRef.current = trackId;
+            fetch("/api/lastfm/scrobble", {
+              method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ trackId, listenedSeconds: nextTime, durationSeconds: knownDuration }),
+            }).then((response) => {
+              if (!response.ok) scrobbledTrackRef.current = "";
+            }).catch(() => { scrobbledTrackRef.current = ""; });
+          }
         }}
-        onLoadedMetadata={(event) => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
+        onLoadedMetadata={(event) => {
+          const audio = event.currentTarget;
+          setDuration(Number.isFinite(audio.duration) ? audio.duration : 0);
+          const pending = pendingResumeRef.current;
+          if (pending && pending.trackId === currentTrackId) {
+            const desired = Math.max(0, Number(pending.positionSeconds) || 0);
+            audio.currentTime = Number.isFinite(audio.duration) && audio.duration > 0 ? Math.min(desired, Math.max(0, audio.duration - 0.25)) : desired;
+            setCurrentTime(audio.currentTime);
+            pendingResumeRef.current = null;
+          }
+        }}
         onEnded={() => {
           if (repeatMode === "one" && audioRef.current) {
             audioRef.current.currentTime = 0;
@@ -1678,204 +3170,5 @@ function App() {
   );
 }
 
-function TrackList({
-  tracks,
-  loading,
-  error,
-  currentTrackId,
-  isPlaying,
-  favorites,
-  onPlay,
-  onFavorite,
-  onDelete,
-  deletingTrackId,
-  trackActionMessage,
-  trackActionError,
-  onRefresh,
-  emptyTitle,
-  emptyCopy,
-  onSettings,
-}) {
-  if (loading && !tracks.length) {
-    return <div className="empty-state"><RefreshCw size={23} className="spin" /><h3>Finding your music</h3><p>Scanning the library on your home server.</p></div>;
-  }
-  if (error && !tracks.length) {
-    return <div className="empty-state empty-state-error"><CircleAlert size={24} /><h3>We couldn't load your library</h3><p>{error}</p><button className="ghost-button" onClick={onRefresh}><RefreshCw size={15} /> Try again</button></div>;
-  }
-  if (!tracks.length) {
-    return <div className="empty-state">
-      <div className="empty-disc"><Disc3 size={28} /></div>
-      <h3>{emptyTitle}</h3><p>{emptyCopy}</p>
-      <button className="ghost-button" onClick={onSettings}><FolderOpen size={15} /> Open server setup</button>
-    </div>;
-  }
-
-  return (
-    <>
-    {trackActionMessage && (
-      <div className={"track-action-feedback" + (trackActionError ? " track-action-feedback-error" : "")} role={trackActionError ? "alert" : "status"}>
-        {trackActionError ? <CircleAlert size={16} /> : <Check size={16} />}
-        <span>{trackActionMessage}</span>
-      </div>
-    )}
-    <div className="track-table">
-      <div className="track-table-head"><span>#</span><span>TITLE</span><span>ALBUM / FOLDER</span><span><Heart size={14} /></span><span aria-label="Delete track"><Trash2 size={13} /></span><span>TIME</span></div>
-      {tracks.map((track, index) => (
-        <TrackRow
-          key={track.id}
-          track={track}
-          index={index}
-          active={track.id === currentTrackId}
-          playing={isPlaying}
-          favorite={favorites.includes(track.id)}
-          onPlay={onPlay}
-          onFavorite={onFavorite}
-          onDelete={onDelete}
-          deleting={deletingTrackId === track.id}
-        />
-      ))}
-    </div>
-    </>
-  );
-}
-
-function PlayerBar({
-  audioRef,
-  trackTint,
-  track,
-  isPlaying,
-  currentTime,
-  duration,
-  volume,
-  muted,
-  shuffle,
-  repeatMode,
-  onToggle,
-  onPrevious,
-  onSwitchPrevious,
-  onNext,
-  onSeek,
-  onVolume,
-  onMute,
-  onShuffle,
-  onRepeat,
-  onFavorite,
-  isFavorite,
-}) {
-  const progress = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
-  const [expanded, setExpanded] = useState(false);
-  const touchStartRef = useRef(null);
-
-  useEffect(() => {
-    if (!expanded) return undefined;
-    const handleExpandedKeys = (event) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setExpanded(false);
-      } else if (event.key === "ArrowLeft" && !["INPUT", "TEXTAREA"].includes(event.target?.tagName)) {
-        event.preventDefault();
-        onSwitchPrevious();
-      } else if (event.key === "ArrowRight" && !["INPUT", "TEXTAREA"].includes(event.target?.tagName)) {
-        event.preventDefault();
-        onNext();
-      }
-    };
-    window.addEventListener("keydown", handleExpandedKeys);
-    return () => window.removeEventListener("keydown", handleExpandedKeys);
-  }, [expanded, onSwitchPrevious, onNext]);
-
-  const handleExpandedTouchStart = (event) => {
-    if (event.target.closest("button, input, a")) return;
-    const touch = event.changedTouches?.[0];
-    if (touch) touchStartRef.current = { x: touch.clientX, y: touch.clientY };
-  };
-
-  const handleExpandedTouchEnd = (event) => {
-    const start = touchStartRef.current;
-    touchStartRef.current = null;
-    if (!start || event.target.closest("button, input, a")) return;
-    const touch = event.changedTouches?.[0];
-    if (!touch) return;
-    const dx = touch.clientX - start.x;
-    const dy = touch.clientY - start.y;
-    if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.25) return;
-    if (dx < 0) onNext();
-    else onSwitchPrevious();
-  };
-
-  return (
-    <>
-      <footer className={"playerbar" + (!track ? " playerbar-idle" : "")}>
-        <div className="now-playing">
-          <div className="player-cover">{track ? <Cover track={track} /> : <div className="empty-cover"><AudioLines size={20} /></div>}</div>
-          <div className="now-playing-meta">
-            <strong>{track?.title || "Pick a track"}</strong>
-            <span>{track?.artist || "Your music is right here"}</span>
-          </div>
-          <button className={"icon-button player-like" + (isFavorite ? " is-favorite" : "")} onClick={onFavorite} disabled={!track} aria-label="Like current track"><Heart size={17} fill={isFavorite ? "currentColor" : "none"} /></button>
-        </div>
-
-        <div className="player-center">
-          <div className="player-controls">
-            <button className={"player-control secondary-control" + (shuffle ? " control-on" : "")} onClick={onShuffle} title="Shuffle" aria-label="Toggle shuffle"><Shuffle size={17} /></button>
-            <button className="player-control" onClick={onPrevious} disabled={!track} title="Previous track" aria-label="Previous track"><SkipBack size={19} fill="currentColor" /></button>
-            <button className="main-play" onClick={onToggle} disabled={!track} title={isPlaying ? "Pause" : "Play"} aria-label={isPlaying ? "Pause" : "Play"}>{isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}</button>
-            <button className="player-control" onClick={onNext} disabled={!track} title="Next track" aria-label="Next track"><SkipForward size={19} fill="currentColor" /></button>
-            <button className={"player-control secondary-control" + (repeatMode !== "off" ? " control-on" : "")} onClick={onRepeat} title={"Repeat " + repeatMode} aria-label="Change repeat mode"><Repeat2 size={17} /><span className="repeat-mode-dot">{repeatMode === "one" ? "1" : ""}</span></button>
-          </div>
-          <div className="timeline">
-            <span>{formatTime(currentTime)}</span>
-            <input
-              aria-label="Track progress"
-              className="range-input progress-range"
-              type="range"
-              min="0"
-              max={duration || 1}
-              step="0.1"
-              value={Math.min(currentTime, duration || 1)}
-              style={{ "--range-progress": progress + "%" }}
-              onChange={(event) => onSeek(Number(event.target.value))}
-              disabled={!track || !duration}
-            />
-            <span>{formatTime(duration)}</span>
-          </div>
-        </div>
-
-        <div className="player-extras">
-          <button className="player-control volume-icon" onClick={onMute} aria-label={muted ? "Unmute" : "Mute"}>{muted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}</button>
-          <input
-            aria-label="Volume"
-            className="range-input volume-range"
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={muted ? 0 : volume}
-            style={{ "--range-progress": ((muted ? 0 : volume) * 100) + "%" }}
-            onChange={(event) => onVolume(Number(event.target.value))}
-          />
-          <button className="player-control mobile-expand" onClick={() => setExpanded((value) => !value)} disabled={!track} aria-label={expanded ? "Close mobile player controls" : "Open full-screen player"}>{expanded ? <X size={18} /> : <AudioLines size={18} />}</button>
-        </div>
-      </footer>
-      <div className={"mobile-player-expanded" + (expanded ? " mobile-player-expanded-open" : "")} style={{ "--track-rgb": trackTint }} onTouchStart={handleExpandedTouchStart} onTouchEnd={handleExpandedTouchEnd}>
-        <div className="expanded-topbar">
-          <span className="expanded-now-playing">NOW PLAYING</span>
-          <button className="icon-button expanded-close" type="button" onClick={() => setExpanded(false)} aria-label="Close full-screen player"><X size={22} /></button>
-        </div>
-        <div className="expanded-cover">{track && <Cover track={track} large />}</div>
-        <div className="expanded-meta"><strong>{track?.title || "Pick a track"}</strong><span>{track?.artist || "Your music is right here"}</span></div>
-        <div className="expanded-progress"><span>{formatTime(currentTime)}</span><input className="range-input progress-range" type="range" min="0" max={duration || 1} step="0.1" value={Math.min(currentTime, duration || 1)} style={{ "--range-progress": progress + "%" }} onChange={(event) => onSeek(Number(event.target.value))} disabled={!track || !duration} /><span>{formatTime(duration)}</span></div>
-        <div className="expanded-controls">
-          <button className={"player-control" + (shuffle ? " control-on" : "")} onClick={onShuffle} aria-label="Toggle shuffle"><Shuffle size={19} /></button>
-          <button className="player-control" onClick={onPrevious} disabled={!track} aria-label="Previous track"><SkipBack size={23} fill="currentColor" /></button>
-          <button className="main-play expanded-main-play" onClick={onToggle} disabled={!track} aria-label={isPlaying ? "Pause" : "Play"}>{isPlaying ? <Pause size={22} fill="currentColor" /> : <Play size={22} fill="currentColor" />}</button>
-          <button className="player-control" onClick={onNext} disabled={!track} aria-label="Next track"><SkipForward size={23} fill="currentColor" /></button>
-          <button className={"player-control" + (repeatMode !== "off" ? " control-on" : "")} onClick={onRepeat} aria-label="Change repeat mode"><Repeat2 size={19} /></button>
-        </div>
-        <div className="expanded-bottom"><button className={isFavorite ? "text-button is-favorite" : "text-button"} onClick={onFavorite}><Heart size={16} fill={isFavorite ? "currentColor" : "none"} /> {isFavorite ? "Liked" : "Like track"}</button><button className="text-button" onClick={onMute}>{muted ? <VolumeX size={16} /> : <Volume2 size={16} />} {muted ? "Unmute" : "Mute"}</button></div>
-      </div>
-    </>
-  );
-}
 
 export default App;

@@ -6,14 +6,14 @@ Set-Location $RootDir
 $Node = Get-Command node -ErrorAction SilentlyContinue
 $Npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
 if (-not $Node -or -not $Npm) {
-    Write-Host "Node.js 20.19+ and npm are required for native SelfMusic." -ForegroundColor Red
+    Write-Host "Node.js 22.13+ and npm are required for native SelfMusic." -ForegroundColor Red
     Write-Host "Install the LTS/current Node.js release from https://nodejs.org/, then reopen PowerShell."
     exit 1
 }
 $NodeVersionText = (& $Node.Source --version).Trim().TrimStart('v')
 try { $NodeVersion = [version]$NodeVersionText } catch { throw "Could not detect Node.js version: $NodeVersionText" }
-if ($NodeVersion -lt [version]"20.19.0") {
-    throw "Detected Node.js $NodeVersionText; SelfMusic requires Node.js 20.19 or later."
+if ($NodeVersion -lt [version]"22.13.0") {
+    throw "Detected Node.js $NodeVersionText; SelfMusic requires Node.js 22.13 or later."
 }
 
 if (-not (Test-Path $EnvFile)) {
