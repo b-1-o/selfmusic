@@ -63,8 +63,13 @@ test("playback state HTTP API authenticates per user and enforces optimistic con
     assert.equal(eventsResponse.status, 200);
     assert.match(eventsResponse.headers.get("content-type"), /text\/event-stream/);
     const reader = eventsResponse.body.getReader();
-    const initialEvent = await reader.read();
-    assert.match(new TextDecoder().decode(initialEvent.value), /event: playback-state/);
+    let initialText = "";
+    for (let attempt = 0; attempt < 5 && !initialText.includes("event: playback-state"); attempt += 1) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      initialText += new TextDecoder().decode(chunk.value);
+    }
+    assert.match(initialText, /event: playback-state/);
     await reader.cancel();
   } finally {
     await new Promise((resolve) => {
