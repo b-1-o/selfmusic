@@ -34,35 +34,43 @@ def main() -> int:
     )
 
     rep(
-        'const response = await fetch("/api/youtube/search?q=" + encodeURIComponent(search));\n'
-        "      if (!response.ok) throw new Error(await readMessage(response));\n"
-        "      const body = await response.json();\n"
-        "      setYoutubeResults(Array.isArray(body.items) ? body.items : []);\n"
-        '      if (!body.items?.length) setYoutubeError("No embeddable videos found. Try another search.");',
-        'const response = await fetch("/api/youtube/search", {\n'
-        "        method: \"POST\",\n"
-        '        credentials: "same-origin",\n'
-        '        headers: { "Content-Type": "application/json" },\n'
-        "        body: JSON.stringify({ query: search, limit: 20, musicOnly: true }),\n"
-        "      });\n"
-        "      if (!response.ok) throw new Error(await readMessage(response));\n"
-        "      const body = await response.json();\n"
-        "      setYoutubeResults(Array.isArray(body.items) ? body.items : []);\n"
-        '      if (!body.items?.length) setYoutubeError("No results. Try another search.");',
+        (
+            'const response = await fetch("/api/youtube/search?q=" + encodeURIComponent(search));\n'
+            "      if (!response.ok) throw new Error(await readMessage(response));\n"
+            "      const body = await response.json();\n"
+            "      setYoutubeResults(Array.isArray(body.items) ? body.items : []);\n"
+            '      if (!body.items?.length) setYoutubeError("No embeddable videos found. Try another search.");'
+        ),
+        (
+            'const response = await fetch("/api/youtube/search", {\n'
+            '        method: "POST",\n'
+            '        credentials: "same-origin",\n'
+            '        headers: { "Content-Type": "application/json" },\n'
+            "        body: JSON.stringify({ query: search, limit: 20, musicOnly: true }),\n"
+            "      });\n"
+            "      if (!response.ok) throw new Error(await readMessage(response));\n"
+            "      const body = await response.json();\n"
+            "      setYoutubeResults(Array.isArray(body.items) ? body.items : []);\n"
+            '      if (!body.items?.length) setYoutubeError("No results. Try another search.");'
+        ),
         "POST search",
     )
 
     rep(
-        "const selectYoutubeVideo = useCallback((item) => {\n"
-        "    // Keep YouTube playback inside its visible, official video player.\n"
-        "    // The local audio player is paused so the two sources do not overlap.\n"
-        "    audioRef.current?.pause();\n"
-        "    setIsPlaying(false);\n"
-        "    setSelectedYoutube(item);\n"
-        "  }, []);",
-        "const selectYoutubeVideo = useCallback((item) => {\n"
-        "    setSelectedYoutube(item);\n"
-        "  }, []);",
+        (
+            "const selectYoutubeVideo = useCallback((item) => {\n"
+            "    // Keep YouTube playback inside its visible, official video player.\n"
+            "    // The local audio player is paused so the two sources do not overlap.\n"
+            "    audioRef.current?.pause();\n"
+            "    setIsPlaying(false);\n"
+            "    setSelectedYoutube(item);\n"
+            "  }, []);"
+        ),
+        (
+            "const selectYoutubeVideo = useCallback((item) => {\n"
+            "    setSelectedYoutube(item);\n"
+            "  }, []);"
+        ),
         "selectYoutubeVideo",
     )
 
@@ -78,15 +86,16 @@ def main() -> int:
     )
     rep('aria-label="Search YouTube videos"', 'aria-label="Search YouTube tracks"', "aria search")
 
-    # Avoid replacing every "Search YouTube" button blindly if already patched
-    if "Search YouTube" in t and "CONVERT TO LIBRARY" in t:
-        t2 = t.replace(">{youtubeLoading ? "Searching" : "Search YouTube"}', '{youtubeLoading ? "Searching" : "Search"}', 1)
-        if t2 != t:
-            t = t2
-            changes.append("search button label")
+    old_btn = '{youtubeLoading ? "Searching" : "Search YouTube"}'
+    new_btn = '{youtubeLoading ? "Searching" : "Search"}'
+    if old_btn in t:
+        t = t.replace(old_btn, new_btn, 1)
+        changes.append("search button label")
+    else:
+        print("WARN: skip search button label (pattern not found)")
 
     t2, n = re.subn(
-        r"\s*<iframe\s+\n\s*key=\{selectedYoutube\.videoId\}[\s\S]*?</iframe>",
+        r"\s*<iframe\s+key=\{selectedYoutube\.videoId\}[\s\S]*?</iframe>",
         "",
         t,
         count=1,
@@ -96,7 +105,7 @@ def main() -> int:
         changes.append("removed iframe")
     else:
         t2, n = re.subn(
-            r"\s*<iframe\s+key=\{selectedYoutube\.videoId\}[\s\S]*?</iframe>",
+            r"\s*<iframe[\s\S]*?selectedYoutube\.videoId[\s\S]*?</iframe>",
             "",
             t,
             count=1,
@@ -119,18 +128,18 @@ def main() -> int:
     else:
         print("WARN: youtube-watch-link not found")
 
-    # import-url treated like import for the upload page shell (first occurrence of page render)
     rep(
         'view === "import" ? "Add music"',
         'view === "import" || view === "import-url" ? "Import"',
         "pageTitle Import",
     )
 
-    # Expand import page condition once for main import section
     marker = '{view === "import" && ('
     if marker in t:
         t = t.replace(marker, '{(view === "import" || view === "import-url") && (', 1)
         changes.append("import-url shares import page")
+    else:
+        print("WARN: skip import page marker")
 
     if t == original:
         print("No changes applied.")
