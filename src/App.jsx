@@ -2120,7 +2120,7 @@ function App() {
                   onRefresh={loadTracks}
                   emptyTitle={query ? "No matches found" : "Your first track is waiting"}
                   emptyCopy={query ? "Try another title, artist, or album name." : "Put your own music files in the server's music folder, then refresh the library."}
-                  onSettings={() => setView("settings")}
+                  onServerSetup={() => setView("server")}
                   canManage={profile.role === "admin" && !offlineMode}
                   currentTime={currentTime}
                   duration={duration}
