@@ -17,10 +17,39 @@ if ($NodeVersion -lt [version]"22.13.0") {
 }
 
 if (-not (Test-Path $EnvFile)) {
-    $Template = Join-Path $RootDir ".env.example"
-    if (-not (Test-Path $Template)) { throw ".env.example is missing." }
-    Copy-Item $Template $EnvFile
-    Write-Host "Created .env from .env.example" -ForegroundColor Green
+    $Template = @"
+# SelfMusic private runtime settings. Do not commit this file.
+SELF_MUSIC_PASSWORD=
+SESSION_SECRET=
+MUSIC_DIR=./music
+PORT=8787
+NODE_ENV=production
+DATABASE_PATH=./data/selfmusic.sqlite
+COVER_CACHE_DIR=./data/artwork
+YOUTUBE_API_KEY=
+YOUTUBE_MAX_DURATION_SECONDS=3600
+YOUTUBE_CACHE_TTL_SECONDS=300
+YT_DLP_PATH=
+TRANSCODE_ENABLED=false
+TRANSCODE_CACHE_DIR=./data/transcodes
+DEFAULT_BITRATE=192k
+FFMPEG_PATH=
+DUPLICATE_STRATEGY=keep
+PYTHON_PATH=
+BOOTSTRAP_ADMIN_USERNAME=admin
+BOOTSTRAP_ADMIN_PASSWORD=
+LASTFM_API_KEY=
+LASTFM_API_SECRET=
+LASTFM_SESSION_KEY=
+LASTFM_CALLBACK_URL=
+API_RATE_LIMIT_WINDOW_MS=60000
+API_RATE_LIMIT_MAX=60
+HEAVY_API_RATE_LIMIT_MAX=8
+TS_AUTHKEY=
+MUSIC_HOST_DIR=./music
+"@
+    [System.IO.File]::WriteAllText($EnvFile, $Template, [System.Text.UTF8Encoding]::new($false))
+    Write-Host "Created private .env (edit secrets here only; never commit)" -ForegroundColor Green
 } else {
     Write-Host "Found existing .env; existing settings will be preserved."
 }

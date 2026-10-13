@@ -24,10 +24,39 @@ if ! node -e 'const [major, minor] = process.versions.node.split(".").map(Number
 fi
 
 if [ ! -f "$ENV_FILE" ]; then
-  [ -f "$ROOT_DIR/.env.example" ] || { red ".env.example is missing."; exit 1; }
-  cp "$ROOT_DIR/.env.example" "$ENV_FILE"
+  cat > "$ENV_FILE" <<'ENV_TEMPLATE'
+# SelfMusic private runtime settings. Do not commit this file.
+SELF_MUSIC_PASSWORD=
+SESSION_SECRET=
+MUSIC_DIR=./music
+PORT=8787
+NODE_ENV=production
+DATABASE_PATH=./data/selfmusic.sqlite
+COVER_CACHE_DIR=./data/artwork
+YOUTUBE_API_KEY=
+YOUTUBE_MAX_DURATION_SECONDS=3600
+YOUTUBE_CACHE_TTL_SECONDS=300
+YT_DLP_PATH=
+TRANSCODE_ENABLED=false
+TRANSCODE_CACHE_DIR=./data/transcodes
+DEFAULT_BITRATE=192k
+FFMPEG_PATH=
+DUPLICATE_STRATEGY=keep
+PYTHON_PATH=
+BOOTSTRAP_ADMIN_USERNAME=admin
+BOOTSTRAP_ADMIN_PASSWORD=
+LASTFM_API_KEY=
+LASTFM_API_SECRET=
+LASTFM_SESSION_KEY=
+LASTFM_CALLBACK_URL=
+API_RATE_LIMIT_WINDOW_MS=60000
+API_RATE_LIMIT_MAX=60
+HEAVY_API_RATE_LIMIT_MAX=8
+TS_AUTHKEY=
+MUSIC_HOST_DIR=./music
+ENV_TEMPLATE
   chmod 600 "$ENV_FILE" 2>/dev/null || true
-  green "Created .env from .env.example"
+  green "Created private .env (edit secrets here only; never commit)"
 else
   printf 'Found existing .env; existing settings will be preserved.\n'
 fi
