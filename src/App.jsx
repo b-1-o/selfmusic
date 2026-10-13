@@ -1328,7 +1328,7 @@ function App() {
     setRemotePlaybackState(null);
     if (pendingResumeRef.current?.trackId !== track.id) pendingResumeRef.current = null;
     setPlaybackQueueIds((existing) => {
-      if (existing.length) return existing;
+      if (existing.includes(track.id)) return existing;
       const ids = tracks.map((item) => item.id);
       if (ids.length <= 500) return ids;
       const trackIndex = Math.max(0, ids.indexOf(track.id));
@@ -2809,6 +2809,12 @@ function App() {
         <button className={view === "settings" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("settings")}><SectionGlyph kind="server" size={21} /><span>Server</span></button>
       </nav>
 
+      {authenticated && playbackSyncStatus !== "connected" && (
+        <div className={"playback-sync-notice playback-sync-" + playbackSyncStatus} role="status" aria-live="polite">
+          <span className="playback-sync-dot" />
+          {playbackSyncStatus === "offline" ? "Playback sync offline" : "Reconnecting playback sync…"}
+        </div>
+      )}
       {remotePlaybackState && remotePlaybackTrack && (
         <div className="playback-resume-banner" role="status" aria-live="polite">
           <div className="playback-resume-copy">
