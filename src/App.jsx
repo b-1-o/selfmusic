@@ -2026,6 +2026,13 @@ function App() {
     }
   }, []);
 
+  const resolvedTheme = appearance.theme === "system" ? systemTheme : appearance.theme;
+  const presetBackground = BACKGROUND_PRESETS.find((preset) => preset.id === appearance.backgroundPreset)?.image || BACKGROUND_PRESETS[0].image;
+  const backgroundImage = appearance.wallpaperDataUrl
+    ? "linear-gradient(rgba(7, 8, 12, " + (appearance.wallpaperDim / 100) + "), rgba(7, 8, 12, " + (appearance.wallpaperDim / 100) + ")), url('" + appearance.wallpaperDataUrl + "')"
+    : presetBackground;
+  const motionDuration = appearance.animationSpeed === "slow" ? "360ms" : appearance.animationSpeed === "fast" ? "140ms" : "220ms";
+
   if (!authenticated) {
     return (
       <LoginScreen
@@ -2034,7 +2041,7 @@ function App() {
         onLogin={handleLogin}
         error={loginError}
         serverUnavailable={serverUnavailable}
-        appearance={appearance}
+        appearance={{ ...appearance, theme: resolvedTheme }}
       />
     );
   }
@@ -2042,7 +2049,7 @@ function App() {
   const pageTitle = view === "home" ? "Listen now" : view === "library" ? "Your library" : view === "favorites" ? "Liked tracks" : view === "offline" ? "Offline downloads" : view === "playlists" ? "Playlists" : view === "youtube" ? "Explore YouTube" : view === "import" ? "Add music" : view === "server" ? "Server" : view === "settings" ? "Settings" : "SelfMusic";
 
   return (
-    <div className="app-shell" data-view={view} data-theme={appearance.theme} data-accent={appearance.accent} data-glass={appearance.glass} style={{ "--user-accent": appearance.accentColor, "--user-accent-strong": darkenAccent(appearance.accentColor) }}>
+    <div className="app-shell" data-view={view} data-theme={resolvedTheme} data-accent={appearance.accent} data-glass={appearance.glass} data-animations={appearance.animations ? "on" : "off"} data-density={appearance.density} style={{ "--user-accent": appearance.accentColor, "--user-accent-strong": darkenAccent(appearance.accentColor), "--user-glass-opacity": appearance.glassOpacity + "%", "--user-glass-blur": appearance.glassBlur + "px", "--user-radius": appearance.cornerRadius + "px", "--user-background-image": backgroundImage, "--user-motion-duration": motionDuration }}>
       <aside className={"sidebar" + (mobileMenuOpen ? " sidebar-open" : "")}>
         <div className="brand">
           <span className="brand-mark"><AudioLines size={22} strokeWidth={2.2} /></span>
