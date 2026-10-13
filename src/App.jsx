@@ -1545,11 +1545,16 @@ function App() {
     setYoutubeError("");
     setSelectedYoutube(null);
     try {
-      const response = await fetch("/api/youtube/search?q=" + encodeURIComponent(search));
+      const response = await fetch("/api/youtube/search", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: search, limit: 20, musicOnly: true }),
+      });
       if (!response.ok) throw new Error(await readMessage(response));
       const body = await response.json();
       setYoutubeResults(Array.isArray(body.items) ? body.items : []);
-      if (!body.items?.length) setYoutubeError("No embeddable videos found. Try another search.");
+      if (!body.items?.length) setYoutubeError("No results. Try another search.");
     } catch (error) {
       setYoutubeResults([]);
       setYoutubeError(error.message || "YouTube search could not be completed.");
@@ -1559,10 +1564,6 @@ function App() {
   }, [youtubeQuery]);
 
   const selectYoutubeVideo = useCallback((item) => {
-    // Keep YouTube playback inside its visible, official video player.
-    // The local audio player is paused so the two sources do not overlap.
-    audioRef.current?.pause();
-    setIsPlaying(false);
     setSelectedYoutube(item);
   }, []);
 
@@ -1984,7 +1985,7 @@ function App() {
     );
   }
 
-  const pageTitle = view === "home" ? "Listen now" : view === "library" ? "Your library" : view === "favorites" ? "Liked tracks" : view === "offline" ? "Offline downloads" : view === "playlists" ? "Playlists" : view === "youtube" ? "Explore YouTube" : view === "import" ? "Add music" : view === "server" ? "Server" : view === "settings" ? "Settings" : "SelfMusic";
+  const pageTitle = view === "home" ? "Listen now" : view === "library" ? "Your library" : view === "favorites" ? "Liked tracks" : view === "offline" ? "Offline downloads" : view === "playlists" ? "Playlists" : view === "youtube" ? "Explore YouTube" : view === "import" || view === "import-url" ? "Import" : view === "server" ? "Server" : view === "settings" ? "Settings" : "SelfMusic";
 
   return (
     <div className="app-shell" data-view={view} data-settings-section={settingsSection} data-nav-position={appearance.navPosition} data-theme={resolvedTheme} data-accent={appearance.accent} data-glass={appearance.glass} data-animations={appearance.animations ? "on" : "off"} data-density={appearance.density} style={{ "--user-accent": appearance.accentColor, "--user-accent-strong": darkenAccent(appearance.accentColor), "--user-glass-opacity": appearance.glassOpacity + "%", "--user-glass-blur": appearance.glassBlur + "px", "--user-radius": appearance.cornerRadius + "px", "--user-background-image": backgroundImage, "--user-wallpaper-blur": appearance.wallpaperBlur + "px", "--user-motion-duration": motionDuration }}>
@@ -2054,7 +2055,7 @@ function App() {
         </header>
 
         <div className="content-wrap" ref={contentWrapRef}>
-          {["import", "offline", "youtube"].includes(view) && <AddTabs view={view} onNavigate={setView} isAdmin={profile.role === "admin" && !offlineMode} />}
+          {["import", "import-url", "offline", "youtube"].includes(view) && <AddTabs view={view} onNavigate={setView} isAdmin={profile.role === "admin" && !offlineMode} />}
           {offlineMode && (
             <div className="offline-mode-banner" role="status">
               <Download size={16} /><span><strong>Offline mode</strong> — the home server cannot be reached. Playing local copies still works.</span>
@@ -2337,9 +2338,9 @@ function App() {
                 <div className="youtube-fog youtube-fog-one" />
                 <div className="youtube-fog youtube-fog-two" />
                 <div className="youtube-hero-content">
-                  <div className="youtube-kicker"><Youtube size={15} /> VIDEO DISCOVERY <span /> OFFICIAL PLAYER</div>
+                  <div className="youtube-kicker"><Youtube size={15} /> SEARCH <span /> CONVERT TO LIBRARY</div>
                   <h1>Find your next<br /><span>favorite sound.</span></h1>
-                  <p>Search YouTube videos from your own home server and play them in the official YouTube player.</p>
+                  <p>Search tracks and convert audio into your private library. No embedded YouTube player — pick a result and Convert.</p>
                   <form className="youtube-search-form" onSubmit={(event) => { event.preventDefault(); handleYoutubeSearch(); }}>
                     <label className="youtube-search-field">
                       <Search size={18} />
@@ -2347,14 +2348,14 @@ function App() {
                         value={youtubeQuery}
                         onChange={(event) => setYoutubeQuery(event.target.value)}
                         placeholder="Search artists, tracks, live sessions…"
-                        aria-label="Search YouTube videos"
+                        aria-label="Search YouTube tracks"
                         minLength={2}
                         maxLength={100}
                       />
                     </label>
                     <button className="primary-button" type="submit" disabled={youtubeLoading || youtubeQuery.trim().length < 2}>
                       {youtubeLoading ? <RefreshCw className="spin" size={16} /> : <Search size={16} />}
-                      {youtubeLoading ? "Searching" : "Search YouTube"}
+                      {youtubeLoading ? "Searching" : "Search"}
                     </button>
                   </form>
                   <form
@@ -2450,17 +2451,8 @@ function App() {
                   {selectedYoutube ? (
                     <>
                       <div className="youtube-player-frame">
-                        <iframe
-                          key={selectedYoutube.videoId}
-                          src={"https://www.youtube.com/embed/" + selectedYoutube.videoId + "?autoplay=1&playsinline=1"}
-                          title={selectedYoutube.title}
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                          referrerPolicy="strict-origin-when-cross-origin"
-                          allowFullScreen
-                        />
                       </div>
                       <div className="youtube-selected-meta"><strong>{selectedYoutube.title}</strong><span>{selectedYoutube.channelTitle}</span></div>
-                      <a className="youtube-watch-link" href={"https://www.youtube.com/watch?v=" + selectedYoutube.videoId} target="_blank" rel="noreferrer"><Youtube size={15} /> Watch on YouTube <ArrowUpRight size={15} /></a>
                       {profile.role === "admin" && (
                         <button className="youtube-download-button" type="button" disabled={youtubeJobStarting || ["queued", "running"].includes(youtubeJob?.status)} onClick={() => startYoutubeDownload({ videoId: selectedYoutube.videoId, metadata: { title: selectedYoutube.title, artist: selectedYoutube.channelTitle } }, "explore")}>
                           {youtubeJobStarting || ["queued", "running"].includes(youtubeJob?.status) ? <RefreshCw size={15} className="spin" /> : <Download size={15} />}
