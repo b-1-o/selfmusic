@@ -42,4 +42,8 @@ test("web player provides Media Session controls and explicit offline save/remov
   assert.match(app, /await cache\.delete\(request\)/);
   assert.match(app, /view === "offline"/);
   assert.match(app, /"Save " \+ track\.title \+ " for offline playback"/);
+  assert.match(app, /await window\.caches\.delete\(OFFLINE_AUDIO_CACHE\)/);
+  assert.match(app, /localStorage\.removeItem\(OFFLINE_TRACKS_KEY\)/);
+  assert.match(app, /setActionHandler\("seekforward"/);
+
 });
