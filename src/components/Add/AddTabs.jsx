@@ -9,7 +9,7 @@ const TABS = [
 
 export default function AddTabs({ view, onNavigate, isAdmin }) {
   return (
-    <nav className="add-section-tabs" aria-label="Add and manage music" role="tablist">
+    <nav className="add-section-tabs" aria-label="Add and manage music">
       <div className="add-section-tabs-heading">
         <span className="add-section-overline">YOUR MUSIC WORKFLOW</span>
         <span className="add-section-hint">Add, discover, and keep audio available offline.</span>
@@ -22,8 +22,7 @@ export default function AddTabs({ view, onNavigate, isAdmin }) {
             <button
               key={tab.id}
               type="button"
-              role="tab"
-              aria-selected={active}
+              aria-current={active ? "page" : undefined}
               className={"add-section-tab" + (active ? " add-section-tab-active" : "")}
               onClick={() => onNavigate(tab.id)}
               title={tab.detail}
