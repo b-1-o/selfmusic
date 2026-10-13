@@ -66,7 +66,7 @@ test("playlist CRUD, favorite persistence, history and M3U export/import are int
     const exportResponse = await fetch(server.baseUrl + "/api/playlists/" + playlistId + "/export.m3u");
     assert.equal(exportResponse.status, 200);
     const content = await exportResponse.text();
-    assert.ok(content.includes("Example Artist/Example Album/song.mp3"));
+    assert.ok(content.includes("Example Artist/Example Album/song.mp3"), "M3U export should use normalized relative paths");
     assert.match(content, /Example Artist\\/Example Album\\/song\\.mp3/);
 
     const importResponse = await fetch(server.baseUrl + "/api/playlists/import.m3u", {
