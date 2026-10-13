@@ -2705,7 +2705,19 @@ function App() {
                   ) : (
                     <button className="settings-action" type="button" onClick={disconnectLastFm}><X size={15} /> Disconnect Last.fm</button>
                   )}
-                  {!lastFmStatus.configured && <p className="settings-footnote">The server owner must set <code>LASTFM_API_KEY</code>, <code>LASTFM_API_SECRET</code>, and a callback URL in <code>.env</code>.</p>}
+                  {!lastFmStatus.configured && <p className="settings-footnote">To enable scrobbling, create an API app at <a href="https://www.last.fm/api/account/create" target="_blank" rel="noreferrer">Last.fm API</a>. Add <code>LASTFM_API_KEY</code>, <code>LASTFM_API_SECRET</code>, and <code>LASTFM_CALLBACK_URL</code> to the server project's private <code>.env</code>; the callback must match your Last.fm app settings. Restart SelfMusic, then return here and choose Authorize Last.fm.</p>}
+                </div>
+
+                <div className="settings-card">
+                  <div className="settings-card-head"><span className="settings-icon settings-icon-blue"><Youtube size={19} /></span><span className="settings-overline">YOUTUBE SEARCH</span></div>
+                  <h3>Explore YouTube integration</h3>
+                  <p>Search needs a server-side YouTube Data API v3 key. Without it, search returns HTTP 503. Direct video links still use the official player; MP3 downloads use the separate yt-dlp tool.</p>
+                  <ol className="integration-steps">
+                    <li>Enable YouTube Data API v3 in Google Cloud.</li>
+                    <li>Add <code>YOUTUBE_API_KEY=your-key</code> to the project’s private <code>.env</code>.</li>
+                    <li>Restart SelfMusic, then try Explore YouTube again.</li>
+                  </ol>
+                  <a className="settings-action settings-link" href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer">Open Google Cloud credentials <ArrowUpRight size={15} /></a>
                 </div>
 
                 {profile.role === "admin" && (
