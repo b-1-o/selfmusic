@@ -2711,7 +2711,7 @@ function App() {
               </div>
 
               <div className="settings-grid">
-                <div className="settings-card">
+                <div className="settings-card" data-settings-section="profile">
                   <div className="settings-card-head"><span className="settings-icon"><AudioLines size={19} /></span><span className="settings-overline">SIGNED-IN ACCOUNT</span></div>
                   <h3>{profile.username || "Server owner"}</h3>
                   <p>You are signed in with the <strong>{profile.role || "user"}</strong> role. Preferences for playback stay on this browser; playlists, favorites, and history are stored on the server.</p>
@@ -2719,7 +2719,7 @@ function App() {
                   <button className="settings-action" type="button" onClick={handleLogout}><LogOut size={15} /> Sign out of this account</button>
                 </div>
 
-                <div className="settings-card">
+                <div className="settings-card" data-settings-section="player">
                   <div className="settings-card-head"><span className="settings-icon settings-icon-blue"><AudioLines size={19} /></span><span className="settings-overline">STREAM QUALITY</span></div>
                   <h3>Audio format and bitrate</h3>
                   <p>Original files avoid transcoding. Alternate formats use the server's FFmpeg cache and require <code>TRANSCODE_ENABLED=true</code>.</p>
@@ -2737,7 +2737,7 @@ function App() {
                   <div className="info-note"><ShieldCheck size={16} /><span>{playerSettings.transcodingEnabled ? "Transcoding is enabled." : "Transcoding is currently disabled by the server administrator."}</span></div>
                 </div>
 
-                <div className="settings-card">
+                <div className="settings-card" data-settings-section="integrations">
                   <div className="settings-card-head"><span className="settings-icon"><Globe2 size={19} /></span><span className="settings-overline">LAST.FM SCROBBLING</span></div>
                   <h3>{lastFmStatus.connected ? "Last.fm connected" : "Connect your Last.fm account"}</h3>
                   <p>{lastFmStatus.connected ? "Scrobbles will be sent for eligible tracks on this account." : "Authorize Last.fm to send now-playing updates and scrobbles from this profile."}</p>
@@ -2751,7 +2751,7 @@ function App() {
                   {!lastFmStatus.configured && <p className="settings-footnote">To enable scrobbling, create an API app at <a href="https://www.last.fm/api/account/create" target="_blank" rel="noreferrer">Last.fm API</a>. Add <code>LASTFM_API_KEY</code>, <code>LASTFM_API_SECRET</code>, and <code>LASTFM_CALLBACK_URL</code> to the server project's private <code>.env</code>; the callback must match your Last.fm app settings. Restart SelfMusic, then return here and choose Authorize Last.fm.</p>}
                 </div>
 
-                <div className="settings-card">
+                <div className="settings-card" data-settings-section="integrations">
                   <div className="settings-card-head"><span className="settings-icon settings-icon-blue"><Youtube size={19} /></span><span className="settings-overline">YOUTUBE SEARCH</span></div>
                   <h3>Explore YouTube integration</h3>
                   <p>Search needs a server-side YouTube Data API v3 key. Without it, search returns HTTP 503. Direct video links still use the official player; MP3 downloads use the separate yt-dlp tool.</p>
@@ -2764,7 +2764,7 @@ function App() {
                 </div>
 
                 {profile.role === "admin" && (
-                  <div className="settings-card settings-card-wide duplicate-manager">
+                  <div className="settings-card settings-card-wide duplicate-manager" data-settings-section="library">
                     <div className="settings-card-head"><span className="settings-icon"><Copy size={19} /></span><span className="settings-overline">LIBRARY INTEGRITY</span></div>
                     <h3>Duplicate audio files</h3>
                     <p>Files are grouped only when their SHA-256 hashes match exactly. Merging transfers favorites, playlists and history to the retained track before deleting duplicate files.</p>
@@ -2797,7 +2797,7 @@ function App() {
                 )}
 
                 {profile.role === "admin" && (
-                  <div className="settings-card settings-card-wide">
+                  <div className="settings-card settings-card-wide" data-settings-section="profile">
                     <div className="settings-card-head"><span className="settings-icon"><LockKeyhole size={19} /></span><span className="settings-overline">ADMINISTRATION</span></div>
                     <h3>Manage user accounts</h3>
                     <p>Create a separate login for another household member or device. A User can listen without managing the server; an Admin can also manage files and accounts. Use a unique password of at least 12 characters and share it privately.</p>
@@ -2823,7 +2823,7 @@ function App() {
                   </div>
                 )}
 
-                <div className="settings-card server-configuration-card">
+                <div className="settings-card" data-settings-section="library">
                   <div className="settings-card-head"><span className="settings-icon"><FolderOpen size={19} /></span><span className="settings-overline">MUSIC COLLECTION</span></div>
                   <h3>Where your files live</h3>
                   <p>Put supported audio files into the folder configured by <code>MUSIC_DIR</code>. By default, that is <code>./music</code> in the project directory.</p>
@@ -2831,7 +2831,7 @@ function App() {
                   <button className="settings-action" onClick={loadTracks}><RefreshCw size={15} className={loadingTracks ? "spin" : ""} /> Scan library <span>{tracks.length} tracks</span></button>
                 </div>
 
-                <div className="settings-card server-configuration-card">
+                <div className="settings-card" data-settings-section="integrations">
                   <div className="settings-card-head"><span className="settings-icon settings-icon-blue"><Globe2 size={19} /></span><span className="settings-overline">REMOTE ACCESS</span></div>
                   <h3>Listen outside your Wi-Fi</h3>
                   <p>Set up Tailscale on this computer and your phone. No router port forwarding and no shared auth key are needed for the normal native setup.</p>
@@ -2839,7 +2839,15 @@ function App() {
                   {networkAddresses.tailscale.length > 0 && <div className="info-note"><ShieldCheck size={16} /><span>Tailscale detected: {networkAddresses.tailscale[0]}</span></div>}
                 </div>
 
-                <div className="settings-card">
+                <div className="settings-card" data-settings-section="offline">
+                  <div className="settings-card-head"><span className="settings-icon"><Download size={19} /></span><span className="settings-overline">OFFLINE AUDIO</span></div>
+                  <h3>{offlineTrackIds.length} saved {offlineTrackIds.length === 1 ? "track" : "tracks"} on this device</h3>
+                  <p>Offline copies live in this browser's storage and do not automatically appear on another device. Open Offline from Add to save or remove individual tracks.</p>
+                  <button className="settings-action" type="button" onClick={() => setView("offline")}><Download size={15} /> Manage offline tracks <ArrowUpRight size={15} /></button>
+                  <p className="settings-footnote">Cache-size limits and automatic downloads are not configurable yet. Browser storage may be cleared by the operating system.</p>
+                </div>
+
+                <div className="settings-card" data-settings-section="advanced">
                   <div className="settings-card-head"><span className="settings-icon"><Download size={19} /></span><span className="settings-overline">INSTALLABLE PLAYER</span></div>
                   <h3>{pwaInstalled ? "SelfMusic is installed" : "Install SelfMusic"}</h3>
                   <p>Open your music server in an app-like window. Playback and offline downloads remain available where your browser supports them.</p>
@@ -2850,7 +2858,7 @@ function App() {
                   {!pwaInstalled && <p className="settings-footnote">On iOS, use Safari's Share menu and choose Add to Home Screen. HTTPS is required for most install and service-worker features.</p>}
                 </div>
 
-                <div className="settings-card settings-card-wide appearance-settings-card">
+                <div className="settings-card settings-card-wide appearance-settings-card" data-settings-section="appearance">
                   <div className="settings-card-head"><span className="settings-icon"><Palette size={19} /></span><span className="settings-overline">PERSONALIZE YOUR PLAYER</span></div>
                   <h3>Make SelfMusic yours</h3>
                   <p>Your appearance is saved in this browser. It changes the interface, not your music files or server settings.</p>
@@ -2982,7 +2990,7 @@ function App() {
                   <button className="text-button appearance-reset" type="button" onClick={() => { setAppearance({ accent: "rose", accentColor: ACCENT_PRESETS[0].color, ...hexToHsv(ACCENT_PRESETS[0].color), glass: "liquid", theme: "dark", glassOpacity: 78, glassBlur: 24, cornerRadius: 20, density: "comfortable", backgroundPreset: "midnight", wallpaperDataUrl: "", wallpaperDim: 38, animations: true, animationSpeed: "normal" }); setAppearanceMessage(""); }}>Reset appearance</button>
                 </div>
 
-                <div className="settings-card settings-card-wide">
+                <div className="settings-card settings-card-wide" data-settings-section="advanced">
                   <div className="settings-card-head"><span className="settings-icon"><LockKeyhole size={19} /></span><span className="settings-overline">SECURITY CHECKLIST</span></div>
                   <h3>Before you use it remotely</h3>
                   <div className="security-checklist">
