@@ -231,7 +231,7 @@ async function runOneJob(db, config, row) {
     await fs.mkdir(jobTemp, { recursive: true });
     const url = normalizeVideoUrl({ url: row.url });
     updateJob(db, jobId, { phase: "metadata", progress: 2 });
-    const infoArgs = ["--no-warnings", "--no-playlist", "--dump-single-json", "--skip-download", "--no-colors", url];
+    const infoArgs = ["--no-warnings", "--no-playlist", "--retries", "3", "--fragment-retries", "3", "--extractor-retries", "2", "--dump-single-json", "--skip-download", "--no-colors", url];
     const cookiePath = path.join(config.projectRoot, "cookies.txt");
     try { await fs.access(cookiePath); infoArgs.splice(infoArgs.length - 1, 0, "--cookies", cookiePath); } catch {}
     const infoResult = await runProcess(ytdlp, infoArgs, { timeoutMs: 60000, maxOutputBytes: 6 * 1024 * 1024 });
@@ -266,7 +266,7 @@ async function runOneJob(db, config, row) {
     const outputTemplate = path.join(uploadRoot, path.basename(outputPath, ".mp3") + ".%(ext)s");
     const bitrate = BITRATES.has(String(row.bitrate || "").toLowerCase()) ? String(row.bitrate).toLowerCase() : "192k";
     const args = [
-      "--no-warnings", "--no-playlist", "--newline", "--progress", "--no-colors",
+      "--no-warnings", "--no-playlist", "--retries", "3", "--fragment-retries", "3", "--extractor-retries", "2", "--newline", "--progress", "--no-colors",
       "--progress-template", "download:SELF_MUSIC_DOWNLOAD:%(progress._percent_str)s",
       "--progress-template", "postprocess:SELF_MUSIC_POSTPROCESS:%(progress._percent_str)s",
       "--extract-audio", "--audio-format", "mp3", "--audio-quality", bitrate.toUpperCase(),
