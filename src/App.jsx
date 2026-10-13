@@ -2007,10 +2007,10 @@ function App() {
     );
   }
 
-  const pageTitle = view === "home" ? "Listen now" : view === "library" ? "Your library" : view === "favorites" ? "Liked tracks" : view === "offline" ? "Offline downloads" : view === "playlists" ? "Playlists" : view === "youtube" ? "Explore YouTube" : view === "import" ? "Import music" : "Server settings";
+  const pageTitle = view === "home" ? "Listen now" : view === "library" ? "Your library" : view === "favorites" ? "Liked tracks" : view === "offline" ? "Offline downloads" : view === "playlists" ? "Playlists" : view === "youtube" ? "Explore YouTube" : view === "import" ? "Add music" : view === "server" ? "Server" : view === "settings" ? "Settings" : "SelfMusic";
 
   return (
-    <div className="app-shell" data-theme={appearance.theme} data-accent={appearance.accent} data-glass={appearance.glass} style={{ "--user-accent": appearance.accentColor, "--user-accent-strong": darkenAccent(appearance.accentColor) }}>
+    <div className="app-shell" data-view={view} data-theme={appearance.theme} data-accent={appearance.accent} data-glass={appearance.glass} style={{ "--user-accent": appearance.accentColor, "--user-accent-strong": darkenAccent(appearance.accentColor) }}>
       <aside className={"sidebar" + (mobileMenuOpen ? " sidebar-open" : "")}>
         <div className="brand">
           <span className="brand-mark"><AudioLines size={22} strokeWidth={2.2} /></span>
@@ -2639,13 +2639,13 @@ function App() {
             </section>
           )}
 
-          {view === "settings" && (
+          {(view === "settings" || view === "server") && (
             <section className="page-section settings-page">
               <div className="page-intro">
                 <div className="intro-icon"><SectionGlyph kind="server" size={29} /></div>
-                <p className="eyebrow">YOUR HOME INFRASTRUCTURE</p>
-                <h1>Server settings</h1>
-                <p>Keep the library private, and make it reachable when you leave home.</p>
+                <p className="eyebrow">{view === "server" ? "CONNECTION & AVAILABILITY" : "YOUR PERSONAL MUSIC SPACE"}</p>
+                <h1>{view === "server" ? "Server" : "Settings"}</h1>
+                <p>{view === "server" ? "Connection details for this device and your private home server." : "Tune your profile, appearance, playback, library, and integrations."}</p>
               </div>
 
               <div className={"settings-status-card settings-status-" + (serverUnavailable || !navigator.onLine ? "offline" : playbackSyncStatus === "connected" ? "online" : "degraded")}>
@@ -2745,7 +2745,7 @@ function App() {
                   <div className="settings-card settings-card-wide">
                     <div className="settings-card-head"><span className="settings-icon"><LockKeyhole size={19} /></span><span className="settings-overline">ADMINISTRATION</span></div>
                     <h3>Manage user accounts</h3>
-                    <p>Registration is restricted to administrators. Use unique passwords of at least 12 characters.</p>
+                    <p>Create a separate login for another household member or device. A User can listen without managing the server; an Admin can also manage files and accounts. Use a unique password of at least 12 characters and share it privately.</p>
                     <form className="account-create-form" onSubmit={createAccount}>
                       <label htmlFor="new-account-username">Username</label>
                       <input id="new-account-username" type="text" value={newAccountUsername} onChange={(event) => setNewAccountUsername(event.target.value)} minLength={3} maxLength={32} pattern="[A-Za-z0-9._-]+" autoComplete="off" required />
@@ -2768,7 +2768,7 @@ function App() {
                   </div>
                 )}
 
-                <div className="settings-card">
+                <div className="settings-card server-configuration-card">
                   <div className="settings-card-head"><span className="settings-icon"><FolderOpen size={19} /></span><span className="settings-overline">MUSIC COLLECTION</span></div>
                   <h3>Where your files live</h3>
                   <p>Put supported audio files into the folder configured by <code>MUSIC_DIR</code>. By default, that is <code>./music</code> in the project directory.</p>
@@ -2776,7 +2776,7 @@ function App() {
                   <button className="settings-action" onClick={loadTracks}><RefreshCw size={15} className={loadingTracks ? "spin" : ""} /> Scan library <span>{tracks.length} tracks</span></button>
                 </div>
 
-                <div className="settings-card">
+                <div className="settings-card server-configuration-card">
                   <div className="settings-card-head"><span className="settings-icon settings-icon-blue"><Globe2 size={19} /></span><span className="settings-overline">REMOTE ACCESS</span></div>
                   <h3>Listen outside your Wi-Fi</h3>
                   <p>Set up Tailscale on this computer and your phone. No router port forwarding and no shared auth key are needed for the normal native setup.</p>
@@ -2897,7 +2897,7 @@ function App() {
                 </div>
               </div>
 
-              <div className="settings-footer"><span><ShieldCheck size={15} /> Self-hosted means you control the machine and its uptime.</span><button className="text-button" onClick={handleLogout}>Sign out <LogOut size={14} /></button></div>
+              {view === "settings" && <div className="settings-footer"><span><ShieldCheck size={15} /> Self-hosted means you control the machine and its uptime.</span><button className="text-button" onClick={handleLogout}>Sign out <LogOut size={14} /></button></div>}
             </section>
           )}
         </div>
