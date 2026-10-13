@@ -33,7 +33,10 @@ test("offline audio uses an explicit cache route and does not cache private API 
 });
 
 test("web player provides Media Session controls and explicit offline save/removal", async () => {
-  const app = await read("src/App.jsx");
+  const [app, trackList] = await Promise.all([
+    read("src/App.jsx"),
+    read("src/components/Library/TrackList.jsx")
+  ]);
   for (const action of ["play", "pause", "previoustrack", "nexttrack", "seekto"]) {
     assert.ok(app.includes('setActionHandler("' + action + '"'), "expected Media Session handler: " + action);
   }
@@ -41,7 +44,7 @@ test("web player provides Media Session controls and explicit offline save/remov
   assert.match(app, /cache\.put\(request, response\)/);
   assert.match(app, /await cache\.delete\(request\)/);
   assert.match(app, /view === "offline"/);
-  assert.match(app, /"Save " \+ track\.title \+ " for offline playback"/);
+  assert.match(trackList, /"Save " \+ track\.title \+ " for offline playback"/);
   assert.match(app, /await window\.caches\.delete\(OFFLINE_AUDIO_CACHE\)/);
   assert.match(app, /localStorage\.removeItem\(OFFLINE_TRACKS_KEY\)/);
   assert.match(app, /setActionHandler\("seekforward"/);
