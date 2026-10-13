@@ -2482,7 +2482,14 @@ function App() {
                   {youtubeError && (
                     <div className="youtube-message">
                       <CircleAlert size={18} />
-                      <div><strong>{youtubeError}</strong><span>To enable search, add a YouTube Data API v3 key as YOUTUBE_API_KEY in the server's .env file, then restart SelfMusic.</span></div>
+                      <div>
+                        <strong>{youtubeError}</strong>
+                        <span>{youtubeError.toLowerCase().includes("youtube_api_key")
+                          ? "Open Settings → Integrations, add YOUTUBE_API_KEY to the server's private .env file, then restart SelfMusic. You can still open a direct YouTube video link here."
+                          : youtubeError.toLowerCase().includes("quota")
+                            ? "The search quota for your YouTube API key has been reached. Try again tomorrow or review quota usage in Google Cloud."
+                            : "Check the server connection and YouTube Data API v3 configuration in Settings → Integrations, then try again. Direct video links can still open in the official player."}</span>
+                      </div>
                     </div>
                   )}
                   {youtubeLoading && <div className="youtube-empty"><RefreshCw className="spin" size={23} /><strong>Looking through YouTube</strong><span>Searching embeddable videos…</span></div>}
