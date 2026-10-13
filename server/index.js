@@ -682,6 +682,7 @@ app.delete("/api/admin/users/:id", requireAuth, (req, res) => {
   db.prepare("DELETE FROM lastfm_pending_auth WHERE user_id = ?").run(id);
   db.prepare("DELETE FROM scrobble_queue WHERE user_id = ?").run(id);
   db.prepare("DELETE FROM youtube_jobs WHERE user_id = ?").run(id);
+  db.prepare("DELETE FROM playback_states WHERE user_id = ?").run(id);
   console.info("[SelfMusic] account deleted", JSON.stringify({ id }));
   res.status(204).end();
 });
