@@ -3251,7 +3251,7 @@ html, body, #root {
   position: relative;
   isolation: isolate;
   background-color: transparent !important;
-  background-image: none !important;
+  background-image: var(--user-background-direct, none) !important;
 }
 .app-shell[data-theme]::before {
   content: "";
@@ -3264,6 +3264,7 @@ html, body, #root {
   background-repeat: no-repeat;
   background-size: cover;
   filter: blur(var(--user-wallpaper-blur, 0px));
+  opacity: var(--user-wallpaper-backdrop-opacity, 1);
   transform: scale(1.015);
   transition: filter var(--user-motion-duration, 220ms) ease;
 }

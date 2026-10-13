@@ -227,6 +227,20 @@ const migrations = [
       ALTER TABLE tracks ADD COLUMN youtube_video_id TEXT;
       CREATE INDEX IF NOT EXISTS tracks_youtube_video_id_idx ON tracks(youtube_video_id);
     `
+  },
+  {
+    version: 10,
+    name: "account_preferences",
+    sql: `
+      CREATE TABLE user_preferences (
+        user_id TEXT NOT NULL,
+        preference_key TEXT NOT NULL CHECK (preference_key IN ('appearance', 'dismissed-playback')),
+        value_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (user_id, preference_key)
+      );
+      CREATE INDEX user_preferences_updated_idx ON user_preferences(updated_at);
+    `
   }
 ];
 

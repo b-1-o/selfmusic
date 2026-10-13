@@ -51,6 +51,7 @@ const FAVORITES_KEY = "selfmusic:favorites:v1";
 const LAST_TRACK_KEY = "selfmusic:last-track:v1";
 const APPEARANCE_KEY = "selfmusic:appearance:v1";
 const REMOTE_WIZARD_KEY = "selfmusic:remote-wizard-seen:v1";
+const REMOTE_PLAYBACK_DISMISSED_KEY = "selfmusic:playback-dismissed:v1";
 const OFFLINE_AUDIO_CACHE = "selfmusic-offline-audio-v1";
 const OFFLINE_TRACKS_KEY = "selfmusic:offline-tracks:v1";
 const TAILSCALE_DOWNLOAD_URL = "https://tailscale.com/download";
@@ -205,6 +206,12 @@ function offlineTrackUrl(trackId) {
   return "/__selfmusic_offline/" + encodeURIComponent(trackId);
 }
 
+function remotePlaybackDismissalKey(state) {
+  return state?.sourceDeviceId && state?.currentTrackId
+    ? JSON.stringify([String(state.sourceDeviceId), String(state.currentTrackId)])
+    : "";
+}
+
 function offlineCacheRequest(trackId) {
   return new Request(new URL(offlineTrackUrl(trackId), window.location.origin).toString(), { method: "GET" });
 }
@@ -227,7 +234,21 @@ async function readOfflineLibraryFromCache() {
 
   const stored = readLocalJson(OFFLINE_TRACKS_KEY, []);
   const byId = new Map((Array.isArray(stored) ? stored : []).filter((track) => track && typeof track.id === "string").map((track) => [track.id, track]));
-  const tracks = [...cachedIds].map((id) => byId.get(id)).filter(Boolean);
+  // CacheStorage can outlive localStorage (or its metadata can be evicted independently).
+  // Keep every cached audio ID playable even if its descriptive metadata is missing.
+  const tracks = [...cachedIds].map((id) => byId.get(id) || ({
+    id,
+    title: "Saved track " + id.slice(0, 8),
+    artist: "Saved offline",
+    album: "This device",
+    albumArtist: "",
+    year: null,
+    genre: null,
+    duration: 0,
+    streamUrl: "/api/stream/" + encodeURIComponent(id),
+    artworkUrl: "",
+    metadataFallback: true,
+  }));
   try { localStorage.setItem(OFFLINE_TRACKS_KEY, JSON.stringify(tracks)); } catch {}
   return { ids: [...cachedIds], tracks };
 }
@@ -463,6 +484,7 @@ function App() {
   const playbackSyncWriteRef = useRef(false);
   const playbackSyncLastPayloadRef = useRef("");
   const pendingResumeRef = useRef(null);
+  const dismissedPlaybackKeysRef = useRef(new Set());
   const [copied, setCopied] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const uploadInputRef = useRef(null);
@@ -499,11 +521,13 @@ function App() {
       backgroundPreset: BACKGROUND_PRESETS.some((preset) => preset.id === saved?.backgroundPreset) ? saved.backgroundPreset : "midnight",
       wallpaperDataUrl: typeof saved?.wallpaperDataUrl === "string" && saved.wallpaperDataUrl.startsWith("data:image/") ? saved.wallpaperDataUrl : "",
       wallpaperDim: Number.isFinite(saved?.wallpaperDim) ? clampNumber(saved.wallpaperDim, 5, 85) : 38,
+      wallpaperBlur: Number.isFinite(saved?.wallpaperBlur) ? clampNumber(saved.wallpaperBlur, 0, 18) : 0,
       animations: saved?.animations !== false,
       animationSpeed: ["slow", "normal", "fast"].includes(saved?.animationSpeed) ? saved.animationSpeed : "normal",
     };
   });
   const [appearanceMessage, setAppearanceMessage] = useState("");
+  const [preferencesReady, setPreferencesReady] = useState(false);
   const [systemTheme, setSystemTheme] = useState(() => {
     try { return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"; } catch { return "dark"; }
   });
@@ -566,9 +590,11 @@ function App() {
   }, [appearance.accentColor]);
 
   useEffect(() => {
-    if (!authenticated) {
-      playbackSyncReadyRef.current = false;
-      setPlaybackSyncStatus("offline");
+    if (!authenticated || offlineMode || !preferencesReady) {
+      if (!authenticated || offlineMode) {
+        playbackSyncReadyRef.current = false;
+        setPlaybackSyncStatus("offline");
+      }
       return undefined;
     }
 
@@ -589,7 +615,8 @@ function App() {
 
         if (state.sourceDeviceId && state.sourceDeviceId !== playbackDeviceId && state.currentTrackId) {
           playbackSyncPausedForRemoteRef.current = true;
-          setRemotePlaybackState(state);
+          const dismissalKey = remotePlaybackDismissalKey(state);
+          setRemotePlaybackState(dismissedPlaybackKeysRef.current.has(dismissalKey) ? null : state);
         } else if (state.sourceDeviceId === playbackDeviceId || !state.currentTrackId) {
           playbackSyncPausedForRemoteRef.current = false;
           setRemotePlaybackState(null);
@@ -602,7 +629,39 @@ function App() {
     source.onopen = () => setPlaybackSyncStatus("connected");
     source.onerror = () => setPlaybackSyncStatus("reconnecting");
     return () => source.close();
-  }, [authenticated, playbackDeviceId]);
+  }, [authenticated, playbackDeviceId, offlineMode, preferencesReady]);
+
+  useEffect(() => {
+    if (!authenticated || offlineMode || !preferencesReady) return undefined;
+    let active = true;
+    const refreshDismissedPlayback = async () => {
+      try {
+        const response = await fetch("/api/preferences/dismissed-playback", {
+          credentials: "same-origin",
+          cache: "no-store",
+        });
+        if (!response.ok) return;
+        const body = await response.json();
+        const remoteKeys = Array.isArray(body.value?.keys) ? body.value.keys.filter((key) => typeof key === "string") : [];
+        const keys = [...new Set([...dismissedPlaybackKeysRef.current, ...remoteKeys])].slice(-100);
+        dismissedPlaybackKeysRef.current = new Set(keys);
+        const storageKey = REMOTE_PLAYBACK_DISMISSED_KEY + ":" + (profile.id || "legacy");
+        try { localStorage.setItem(storageKey, JSON.stringify(keys)); } catch {}
+        setRemotePlaybackState((current) => {
+          if (current && dismissedPlaybackKeysRef.current.has(remotePlaybackDismissalKey(current))) {
+            playbackSyncPausedForRemoteRef.current = true;
+            return null;
+          }
+          return current;
+        });
+      } catch {
+        // The local dismissal cache remains effective if preference sync is temporarily unavailable.
+      }
+    };
+    refreshDismissedPlayback();
+    const timer = window.setInterval(() => { if (active) refreshDismissedPlayback(); }, 12000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [authenticated, offlineMode, preferencesReady, profile.id]);
 
   useEffect(() => {
     if (!authenticated) return undefined;
@@ -792,9 +851,79 @@ function App() {
 
   useEffect(() => {
     try { localStorage.setItem(APPEARANCE_KEY, JSON.stringify(appearance)); } catch {
-      setAppearanceMessage("This browser has reached its local storage limit. Choose a smaller wallpaper image.");
+      setAppearanceMessage("Appearance is available on this device, but browser storage is full.");
     }
   }, [appearance]);
+
+  useEffect(() => {
+    if (!authenticated || offlineMode) {
+      setPreferencesReady(false);
+      return undefined;
+    }
+    let active = true;
+    setPreferencesReady(false);
+    const loadPreferences = async () => {
+      try {
+        const response = await fetch("/api/preferences", {
+          credentials: "same-origin",
+          cache: "no-store",
+        });
+        if (response.status === 401) {
+          if (active) setAuthenticated(false);
+          return;
+        }
+        if (!response.ok) throw new Error("Account preferences are unavailable.");
+        const body = await response.json();
+        const savedAppearance = body.preferences?.appearance;
+        if (savedAppearance && typeof savedAppearance === "object" && !Array.isArray(savedAppearance)) {
+          setAppearance((current) => ({ ...current, ...savedAppearance }));
+        }
+
+        const storageKey = REMOTE_PLAYBACK_DISMISSED_KEY + ":" + (profile.id || "legacy");
+        const localKeysValue = readLocalJson(storageKey, []);
+        const localKeys = Array.isArray(localKeysValue) ? localKeysValue.filter((key) => typeof key === "string") : [];
+        const remoteKeys = body.preferences?.["dismissed-playback"]?.keys;
+        const validRemoteKeys = Array.isArray(remoteKeys) ? remoteKeys.filter((key) => typeof key === "string") : [];
+        const keys = [...new Set([...localKeys, ...validRemoteKeys])].slice(-100);
+        dismissedPlaybackKeysRef.current = new Set(keys);
+        try { localStorage.setItem(storageKey, JSON.stringify(keys)); } catch {}
+        if (keys.length && (keys.length !== validRemoteKeys.length || keys.some((key) => !validRemoteKeys.includes(key)))) {
+          fetch("/api/preferences/dismissed-playback", {
+            method: "PUT",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ value: { keys } }),
+          }).catch(() => {});
+        }
+      } catch {
+        const storageKey = REMOTE_PLAYBACK_DISMISSED_KEY + ":" + (profile.id || "legacy");
+        const localKeysValue = readLocalJson(storageKey, []);
+        dismissedPlaybackKeysRef.current = new Set(Array.isArray(localKeysValue) ? localKeysValue.filter((key) => typeof key === "string") : []);
+      } finally {
+        if (active) setPreferencesReady(true);
+      }
+    };
+    loadPreferences();
+    return () => { active = false; };
+  }, [authenticated, offlineMode, profile.id]);
+
+  useEffect(() => {
+    if (!authenticated || offlineMode || !preferencesReady) return undefined;
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await fetch("/api/preferences/appearance", {
+          method: "PUT",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ value: appearance }),
+        });
+        if (!response.ok) throw new Error("Could not sync appearance.");
+      } catch {
+        setAppearanceMessage("Appearance is saved on this device; account sync is unavailable.");
+      }
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [appearance, authenticated, offlineMode, preferencesReady]);
 
   useEffect(() => {
     const media = window.matchMedia?.("(prefers-color-scheme: light)");
@@ -1514,10 +1643,25 @@ function App() {
   }, [remotePlaybackState, tracks, playTrack]);
 
   const dismissRemotePlayback = useCallback(() => {
-    playbackSyncPausedForRemoteRef.current = false;
-    playbackSyncLastPayloadRef.current = "";
+    const dismissalKey = remotePlaybackDismissalKey(remotePlaybackState);
+    if (dismissalKey) {
+      const keys = [...new Set([...dismissedPlaybackKeysRef.current, dismissalKey])].slice(-100);
+      dismissedPlaybackKeysRef.current = new Set(keys);
+      const storageKey = REMOTE_PLAYBACK_DISMISSED_KEY + ":" + (profile.id || "legacy");
+      try { localStorage.setItem(storageKey, JSON.stringify(keys)); } catch {}
+      fetch("/api/preferences/dismissed-playback", {
+        method: "PUT",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: { keys } }),
+      }).catch(() => {});
+      // Stay paused for the dismissed remote track; otherwise each SSE update reopens the prompt.
+      playbackSyncPausedForRemoteRef.current = true;
+    } else {
+      playbackSyncPausedForRemoteRef.current = false;
+    }
     setRemotePlaybackState(null);
-  }, []);
+  }, [remotePlaybackState, profile.id]);
 
   const togglePlayback = useCallback(() => {
     const audio = audioRef.current;
@@ -1988,7 +2132,7 @@ function App() {
   const pageTitle = view === "home" ? "Listen now" : view === "library" ? "Your library" : view === "favorites" ? "Liked tracks" : view === "offline" ? "Offline downloads" : view === "playlists" ? "Playlists" : view === "youtube" ? "Explore YouTube" : view === "import" || view === "import-url" ? "Import" : view === "server" ? "Server" : view === "settings" ? "Settings" : "SelfMusic";
 
   return (
-    <div className="app-shell" data-view={view} data-settings-section={settingsSection} data-nav-position={appearance.navPosition} data-theme={resolvedTheme} data-accent={appearance.accent} data-glass={appearance.glass} data-animations={appearance.animations ? "on" : "off"} data-density={appearance.density} style={{ "--user-accent": appearance.accentColor, "--user-accent-strong": darkenAccent(appearance.accentColor), "--user-glass-opacity": appearance.glassOpacity + "%", "--user-glass-blur": appearance.glassBlur + "px", "--user-radius": appearance.cornerRadius + "px", "--user-background-image": backgroundImage, "--user-wallpaper-blur": appearance.wallpaperBlur + "px", "--user-motion-duration": motionDuration }}>
+    <div className="app-shell" data-view={view} data-settings-section={settingsSection} data-nav-position={appearance.navPosition} data-theme={resolvedTheme} data-accent={appearance.accent} data-glass={appearance.glass} data-animations={appearance.animations ? "on" : "off"} data-density={appearance.density} style={{ "--user-accent": appearance.accentColor, "--user-accent-strong": darkenAccent(appearance.accentColor), "--user-glass-opacity": appearance.glassOpacity + "%", "--user-glass-blur": appearance.glassBlur + "px", "--user-radius": appearance.cornerRadius + "px", "--user-background-image": backgroundImage, "--user-background-direct": appearance.wallpaperBlur === 0 ? backgroundImage : "none", "--user-wallpaper-backdrop-opacity": appearance.wallpaperBlur === 0 ? "0" : "1", "--user-wallpaper-blur": appearance.wallpaperBlur + "px", "--user-motion-duration": motionDuration }}>
       <aside className={"sidebar" + (mobileMenuOpen ? " sidebar-open" : "")}>
         <div className="brand">
           <span className="brand-mark"><AudioLines size={22} strokeWidth={2.2} /></span>
@@ -2931,7 +3075,7 @@ function App() {
                         reader.onload = () => {
                           if (typeof reader.result === "string") {
                             setAppearance((value) => ({ ...value, wallpaperDataUrl: reader.result }));
-                            setAppearanceMessage("Wallpaper saved in this browser.");
+                            setAppearanceMessage("Wallpaper selected; syncing to your account…");
                           }
                         };
                         reader.onerror = () => setAppearanceMessage("Could not read this image. Try another file.");

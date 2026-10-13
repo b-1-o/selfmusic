@@ -22,6 +22,7 @@ import { flushQueue as flushLastFmQueue, mountLastFmRoutes } from "./lastfm.js";
 import { createYoutubeJob, mountYoutubeJobRoutes } from "./youtube-jobs.js";
 import { mountYoutubeSearchRoutes, isApiEnabled, purgeExpiredSearchCache } from "./youtube-routes.js";
 import { mountPlaybackSyncRoutes } from "./playback-sync.js";
+import { mountUserPreferenceRoutes } from "./preferences.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 dotenv.config({ path: path.join(projectRoot, ".env") });
@@ -526,6 +527,7 @@ async function findTracks(query = {}, options = {}) {
 }
 mountCollectionRoutes(app, { db, requireAuth, findTracks });
 mountPlaybackSyncRoutes(app, { db, requireAuth });
+mountUserPreferenceRoutes(app, { db, requireAuth });
 mountSubsonicRoutes(app, { db, musicRoot, requireFindTracks: findTracks, resolveTrackFile });
 mountLastFmRoutes(app, { db, requireAuth });
 mountYoutubeJobRoutes(app, { db, requireAuth, requireAdmin, projectRoot, musicRoot, coverCacheDir, workDir: path.join(projectRoot, "data") });
@@ -701,6 +703,7 @@ app.delete("/api/admin/users/:id", requireAuth, (req, res) => {
   db.prepare("DELETE FROM scrobble_queue WHERE user_id = ?").run(id);
   db.prepare("DELETE FROM youtube_jobs WHERE user_id = ?").run(id);
   db.prepare("DELETE FROM playback_states WHERE user_id = ?").run(id);
+  db.prepare("DELETE FROM user_preferences WHERE user_id = ?").run(id);
   console.info("[SelfMusic] account deleted", JSON.stringify({ id }));
   res.status(204).end();
 });
