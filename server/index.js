@@ -655,6 +655,13 @@ app.patch("/api/admin/users/:id", requireAuth, (req, res) => {
   const role = req.body?.role;
   if (!["admin", "user"].includes(role)) return res.status(400).json({ error: "invalid_role" });
   if (id === req.authUser.id && role !== "admin") return res.status(400).json({ error: "cannot_demote_self", message: "You cannot remove your own administrator role." });
+  if (role !== "admin") {
+    const target = db.prepare("SELECT role FROM users WHERE id = ?").get(id);
+    const adminCount = Number(db.prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'admin'").get().count);
+    if (target?.role === "admin" && adminCount <= 1) {
+      return res.status(409).json({ error: "last_admin_required", message: "At least one managed administrator account must remain." });
+    }
+  }
   const result = db.prepare("UPDATE users SET role = ? WHERE id = ?").run(role, id);
   if (!result.changes) return res.status(404).json({ error: "user_not_found" });
   res.json({ updated: true, id, role });
