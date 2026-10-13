@@ -1,9 +1,13 @@
 import React from "react";
-import { BookOpen, Heart, Home, ListMusic, Palette, Plus, Server } from "lucide-react";
+import { BookOpen, Home, Palette, Plus, Server } from "lucide-react";
 
 const LIBRARY_VIEWS = ["library", "favorites", "playlists"];
-const ADD_VIEWS = ["import", "offline", "youtube"];
+const IMPORT_VIEWS = ["import", "import-url", "youtube", "offline"];
 
+/**
+ * Mobile bottom bar: exactly 5 items (Home, Library, Import, Server, Settings).
+ * Desktop side nav: Home, Library, Import.
+ */
 export default function Navigation({
   variant = "desktop",
   view,
@@ -12,23 +16,27 @@ export default function Navigation({
   offlineMode = false,
   trackCount = 0,
 }) {
-  const openAdd = role === "admin" && !offlineMode ? "import" : "youtube";
-  const items = variant === "mobile"
-    ? [
-        { id: "home", label: "Home", icon: Home, active: view === "home" },
-        { id: "library", label: "Library", icon: BookOpen, active: LIBRARY_VIEWS.includes(view) },
-        { id: "add", label: "Add", icon: Plus, active: ADD_VIEWS.includes(view), target: openAdd },
-        { id: "server", label: "Server", icon: Server, active: view === "server" },
-        { id: "settings", label: "Settings", icon: Palette, active: view === "settings" },
-      ]
-    : [
-        { id: "home", label: "Home", icon: Home, active: view === "home" },
-        { id: "library", label: "Library", icon: BookOpen, active: LIBRARY_VIEWS.includes(view), count: trackCount },
-        { id: "add", label: "Add / Import", icon: Plus, active: ADD_VIEWS.includes(view), target: openAdd },
-      ];
+  const openImport = "import";
+  const items =
+    variant === "mobile"
+      ? [
+          { id: "home", label: "Home", icon: Home, active: view === "home" },
+          { id: "library", label: "Library", icon: BookOpen, active: LIBRARY_VIEWS.includes(view) },
+          { id: "import", label: "Import", icon: Plus, active: IMPORT_VIEWS.includes(view), target: openImport },
+          { id: "server", label: "Server", icon: Server, active: view === "server" },
+          { id: "settings", label: "Settings", icon: Palette, active: view === "settings" },
+        ]
+      : [
+          { id: "home", label: "Home", icon: Home, active: view === "home" },
+          { id: "library", label: "Library", icon: BookOpen, active: LIBRARY_VIEWS.includes(view), count: trackCount },
+          { id: "import", label: "Import", icon: Plus, active: IMPORT_VIEWS.includes(view), target: openImport },
+        ];
 
   return (
-    <nav className={variant === "mobile" ? "mobile-bottom-nav" : "side-nav"} aria-label={variant === "mobile" ? "Mobile navigation" : "Main navigation"}>
+    <nav
+      className={variant === "mobile" ? "mobile-bottom-nav" : "side-nav"}
+      aria-label={variant === "mobile" ? "Mobile navigation" : "Main navigation"}
+    >
       {items.map((item) => {
         const Icon = item.icon;
         return (
