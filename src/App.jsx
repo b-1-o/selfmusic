@@ -201,8 +201,11 @@ async function readOfflineLibraryFromCache() {
   for (const request of requests) {
     try {
       const pathname = new URL(request.url).pathname;
-      const match = /^\\/__selfmusic_offline\\/([^/]+)$/.exec(pathname);
-      if (match) cachedIds.add(decodeURIComponent(match[1]));
+      const prefix = "/__selfmusic_offline/";
+      if (pathname.startsWith(prefix)) {
+        const encodedId = pathname.slice(prefix.length);
+        if (encodedId && !encodedId.includes("/")) cachedIds.add(decodeURIComponent(encodedId));
+      }
     } catch {}
   }
 
