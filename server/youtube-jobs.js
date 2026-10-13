@@ -89,6 +89,7 @@ function publicJob(row) {
   return {
     id: row.id,
     status: row.status,
+    phase: row.phase || row.status,
     progress: Number(row.progress) || 0,
     url: row.url,
     title: row.title || null,
@@ -106,10 +107,11 @@ function safelyParseJson(value) {
 }
 
 function updateJob(db, id, fields) {
-  const current = db.prepare("SELECT status, progress, title, track_id, error_code, error_message, result_json FROM youtube_jobs WHERE id = ?").get(id);
+  const current = db.prepare("SELECT status, phase, progress, title, track_id, error_code, error_message, result_json FROM youtube_jobs WHERE id = ?").get(id);
   if (!current) return;
   const next = {
     status: fields.status ?? current.status,
+    phase: fields.phase ?? current.phase ?? current.status,
     progress: fields.progress ?? current.progress,
     title: fields.title ?? current.title,
     trackId: fields.trackId === undefined ? current.track_id : fields.trackId,
@@ -118,10 +120,10 @@ function updateJob(db, id, fields) {
     resultJson: fields.result === undefined ? current.result_json : JSON.stringify(fields.result)
   };
   db.prepare(`
-    UPDATE youtube_jobs SET status = ?, progress = ?, title = ?, track_id = ?,
+    UPDATE youtube_jobs SET status = ?, phase = ?, progress = ?, title = ?, track_id = ?,
       error_code = ?, error_message = ?, result_json = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
-  `).run(next.status, next.progress, next.title, next.trackId, next.errorCode, next.errorMessage, next.resultJson, id);
+  `).run(next.status, next.phase, next.progress, next.title, next.trackId, next.errorCode, next.errorMessage, next.resultJson, id);
 }
 
 function runProcess(binary, args, { timeoutMs, maxOutputBytes = 8 * 1024 * 1024, onProgress } = {}) {
@@ -148,13 +150,17 @@ function runProcess(binary, args, { timeoutMs, maxOutputBytes = 8 * 1024 * 1024,
       const text = chunk.toString("utf8");
       if (streamName === "stdout") stdout = (stdout + text).slice(-maxOutputBytes);
       else stderr = (stderr + text).slice(-maxOutputBytes);
+      if (typeof onProgress !== "function") return;
       const progressText = stdout + "\n" + stderr;
-      for (const match of progressText.matchAll(/(?:\[download\]\s*)?(\d{1,3}(?:\.\d+)?)\s*%/g)) {
-        const value = Math.min(99, Math.max(0, Number(match[1])));
-        if (Number.isFinite(value) && value > lastProgress) {
+      for (const match of progressText.matchAll(/SELF_MUSIC_(DOWNLOAD|POSTPROCESS):\s*(\d{1,3}(?:\.\d+)?)\s*%/g)) {
+        const phase = match[1] === "POSTPROCESS" ? "conversion" : "download";
+        const value = Math.min(100, Math.max(0, Number(match[2])));
+        if (!Number.isFinite(value)) continue;
+        if (phase === "download") {
+          if (value < lastProgress) continue;
           lastProgress = value;
-          onProgress?.(value);
         }
+        onProgress(value, phase);
       }
     };
     child.stdout.on("data", (chunk) => consume(chunk, "stdout"));
@@ -222,7 +228,7 @@ async function runOneJob(db, config, row) {
   const jobTemp = path.join(config.workDir, "youtube", jobId);
   await fs.mkdir(jobTemp, { recursive: true });
   const url = normalizeVideoUrl({ url: row.url });
-  updateJob(db, jobId, { status: "running", progress: 1, errorCode: null, errorMessage: null });
+  updateJob(db, jobId, { status: "running", phase: "metadata", progress: 1, errorCode: null, errorMessage: null });
 
   let outputPath = null;
   try {
@@ -248,7 +254,7 @@ async function runOneJob(db, config, row) {
       genre: inputMetadata.genre || (Array.isArray(info.categories) ? info.categories[0] : "")
     });
     const title = effectiveMetadata?.title || String(info.title || "YouTube audio");
-    updateJob(db, jobId, { progress: 2, title });
+    updateJob(db, jobId, { phase: "download", progress: 2, title });
 
     const stem = sanitizeName(title);
     let suffix = 1;
@@ -262,6 +268,8 @@ async function runOneJob(db, config, row) {
     const bitrate = BITRATES.has(String(row.bitrate || "").toLowerCase()) ? String(row.bitrate).toLowerCase() : "192k";
     const args = [
       "--no-warnings", "--no-playlist", "--newline", "--progress", "--no-colors",
+      "--progress-template", "download:SELF_MUSIC_DOWNLOAD:%(progress._percent_str)s",
+      "--progress-template", "postprocess:SELF_MUSIC_POSTPROCESS:%(progress._percent_str)s",
       "--extract-audio", "--audio-format", "mp3", "--audio-quality", bitrate.toUpperCase(),
       "--embed-metadata", "--embed-thumbnail", "--write-thumbnail", "--convert-thumbnails", "jpg",
       "-o", outputTemplate
@@ -271,7 +279,10 @@ async function runOneJob(db, config, row) {
     const result = await runProcess(ytdlp, args, {
       timeoutMs: 20 * 60 * 1000,
       maxOutputBytes: 200000,
-      onProgress: (value) => updateJob(db, jobId, { progress: Math.min(95, 2 + value * 0.9) })
+      onProgress: (value, phase) => {
+        const progress = phase === "conversion" ? 90 + value * 0.03 : Math.min(89, 2 + value * 0.87);
+        updateJob(db, jobId, { phase, progress: Math.min(93, Math.max(2, progress)) });
+      }
     });
     void result;
 
@@ -281,8 +292,10 @@ async function runOneJob(db, config, row) {
       error.code = "YOUTUBE_EMPTY_OUTPUT";
       throw error;
     }
+    updateJob(db, jobId, { phase: "conversion", progress: 92 });
     await runFfmpegMetadata(outputPath, effectiveMetadata, jobTemp);
     const finalStats = await fs.stat(outputPath);
+    updateJob(db, jobId, { phase: "indexing", progress: 97 });
     const outputSha256 = await hashFile(outputPath);
     const strategy = getDuplicateStrategy();
     const duplicateMatches = db.prepare("SELECT id, title, artist, album, relative_path AS path, size_bytes AS bytes FROM tracks WHERE sha256 = ? LIMIT 10").all(outputSha256);
@@ -296,7 +309,7 @@ async function runOneJob(db, config, row) {
         title: existing.title,
         destination: "existing library track"
       };
-      updateJob(db, jobId, { status: "completed", progress: 100, title: existing.title, trackId: existing.id, result: resultPayload });
+      updateJob(db, jobId, { status: "completed", phase: "completed", progress: 100, title: existing.title, trackId: existing.id, result: resultPayload });
       console.info("[SelfMusic] YouTube duplicate skipped", JSON.stringify({ jobId, trackId: existing.id }));
       return;
     }
@@ -321,13 +334,13 @@ async function runOneJob(db, config, row) {
       duplicateStrategy: strategy,
       duplicateMatches: duplicateMatches.length && strategy === "ask" ? duplicateMatches : undefined
     };
-    updateJob(db, jobId, { status: "completed", progress: 100, title, trackId: track?.id || trackId, result: resultPayload });
+    updateJob(db, jobId, { status: "completed", phase: "completed", progress: 100, title, trackId: track?.id || trackId, result: resultPayload });
     console.info("[SelfMusic] YouTube job completed", JSON.stringify({ jobId, trackId: track?.id || trackId, bytes: finalStats.size }));
   } catch (error) {
     if (outputPath) await fs.unlink(outputPath).catch(() => {});
     const code = String(error.code || "YOUTUBE_DOWNLOAD_FAILED");
     const message = String(error.message || "The YouTube download failed.").slice(0, 800);
-    updateJob(db, jobId, { status: "failed", progress: 0, errorCode: code, errorMessage: message });
+    updateJob(db, jobId, { status: "failed", phase: "failed", progress: 0, errorCode: code, errorMessage: message });
     console.warn("[SelfMusic] YouTube job failed", JSON.stringify({ jobId, code, message }));
   } finally {
     await fs.rm(jobTemp, { recursive: true, force: true }).catch(() => {});
