@@ -451,7 +451,7 @@ function App() {
   const [deletingTrackId, setDeletingTrackId] = useState("");
   const [trackActionMessage, setTrackActionMessage] = useState("");
   const [trackActionError, setTrackActionError] = useState(false);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(() => { try { return localStorage.getItem("selfmusic:library-search:v1") || ""; } catch { return ""; } });
   const searchInputRef = useRef(null);
   const [youtubeQuery, setYoutubeQuery] = useState("");
   const [youtubeUrl, setYoutubeUrl] = useState("");
@@ -876,6 +876,10 @@ function App() {
   useEffect(() => {
     try { localStorage.setItem("selfmusic:library-filters:v1", JSON.stringify(libraryFilters)); } catch { /* Filters remain usable if storage is disabled. */ }
   }, [libraryFilters]);
+
+  useEffect(() => {
+    try { localStorage.setItem("selfmusic:library-search:v1", query); } catch { /* Search remains usable if storage is disabled. */ }
+  }, [query]);
 
   useEffect(() => {
     const container = contentWrapRef.current;
@@ -2994,7 +2998,7 @@ function App() {
                   <div className="settings-card-head"><span className="settings-icon"><LockKeyhole size={19} /></span><span className="settings-overline">SECURITY CHECKLIST</span></div>
                   <h3>Before you use it remotely</h3>
                   <div className="security-checklist">
-                    <div><Check size={16} /><span>Set a unique password with at least 8 characters.</span></div>
+                    <div><Check size={16} /><span>Use unique passwords of at least 12 characters for managed accounts.</span></div>
                     <div><Check size={16} /><span>Set <code>SESSION_SECRET</code> in your local <code>.env</code> file.</span></div>
                     <div><Check size={16} /><span>Use HTTPS with a private access policy and never commit <code>.env</code>.</span></div>
                     <div><Check size={16} /><span>Keep the operating system and Node.js updated.</span></div>
