@@ -17,7 +17,7 @@ from any device on your network or through a tunnel you control.
 * Optional YouTube search using the official YouTube Data API v3.
 * Legacy password login plus admin-managed user accounts and HMAC-signed session cookies.
 * One-command native setup, with optional Docker deployment and private remote access through Tailscale.
-* Installable PWA shell, lock-screen/media controls where supported, and explicit per-device offline audio downloads.
+* Installable PWA shell, lock-screen/media controls where supported, explicit per-device offline audio downloads, and server-synced playback queue/position with a "Continue here" prompt.
 
 ## Quick start
 
@@ -345,6 +345,21 @@ Keep the `tailscale-state` volume: it stores the container node's identity. Do n
 * The server binds to `0.0.0.0`, so put it behind a reverse proxy with TLS
   if you expose it beyond your local network.
 
+## Device verification status
+
+**Status as of 2026-10-12: physical-device and external-service checks are still pending.** The development environment cannot honestly record iOS/Android, Bluetooth, third-party Subsonic client or credential-backed YouTube/Last.fm results. No device/browser version is marked verified until the test is actually run.
+
+| Target | Version to record | Required checks | Result |
+|---|---|---|---|
+| Desktop browser / installed PWA | Browser + OS version | Login, queue/position save, SSE reconnect | Pending |
+| iOS Safari / installed PWA | iOS + Safari version | Background, lock screen, Bluetooth, offline/reconnect | Pending |
+| Android Chrome / installed PWA | Android + Chrome version | Background, lock screen, Bluetooth, offline/reconnect | Pending |
+| Second device using the same account | Both device/OS/browser versions | "Continue here", queue order, resume position, stale-write conflict | Pending |
+| Subsonic client | Client name + version | Auth, stream/seek, search3, getPlaylists, scrobble | Pending |
+| YouTube / Last.fm | Test date + service flow | Search/download/restart; OAuth/now-playing/scrobble/retry | Pending |
+
+For the release checklist and prioritized known limitations, see [docs/ROADMAP.md](docs/ROADMAP.md). Do not remove the draft status from PR #12 until the required manual tests have real outcomes recorded.
+
 ## Current limitations
 
 * Metadata extraction uses Python Mutagen. Without Python/Mutagen in a native setup, the scanner falls back to names and folders, so embedded tags and covers may not be available.
@@ -354,7 +369,7 @@ Keep the `tailscale-state` volume: it stores the container node's identity. Do n
 * The YouTube conversion queue is deliberately small (three queued/running jobs). Progress is phase-aware and parses yt-dlp progress-template markers, but the percentage remains approximate during extraction, conversion and metadata tagging. Some videos are unavailable due to regional, account, or rights-holder restrictions.
 * The Subsonic-compatible API implements a documented minimal method set; client-specific extensions and advanced behaviors may vary.
 * Offline audio is cached per browser/device only after the user explicitly saves each track. Browser storage can be evicted; offline copies are not server backups and are not synced to another device.
-* The playback queue and listening position are not yet synchronized across devices. Media Session and background playback need manual verification on each target mobile browser/OS.
+* Cross-device playback queue and position now sync through an authenticated per-user snapshot with revision conflict handling; this still needs a real two-device smoke test before release. Media Session and background playback need manual verification on each target mobile browser/OS.
 * Upload supports up to 20 audio files per batch and 250 MB per file. Direct URL import accepts one HTTPS audio asset per request, up to 250 MB.
 * Native YouTube-to-MP3 imports require `yt-dlp` and `ffmpeg` on `PATH` (or `YT_DLP_PATH` for the downloader). The Docker image includes these tools.
 * Docker builds need disk space for Node.js, FFmpeg, Python, yt-dlp, and the build cache.
