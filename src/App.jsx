@@ -2175,19 +2175,20 @@ function App() {
               <div className="library-toolbar">
                 <button className="primary-button" onClick={() => filteredTracks.length && playTrack(filteredTracks[0])} disabled={!filteredTracks.length}><Play size={16} fill="currentColor" /> Play all</button>
                 <button className="ghost-button" onClick={loadTracks}><RefreshCw size={15} className={loadingTracks ? "spin" : ""} /> Refresh</button>
+                {view === "library" && <FilterButton filters={libraryFilters} open={libraryFiltersOpen} onToggle={() => setLibraryFiltersOpen((open) => !open)} />}
                 {view === "library" && profile.role === "admin" && !offlineMode && <button className="ghost-button" type="button" disabled={scanningLibrary} onClick={scanLibraryNow}><RefreshCw size={15} className={scanningLibrary ? "spin" : ""} /> {scanningLibrary ? "Scanning library…" : "Rescan library"}</button>}
               </div>
               {view === "library" && !offlineMode && libraryScanMessage && <div className="upload-feedback" role="status"><span className="upload-feedback-icon"><Check size={17} /></span><span>{libraryScanMessage}</span></div>}
               {view === "library" && (
-                <div className="library-filter-row" aria-label="Library filters">
-                  <label>Artist<select value={libraryFilters.artist} onChange={(event) => setLibraryFilters((value) => ({ ...value, artist: event.target.value }))}><option value="">All artists</option>{Array.from(new Set(tracks.map((track) => track.artist).filter(Boolean))).sort().map((artist) => <option key={artist} value={artist}>{artist}</option>)}</select></label>
-                  <label>Album<select value={libraryFilters.album} onChange={(event) => setLibraryFilters((value) => ({ ...value, album: event.target.value }))}><option value="">All albums</option>{Array.from(new Set(tracks.filter((track) => !libraryFilters.artist || track.artist === libraryFilters.artist).map((track) => track.album).filter(Boolean))).sort().map((album) => <option key={album} value={album}>{album}</option>)}</select></label>
-                  <label>Year<select value={libraryFilters.year} onChange={(event) => setLibraryFilters((value) => ({ ...value, year: event.target.value }))}><option value="">All years</option>{Array.from(new Set(tracks.map((track) => track.year).filter(Boolean))).sort((a, b) => Number(b) - Number(a)).map((year) => <option key={year} value={year}>{year}</option>)}</select></label>
-                  <label>Genre<select value={libraryFilters.genre} onChange={(event) => setLibraryFilters((value) => ({ ...value, genre: event.target.value }))}><option value="">All genres</option>{Array.from(new Set(tracks.map((track) => track.genre).filter(Boolean))).sort().map((genre) => <option key={genre} value={genre}>{genre}</option>)}</select></label>
-                  <label>Length<select value={libraryFilters.duration} onChange={(event) => setLibraryFilters((value) => ({ ...value, duration: event.target.value }))}><option value="all">Any length</option><option value="short">Under 3 min</option><option value="medium">3–5 min</option><option value="long">Over 5 min</option></select></label>
-                  <label>Sort<select value={libraryFilters.sort} onChange={(event) => setLibraryFilters((value) => ({ ...value, sort: event.target.value }))}><option value="artist">Artist</option><option value="title">Title</option><option value="album">Album</option><option value="year">Year</option><option value="duration">Duration</option><option value="recent">Recently added</option></select></label>
-                  <button className="text-button" type="button" onClick={() => setLibraryFilters({ artist: "", album: "", year: "", genre: "", duration: "all", sort: "artist" })}>Reset filters</button>
-                </div>
+                <FilterPanel
+                  tracks={tracks}
+                  filters={libraryFilters}
+                  setFilters={setLibraryFilters}
+                  open={libraryFiltersOpen}
+                  onClose={() => setLibraryFiltersOpen(false)}
+                  query={query}
+                  setQuery={setQuery}
+                />
               )}
               <TrackList
                 tracks={filteredTracks}
