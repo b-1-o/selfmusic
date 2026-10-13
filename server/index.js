@@ -20,6 +20,7 @@ import { encryptSecret } from "./secret.js";
 import { mountSubsonicRoutes } from "./subsonic.js";
 import { flushQueue as flushLastFmQueue, mountLastFmRoutes } from "./lastfm.js";
 import { createYoutubeJob, mountYoutubeJobRoutes } from "./youtube-jobs.js";
+import { mountPlaybackSyncRoutes } from "./playback-sync.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 dotenv.config({ path: path.join(projectRoot, ".env") });
@@ -524,6 +525,7 @@ async function findTracks(query = {}, options = {}) {
   return readTracks(db, query);
 }
 mountCollectionRoutes(app, { db, requireAuth, findTracks });
+mountPlaybackSyncRoutes(app, { db, requireAuth });
 mountSubsonicRoutes(app, { db, musicRoot, requireFindTracks: findTracks, resolveTrackFile });
 mountLastFmRoutes(app, { db, requireAuth });
 mountYoutubeJobRoutes(app, { db, requireAuth, requireAdmin, projectRoot, musicRoot, coverCacheDir, workDir: path.join(projectRoot, "data") });
