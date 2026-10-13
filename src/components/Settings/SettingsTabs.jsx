@@ -1,5 +1,5 @@
 import React from "react";
-import { AudioLines, Download, FolderOpen, Palette, Plug, Shield, UserRound } from "lucide-react";
+import { AudioLines, Download, FolderOpen, Info, Palette, Plug, Shield, UserRound } from "lucide-react";
 
 const SECTIONS = [
   { id: "profile", label: "Profile", icon: UserRound },
@@ -9,6 +9,7 @@ const SECTIONS = [
   { id: "integrations", label: "Integrations", icon: Plug },
   { id: "offline", label: "Offline", icon: Download },
   { id: "advanced", label: "Advanced", icon: Shield },
+  { id: "about", label: "About", icon: Info },
 ];
 
 export default function SettingsTabs({ active, onChange }) {
