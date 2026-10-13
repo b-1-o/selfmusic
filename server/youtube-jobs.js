@@ -132,7 +132,7 @@ function runProcess(binary, args, { timeoutMs, maxOutputBytes = 8 * 1024 * 1024,
     let stdout = "";
     let stderr = "";
     let settled = false;
-    let lastProgress = -1;
+    const lastProgress = { download: -1, conversion: -1 };
     const finish = (error, result) => {
       if (settled) return;
       settled = true;
@@ -156,10 +156,8 @@ function runProcess(binary, args, { timeoutMs, maxOutputBytes = 8 * 1024 * 1024,
         const phase = match[1] === "POSTPROCESS" ? "conversion" : "download";
         const value = Math.min(100, Math.max(0, Number(match[2])));
         if (!Number.isFinite(value)) continue;
-        if (phase === "download") {
-          if (value < lastProgress) continue;
-          lastProgress = value;
-        }
+        if (value <= lastProgress[phase]) continue;
+        lastProgress[phase] = value;
         onProgress(value, phase);
       }
     };
