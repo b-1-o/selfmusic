@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { closeDatabase, createDatabase } from "../server/database.js";
 import { createYoutubeJob, getDuplicateStrategy } from "../server/youtube-jobs.js";
+import fs from "node:fs/promises";
 
 test("creates durable YouTube jobs and sanitizes metadata overrides", () => {
   const db = createDatabase(":memory:");
@@ -74,3 +75,10 @@ test("uses a safe default for configurable duplicate strategy", () => {
   }
 });
 
+test("YouTube job progress uses explicit download/postprocess templates and phase state", async () => {
+  const source = await fs.readFile(new URL("../server/youtube-jobs.js", import.meta.url), "utf8");
+  assert.ok(source.includes('"download:SELF_MUSIC_DOWNLOAD:%(progress._percent_str)s"'));
+  assert.ok(source.includes('"postprocess:SELF_MUSIC_POSTPROCESS:%(progress._percent_str)s"'));
+  assert.ok(source.includes('phase: "indexing"'));
+  assert.ok(source.includes('phase: "conversion"'));
+});
