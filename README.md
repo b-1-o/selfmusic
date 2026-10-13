@@ -363,7 +363,7 @@ For release readiness and prioritized known limitations, see [docs/ROADMAP.md](d
 
 ## Inviting a guest safely
 
-1. Sign in as the SelfMusic administrator and open **Settings → Accounts**.
+1. Sign in as the SelfMusic administrator and open **Settings → Profile → Manage user accounts**.
 2. Create a unique username and a strong temporary password (at least 12 characters), choose **User — stream only**, and share the credentials privately. Never choose Admin for a guest.
 3. Give the guest private network access through your Tailscale setup (or another HTTPS/private tunnel you control), then share that private SelfMusic address. The guest must also sign in to SelfMusic.
 4. Do not forward port 8787 directly to the public internet. Remove the guest's network/account access when it is no longer needed.
