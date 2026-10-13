@@ -85,18 +85,18 @@ jobs:
             "$base_url/api/auth/login" >/tmp/selfmusic-login.json
           grep -q '"authenticated":true' /tmp/selfmusic-login.json
 
-          guest_password="guest-smoke-password-12"
+          # This credential exists only inside the disposable CI container.
           curl --fail --silent --show-error \
             --cookie /tmp/selfmusic-cookies.txt \
             --header 'Content-Type: application/json' \
-            --data "{\\"username\\":\\"ci-guest\\",\\"password\\":\\"$guest_password\\",\\"role\\":\\"user\\"}" \
+            --data '{"username":"ci-guest","password":"guest-smoke-password-12","role":"user"}' \
             "$base_url/api/auth/register" >/tmp/selfmusic-guest-create.json
           grep -q '"role":"user"' /tmp/selfmusic-guest-create.json
 
           curl --fail --silent --show-error \
             --cookie-jar /tmp/selfmusic-guest-cookies.txt \
             --header 'Content-Type: application/json' \
-            --data "{\\"username\\":\\"ci-guest\\",\\"password\\":\\"$guest_password\\"}" \
+            --data '{"username":"ci-guest","password":"guest-smoke-password-12"}' \
             "$base_url/api/auth/login" >/tmp/selfmusic-guest-login.json
           grep -q '"authenticated":true' /tmp/selfmusic-guest-login.json
           grep -q '"role":"user"' /tmp/selfmusic-guest-login.json
@@ -107,7 +107,7 @@ jobs:
           guest_register_status="$(curl --silent --show-error --output /tmp/selfmusic-guest-register.json --write-out '%{http_code}' \
             --cookie /tmp/selfmusic-guest-cookies.txt \
             --header 'Content-Type: application/json' \
-            --data "{\\"username\\":\\"guest-escalation\\",\\"password\\":\\"$guest_password\\",\\"role\\":\\"admin\\"}" \
+            --data '{"username":"guest-escalation","password":"guest-smoke-password-12","role":"admin"}' \
             "$base_url/api/auth/register")"
           test "$guest_register_status" = "403"
 
