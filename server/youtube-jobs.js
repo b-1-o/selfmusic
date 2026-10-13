@@ -188,6 +188,9 @@ function runProcess(binary, args, { timeoutMs, maxOutputBytes = 8 * 1024 * 1024,
       } else if (signal === "SIGKILL") {
         codeName = "YOUTUBE_TIMEOUT";
         message = "The download or conversion exceeded its time limit.";
+      } else if (/temporary failure in name resolution|could not resolve host|connection reset|connection refused|network is unreachable|http error 429|http error 5\\d\\d|unable to download webpage|remote end closed connection|timed out/.test(combined)) {
+        codeName = "YOUTUBE_TEMPORARY_FAILURE";
+        message = "YouTube or the network had a temporary problem. Request retries are enabled; try again in a little while.";
       }
       const error = new Error(message);
       error.code = codeName;
