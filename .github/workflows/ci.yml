@@ -30,6 +30,10 @@ jobs:
         run: npm test
       - name: Build web client
         run: npm run build
+      - name: Check Python metadata helper syntax
+        run: python3 -m py_compile server/metadata.py
+      - name: Build Docker image
+        run: docker build --tag selfmusic-ci .
 
   windows-launchers:
     runs-on: windows-latest
