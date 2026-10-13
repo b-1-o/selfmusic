@@ -49,3 +49,20 @@ test("server page is separated from personal settings panels", async () => {
   assert.ok(css.includes('.app-shell[data-view="settings"] .settings-status-card'));
   assert.ok(css.includes('.app-shell[data-view="server"] .settings-grid { display: none !important; }'));
 });
+
+test("appearance and playback dismissals sync through per-account preferences", async () => {
+  const [app, css, routes] = await Promise.all([
+    readSource("src/App.jsx"),
+    readSource("src/styles.css"),
+    readSource("server/preferences.js"),
+  ]);
+  assert.ok(app.includes('fetch("/api/preferences/appearance"'));
+  assert.ok(app.includes('fetch("/api/preferences/dismissed-playback"'));
+  assert.ok(app.includes("dismissedPlaybackKeysRef.current.has(dismissalKey) ? null : state"));
+  assert.ok(app.includes("const dismissalKey = remotePlaybackDismissalKey(remotePlaybackState)"));
+  assert.ok(routes.includes('new Set(["appearance", "dismissed-playback"])'));
+  assert.ok(routes.includes("MAX_WALLPAPER_DATA_URL_LENGTH"));
+  assert.ok(app.includes('"--user-background-direct": appearance.wallpaperBlur === 0 ? backgroundImage : "none"'));
+  assert.ok(css.includes("background-image: var(--user-background-direct, none) !important;"));
+  assert.ok(css.includes("opacity: var(--user-wallpaper-backdrop-opacity, 1)"));
+});

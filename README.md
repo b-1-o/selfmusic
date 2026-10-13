@@ -18,6 +18,7 @@ from any device on your network or through a tunnel you control.
 * Legacy password login plus admin-managed user accounts and HMAC-signed session cookies.
 * One-command native setup, with optional Docker deployment and private remote access through Tailscale.
 * Installable PWA shell, lock-screen/media controls where supported, explicit per-device offline audio downloads, and server-synced playback queue/position with a "Continue here" prompt.
+* Account-scoped appearance preferences (including wallpaper) sync between devices, and dismissed playback prompts are remembered per user.
 
 ## Quick start
 
@@ -358,7 +359,7 @@ Keep the `tailscale-state` volume: it stores the container node's identity. Do n
 | Subsonic client | Client name + version | Auth, stream/seek, search3, getPlaylists, scrobble | Pending |
 | YouTube / Last.fm | Test date + service flow | Search/download/restart; OAuth/now-playing/scrobble/retry | Pending |
 
-For the release checklist and prioritized known limitations, see [docs/ROADMAP.md](docs/ROADMAP.md). Do not remove the draft status from PR #12 until the required manual tests have real outcomes recorded.
+For release readiness and prioritized known limitations, see [docs/ROADMAP.md](docs/ROADMAP.md). Keep external-service and physical-device checks marked pending until they have actual results, with tested versions and redacted logs recorded.
 
 ## Current limitations
 

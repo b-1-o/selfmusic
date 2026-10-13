@@ -1,8 +1,8 @@
 # SelfMusic roadmap and known limitations
 
-This page records what is implemented in the platform branch, what automation verifies, and what still needs real service/device testing. A green CI run is not a substitute for the manual checklist near the end.
+This page records what is implemented on main, what automation verifies, and what still needs real service/device testing. A green CI run is not a substitute for the manual checklist near the end.
 
-## Implemented in this branch
+## Implemented on main
 
 - Versioned SQLite migrations for the library, accounts, collections, integrations, durable YouTube jobs, and per-user playback snapshots.
 - PWA app shell, manifest, service-worker registration, explicit per-track offline saving, Offline Downloads view, and cached audio routing.
@@ -11,10 +11,12 @@ This page records what is implemented in the platform branch, what automation ve
 - YouTube download jobs persisted in SQLite, with phase-aware progress parsed from yt-dlp download/postprocess progress-template markers and SSE updates to connected clients.
 - Cross-device playback sync: GET/PUT snapshot endpoints, per-user queue/position/repeat/shuffle state, monotonic revision numbers, optimistic conflict detection, and SSE pushes to that user's connected devices.
 - A "Continue here" prompt for a session last updated by another device. Playback is not auto-started on page load; the user must choose to resume.
+- Per-account appearance preferences (including a bounded PNG/JPEG/WebP wallpaper) and playback-prompt dismissals persisted in SQLite and synced across authenticated devices.
+- Offline cache recovery that retains cached audio entries even if the browser loses their local descriptive metadata.
 
 ## Priority 0 — manual release checks
 
-These checks require credentials, devices, or network conditions not available to the CI runner. Record date, device/OS/browser/client version, the result, and relevant redacted logs in the PR before marking them complete.
+These checks require credentials, devices, or network conditions not available to the CI runner. Record date, device/OS/browser/client version, the result, and relevant redacted logs in this checklist before marking them complete.
 
 - [ ] YouTube Data API search with a valid server-side API key.
 - [ ] YouTube → MP3 using yt-dlp and FFmpeg, checking conversion, library indexing, UI visibility, and the queued task after a server restart. Only test content the operator owns or has permission to save.

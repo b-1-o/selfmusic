@@ -135,6 +135,25 @@ Invalid state returns HTTP 400. A stale expected revision returns HTTP 409. The 
 
 Passwords are stored as scrypt hashes. Integration credentials such as Last.fm session keys and the encrypted Subsonic credential are protected with AES-256-GCM using a key derived from SESSION_SECRET.
 
+## Account preferences
+
+All preference routes require an authenticated session and operate only on the signed-in user's own preferences. Values are stored in SQLite so they can follow the same account to another device.
+
+- GET /api/preferences — return the current user's stored preferences.
+- GET /api/preferences/appearance — get appearance settings.
+- PUT /api/preferences/appearance — save appearance settings in a JSON body shaped as {"value":{"theme":"dark","glass":"liquid","wallpaperDataUrl":""}}. Supported appearance fields include accent, theme, glass, density, navigation, motion, radius, dimming/blur, and wallpaper. Unknown fields are ignored; supported values are validated and bounded.
+- GET /api/preferences/dismissed-playback — read dismissed cross-device playback prompts.
+- PUT /api/preferences/dismissed-playback — save a JSON body shaped as {"value":{"keys":["[device-id,track-id]"]}}. At most 100 short dismissal keys are retained.
+- Wallpaper values must be empty or bounded PNG, JPEG, or WebP base64 data URLs. SVG and arbitrary data URLs are rejected.
+
+Example:
+
+~~~~bash
+curl -b session-cookies.txt -H 'Content-Type: application/json' \
+  -d '{"value":{"theme":"dark","wallpaperDataUrl":""}}' \
+  "$BASE_URL/api/preferences/appearance"
+~~~~
+
 ## YouTube search and downloads
 
 The official YouTube Data API v3 is used for search and duration metadata only. Actual audio conversion runs on the server using yt-dlp and FFmpeg.

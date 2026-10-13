@@ -50,3 +50,11 @@ test("web player provides Media Session controls and explicit offline save/remov
   assert.match(app, /setActionHandler\("seekforward"/);
 
 });
+
+test("offline cache recovery keeps cached IDs visible if local metadata is missing", async () => {
+  const app = await read("src/App.jsx");
+  assert.match(app, /const cachedIds = new Set\(\)/);
+  assert.match(app, /byId\.get\(id\) \|\| \(\{/);
+  assert.match(app, /title: "Saved track " \+ id\.slice\(0, 8\)/);
+  assert.match(app, /metadataFallback: true/);
+});
