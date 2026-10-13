@@ -713,6 +713,16 @@ function App() {
 
   useEffect(() => {
     let active = true;
+    readOfflineLibraryFromCache().then((saved) => {
+      if (!active) return;
+      setOfflineTracks(saved.tracks);
+      setOfflineTrackIds(saved.ids);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
     fetch("/api/auth/session", { credentials: "same-origin", cache: "no-store", headers: { "Cache-Control": "no-cache" } })
       .then((response) => {
         if (!response.ok) throw new Error("server_unavailable");
@@ -725,13 +735,51 @@ function App() {
         setChecking(false);
         if (state.authenticated) loadTracks();
       })
-      .catch(() => {
+      .catch(async () => {
+        if (!active) return;
+        try {
+          const saved = await readOfflineLibraryFromCache();
+          if (active && saved.tracks.length) {
+            setOfflineTracks(saved.tracks);
+            setOfflineTrackIds(saved.ids);
+            setTracks(saved.tracks);
+            setOfflineMode(true);
+            setConfigured(true);
+            setAuthenticated(true);
+            setView("library");
+            setServerUnavailable(false);
+            setLoadError("");
+            setChecking(false);
+            return;
+          }
+        } catch {}
         if (!active) return;
         setServerUnavailable(true);
         setChecking(false);
       });
     return () => { active = false; };
   }, [loadTracks]);
+
+  useEffect(() => {
+    if (!offlineMode) return undefined;
+    const recoverConnection = async () => {
+      if (!navigator.onLine) return;
+      try {
+        const response = await fetch("/api/auth/session", { credentials: "same-origin", cache: "no-store", headers: { "Cache-Control": "no-cache" } });
+        if (!response.ok) return;
+        const state = await response.json();
+        setOfflineMode(false);
+        setServerUnavailable(false);
+        setConfigured(Boolean(state.configured));
+        setAuthenticated(Boolean(state.authenticated));
+        if (state.authenticated) await loadTracks();
+      } catch {
+        // Keep the saved local library available until the server is reachable again.
+      }
+    };
+    window.addEventListener("online", recoverConnection);
+    return () => window.removeEventListener("online", recoverConnection);
+  }, [offlineMode, loadTracks]);
 
   useEffect(() => {
     if (!authenticated) return undefined;
@@ -1115,9 +1163,12 @@ function App() {
     setSelectedYoutube(null);
     const audio = audioRef.current;
     const requestedFormat = playerSettings.transcodingEnabled ? streamFormat : "original";
-    const streamUrl = requestedFormat === "original"
-      ? track.streamUrl
-      : track.streamUrl + "?format=" + encodeURIComponent(requestedFormat) + "&bitrate=" + encodeURIComponent(streamBitrate);
+    const hasOfflineCopy = offlineTrackIds.includes(track.id) && "serviceWorker" in navigator && Boolean(navigator.serviceWorker.controller);
+    const streamUrl = hasOfflineCopy
+      ? offlineTrackUrl(track.id)
+      : requestedFormat === "original"
+        ? track.streamUrl
+        : track.streamUrl + "?format=" + encodeURIComponent(requestedFormat) + "&bitrate=" + encodeURIComponent(streamBitrate);
     if (audio.getAttribute("src") !== streamUrl) {
       // Assigning src already starts resource selection; load() here can restart it.
       audio.src = streamUrl;
@@ -1130,7 +1181,7 @@ function App() {
     setCurrentTime(0);
     setDuration(0);
     audio.play().catch(() => setIsPlaying(false));
-  }, [playerSettings.transcodingEnabled, streamFormat, streamBitrate]);
+  }, [playerSettings.transcodingEnabled, streamFormat, streamBitrate, offlineTrackIds]);
 
   const playNext = useCallback(() => {
     if (!tracks.length) return;
@@ -1310,6 +1361,93 @@ function App() {
     else list.sort((a, b) => compare(a, b, "artist") || compare(a, b, "album") || compare(a, b, "trackNumber") || compare(a, b, "title"));
     return list;
   }, [tracks, view, favorites, query, libraryFilters]);
+
+  const toggleOfflineTrack = useCallback(async (track) => {
+    if (!track?.id || offlineBusyIds.includes(track.id)) return;
+    const trackId = track.id;
+    let cache;
+    let request;
+    let createdCacheEntry = false;
+    setOfflineBusyIds((current) => current.includes(trackId) ? current : [...current, trackId]);
+    try {
+      if (!("caches" in window)) throw new Error("This browser does not support offline audio storage.");
+      cache = await window.caches.open(OFFLINE_AUDIO_CACHE);
+      request = offlineCacheRequest(trackId);
+      const existing = await cache.match(request);
+      const stored = readLocalJson(OFFLINE_TRACKS_KEY, []);
+      if (existing) {
+        await cache.delete(request);
+        const next = (Array.isArray(stored) ? stored : []).filter((item) => item?.id !== trackId);
+        localStorage.setItem(OFFLINE_TRACKS_KEY, JSON.stringify(next));
+        setOfflineTracks(next);
+        setOfflineTrackIds((current) => current.filter((id) => id !== trackId));
+        setOfflineMessage("Removed the offline copy of “" + track.title + "”.");
+        return;
+      }
+
+      if (offlineMode || !navigator.onLine) {
+        throw new Error("Connect to your SelfMusic server to save this track first.");
+      }
+      const response = await fetch(track.streamUrl || ("/api/stream/" + encodeURIComponent(trackId)), {
+        method: "GET",
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      if (response.status === 401) {
+        setAuthenticated(false);
+        throw new Error("Sign in again before saving music for offline playback.");
+      }
+      if (!response.ok || response.status === 206) {
+        throw new Error("The server could not provide a complete audio file for offline storage.");
+      }
+
+      const bytes = Number(response.headers.get("content-length") || 0);
+      if (bytes > 0 && navigator.storage?.estimate) {
+        const estimate = await navigator.storage.estimate();
+        const available = Number(estimate.quota || 0) - Number(estimate.usage || 0);
+        const reserve = 8 * 1024 * 1024;
+        if (available > 0 && bytes + reserve > available) {
+          throw new Error("There may not be enough device storage for this track. Free space and try again.");
+        }
+      }
+
+      await cache.put(request, response);
+      createdCacheEntry = true;
+      const offlineTrack = {
+        id: trackId,
+        title: String(track.title || "Untitled track"),
+        artist: String(track.artist || "Unknown artist"),
+        album: String(track.album || "Unknown album"),
+        albumArtist: track.albumArtist || track.artist || "",
+        year: track.year || null,
+        genre: track.genre || null,
+        duration: Number(track.duration) || 0,
+        bitrate: track.bitrate || null,
+        sampleRate: track.sampleRate || null,
+        codec: track.codec || null,
+        bytes: bytes || track.bytes || 0,
+        sha256: track.sha256 || null,
+        streamUrl: track.streamUrl || ("/api/stream/" + encodeURIComponent(trackId)),
+        artworkUrl: track.artworkUrl || ("/api/artwork/" + encodeURIComponent(trackId)),
+        addedAt: track.addedAt || null,
+      };
+      const next = [offlineTrack, ...(Array.isArray(stored) ? stored : []).filter((item) => item?.id !== trackId)];
+      try {
+        localStorage.setItem(OFFLINE_TRACKS_KEY, JSON.stringify(next));
+      } catch {
+        throw new Error("The track was downloaded, but its offline metadata could not be saved. Free browser storage and try again.");
+      }
+      setOfflineTracks(next);
+      setOfflineTrackIds((current) => current.includes(trackId) ? current : [...current, trackId]);
+      setOfflineMessage("Saved “" + offlineTrack.title + "” on this device for offline playback.");
+    } catch (error) {
+      if (createdCacheEntry && cache && request) await cache.delete(request).catch(() => {});
+      const quotaError = error?.name === "QuotaExceededError";
+      setOfflineMessage(quotaError ? "Device storage is full. Remove unused offline tracks and try again." : (error.message || "Could not save this track offline."));
+    } finally {
+      setOfflineBusyIds((current) => current.filter((id) => id !== trackId));
+    }
+  }, [offlineBusyIds, offlineMode]);
 
   const toggleFavorite = useCallback(async (id) => {
     const wasFavorite = favorites.includes(id);
