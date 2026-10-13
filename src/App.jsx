@@ -38,6 +38,8 @@ import {
   X,
   Youtube,
 } from "lucide-react";
+import AddTabs from "./components/Add/AddTabs.jsx";
+import FilterPanel, { FilterButton } from "./components/Library/FilterPanel.jsx";
 
 const FAVORITES_KEY = "selfmusic:favorites:v1";
 const LAST_TRACK_KEY = "selfmusic:last-track:v1";
@@ -472,7 +474,8 @@ function App() {
   const [newAccountRole, setNewAccountRole] = useState("user");
   const [accountMessage, setAccountMessage] = useState("");
   const [accountMessageError, setAccountMessageError] = useState(false);
-  const [libraryFilters, setLibraryFilters] = useState({ artist: "", album: "", year: "", genre: "", duration: "all", sort: "artist" });
+  const [libraryFilters, setLibraryFilters] = useState(() => ({ artist: "", album: "", year: "", genre: "", duration: "all", sort: "artist", offlineOnly: false, ...readLocalJson("selfmusic:library-filters:v1", {}) }));
+  const [libraryFiltersOpen, setLibraryFiltersOpen] = useState(false);
   const [scanningLibrary, setScanningLibrary] = useState(false);
   const [libraryScanMessage, setLibraryScanMessage] = useState("");
   const [duplicateGroups, setDuplicateGroups] = useState([]);
@@ -833,8 +836,12 @@ function App() {
   };
 
   useEffect(() => {
-    localStorage.setItem(APPEARANCE_KEY, JSON.stringify(appearance));
+    try { localStorage.setItem(APPEARANCE_KEY, JSON.stringify(appearance)); } catch { /* Ignore storage quota errors. */ }
   }, [appearance]);
+
+  useEffect(() => {
+    try { localStorage.setItem("selfmusic:library-filters:v1", JSON.stringify(libraryFilters)); } catch { /* Filters remain usable if storage is disabled. */ }
+  }, [libraryFilters]);
 
   useEffect(() => {
     const container = contentWrapRef.current;
@@ -1661,6 +1668,7 @@ function App() {
       if (libraryFilters.album) list = list.filter((track) => track.album === libraryFilters.album);
       if (libraryFilters.year) list = list.filter((track) => String(track.year || "") === libraryFilters.year);
       if (libraryFilters.genre) list = list.filter((track) => track.genre === libraryFilters.genre);
+      if (libraryFilters.offlineOnly) list = list.filter((track) => offlineTrackIds.includes(track.id));
       if (libraryFilters.duration === "short") list = list.filter((track) => Number(track.duration || 0) > 0 && Number(track.duration) < 180);
       if (libraryFilters.duration === "medium") list = list.filter((track) => Number(track.duration || 0) >= 180 && Number(track.duration) <= 300);
       if (libraryFilters.duration === "long") list = list.filter((track) => Number(track.duration || 0) > 300);
@@ -1680,7 +1688,7 @@ function App() {
     else if (libraryFilters.sort === "recent") list.sort((a, b) => String(b.addedAt || "").localeCompare(String(a.addedAt || "")));
     else list.sort((a, b) => compare(a, b, "artist") || compare(a, b, "album") || compare(a, b, "trackNumber") || compare(a, b, "title"));
     return list;
-  }, [tracks, view, favorites, query, libraryFilters, offlineTracks]);
+  }, [tracks, view, favorites, query, libraryFilters, offlineTracks, offlineTrackIds]);
 
   const toggleOfflineTrack = useCallback(async (track) => {
     if (!track?.id || offlineBusyIds.includes(track.id)) return;
