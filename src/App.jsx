@@ -565,6 +565,7 @@ function App() {
       glassBlur: Number.isFinite(saved?.glassBlur) ? clampNumber(saved.glassBlur, 0, 36) : 24,
       cornerRadius: Number.isFinite(saved?.cornerRadius) ? clampNumber(saved.cornerRadius, 10, 32) : 20,
       density: saved?.density === "compact" ? "compact" : "comfortable",
+      navPosition: ["auto", "left", "right", "bottom"].includes(saved?.navPosition) ? saved.navPosition : "auto",
       backgroundPreset: BACKGROUND_PRESETS.some((preset) => preset.id === saved?.backgroundPreset) ? saved.backgroundPreset : "midnight",
       wallpaperDataUrl: typeof saved?.wallpaperDataUrl === "string" && saved.wallpaperDataUrl.startsWith("data:image/") ? saved.wallpaperDataUrl : "",
       wallpaperDim: Number.isFinite(saved?.wallpaperDim) ? clampNumber(saved.wallpaperDim, 5, 85) : 38,
@@ -2056,7 +2057,7 @@ function App() {
   const pageTitle = view === "home" ? "Listen now" : view === "library" ? "Your library" : view === "favorites" ? "Liked tracks" : view === "offline" ? "Offline downloads" : view === "playlists" ? "Playlists" : view === "youtube" ? "Explore YouTube" : view === "import" ? "Add music" : view === "server" ? "Server" : view === "settings" ? "Settings" : "SelfMusic";
 
   return (
-    <div className="app-shell" data-view={view} data-settings-section={settingsSection} data-theme={resolvedTheme} data-accent={appearance.accent} data-glass={appearance.glass} data-animations={appearance.animations ? "on" : "off"} data-density={appearance.density} style={{ "--user-accent": appearance.accentColor, "--user-accent-strong": darkenAccent(appearance.accentColor), "--user-glass-opacity": appearance.glassOpacity + "%", "--user-glass-blur": appearance.glassBlur + "px", "--user-radius": appearance.cornerRadius + "px", "--user-background-image": backgroundImage, "--user-motion-duration": motionDuration }}>
+    <div className="app-shell" data-view={view} data-settings-section={settingsSection} data-nav-position={appearance.navPosition} data-theme={resolvedTheme} data-accent={appearance.accent} data-glass={appearance.glass} data-animations={appearance.animations ? "on" : "off"} data-density={appearance.density} style={{ "--user-accent": appearance.accentColor, "--user-accent-strong": darkenAccent(appearance.accentColor), "--user-glass-opacity": appearance.glassOpacity + "%", "--user-glass-blur": appearance.glassBlur + "px", "--user-radius": appearance.cornerRadius + "px", "--user-background-image": backgroundImage, "--user-motion-duration": motionDuration }}>
       <aside className={"sidebar" + (mobileMenuOpen ? " sidebar-open" : "")}>
         <div className="brand">
           <span className="brand-mark"><AudioLines size={22} strokeWidth={2.2} /></span>
@@ -2992,11 +2993,12 @@ function App() {
                     <label className="appearance-range-label"><span>Blur</span><strong>{appearance.glassBlur}px</strong><input className="range-input" type="range" min="0" max="36" step="1" value={appearance.glassBlur} onChange={(event) => setAppearance((value) => ({ ...value, glassBlur: Number(event.target.value) }))} /></label>
                     <label className="appearance-range-label"><span>Corner radius</span><strong>{appearance.cornerRadius}px</strong><input className="range-input" type="range" min="10" max="32" step="1" value={appearance.cornerRadius} onChange={(event) => setAppearance((value) => ({ ...value, cornerRadius: Number(event.target.value) }))} /></label>
                     <label className="appearance-range-label">Interface density<select value={appearance.density} onChange={(event) => setAppearance((value) => ({ ...value, density: event.target.value }))}><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select></label>
+                    <label className="appearance-range-label">Desktop navigation position<select value={appearance.navPosition} onChange={(event) => setAppearance((value) => ({ ...value, navPosition: event.target.value }))}><option value="auto">Adaptive (sidebar / phone bottom)</option><option value="left">Sidebar on the left</option><option value="right">Sidebar on the right</option><option value="bottom">Bottom navigation</option></select></label>
                     <label className="appearance-check-row"><input type="checkbox" checked={appearance.animations} onChange={(event) => setAppearance((value) => ({ ...value, animations: event.target.checked }))} /><span>Enable interface animations</span></label>
                     <label className="appearance-range-label">Animation speed<select value={appearance.animationSpeed} disabled={!appearance.animations} onChange={(event) => setAppearance((value) => ({ ...value, animationSpeed: event.target.value }))}><option value="slow">Slow and soft</option><option value="normal">Balanced</option><option value="fast">Fast</option></select></label>
                     {appearanceMessage && <p className="settings-footnote" role="status">{appearanceMessage}</p>}
                   </div>
-                  <button className="text-button appearance-reset" type="button" onClick={() => { setAppearance({ accent: "rose", accentColor: ACCENT_PRESETS[0].color, ...hexToHsv(ACCENT_PRESETS[0].color), glass: "liquid", theme: "dark", glassOpacity: 78, glassBlur: 24, cornerRadius: 20, density: "comfortable", backgroundPreset: "midnight", wallpaperDataUrl: "", wallpaperDim: 38, animations: true, animationSpeed: "normal" }); setAppearanceMessage(""); }}>Reset appearance</button>
+                  <button className="text-button appearance-reset" type="button" onClick={() => { setAppearance({ accent: "rose", accentColor: ACCENT_PRESETS[0].color, ...hexToHsv(ACCENT_PRESETS[0].color), glass: "liquid", theme: "dark", glassOpacity: 78, glassBlur: 24, cornerRadius: 20, density: "comfortable", navPosition: "auto", backgroundPreset: "midnight", wallpaperDataUrl: "", wallpaperDim: 38, animations: true, animationSpeed: "normal" }); setAppearanceMessage(""); }}>Reset appearance</button>
                 </div>
 
                 <div className="settings-card settings-card-wide" data-settings-section="advanced">
