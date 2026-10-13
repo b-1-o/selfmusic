@@ -3076,10 +3076,8 @@ html, body, #root {
 /* Separate connection diagnostics from personal preferences. */
 .app-shell[data-view="settings"] .settings-status-card,
 .app-shell[data-view="settings"] .server-configuration-card { display: none !important; }
-.app-shell[data-view="server"] .settings-grid { grid-template-columns: minmax(0, 1fr); max-width: 850px; }
-.app-shell[data-view="server"] .settings-grid > .settings-card:not(.server-configuration-card) { display: none !important; }
+.app-shell[data-view="server"] .settings-grid { display: none !important; }
 .app-shell[data-view="server"] .settings-footer { display: none; }
-.settings-grid .server-configuration-card { grid-column: auto; }
 .integration-steps { display: grid; gap: 7px; margin: 14px 0 10px; padding-left: 18px; color: var(--muted); font-size: 10px; line-height: 1.65; }
 .integration-steps li::marker { color: var(--user-accent); }
 
@@ -3159,4 +3157,38 @@ html, body, #root {
 .app-shell[data-theme] .track-row,
 .app-shell[data-theme] .icon-button {
   transition-duration: var(--user-motion-duration, 220ms);
+}
+
+
+/* Settings are navigated by category; only the selected group occupies the page. */
+.settings-section-nav {
+  display: flex; align-items: center; gap: 6px; margin: 5px 0 18px; padding: 0 0 6px;
+  overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin;
+  border-bottom: 1px solid var(--line);
+}
+.settings-section-tab {
+  display: inline-flex; flex: 0 0 auto; align-items: center; gap: 7px; min-height: 36px;
+  padding: 0 12px; color: var(--muted); border: 1px solid transparent; border-radius: 10px 10px 7px 7px;
+  background: transparent; font-size: 10px; font-weight: 650;
+  transition: background var(--user-motion-duration, 220ms) ease, color var(--user-motion-duration, 220ms) ease, border-color var(--user-motion-duration, 220ms) ease;
+}
+.settings-section-tab:hover { color: var(--text); background: color-mix(in srgb, var(--user-accent) 6%, transparent); }
+.settings-section-tab-active { color: var(--text); border-color: color-mix(in srgb, var(--user-accent) 22%, transparent); background: color-mix(in srgb, var(--user-accent) 10%, transparent); }
+.settings-section-tab-active svg { color: var(--user-accent); }
+.app-shell[data-view="settings"] .settings-grid > [data-settings-section] { display: none !important; }
+.app-shell[data-view="settings"][data-settings-section="profile"] .settings-grid > [data-settings-section="profile"],
+.app-shell[data-view="settings"][data-settings-section="appearance"] .settings-grid > [data-settings-section="appearance"],
+.app-shell[data-view="settings"][data-settings-section="player"] .settings-grid > [data-settings-section="player"],
+.app-shell[data-view="settings"][data-settings-section="library"] .settings-grid > [data-settings-section="library"],
+.app-shell[data-view="settings"][data-settings-section="integrations"] .settings-grid > [data-settings-section="integrations"],
+.app-shell[data-view="settings"][data-settings-section="offline"] .settings-grid > [data-settings-section="offline"],
+.app-shell[data-view="settings"][data-settings-section="advanced"] .settings-grid > [data-settings-section="advanced"] {
+  display: block !important;
+}
+.app-shell[data-theme="light"] .settings-section-nav { border-color: rgba(29,32,47,.1); }
+.app-shell[data-theme="light"] .settings-section-tab { color: #676978; }
+.app-shell[data-theme="light"] .settings-section-tab-active { color: #242631; }
+@media (max-width: 720px) {
+  .settings-section-nav { margin: 0 -2px 14px; gap: 4px; padding-bottom: 7px; }
+  .settings-section-tab { min-height: 34px; padding: 0 10px; font-size: 10px; }
 }
