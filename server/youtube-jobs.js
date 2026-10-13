@@ -1,3 +1,12 @@
+
+function appendYtDlpAuthArgs(args) {
+  const cookiesFile = String(process.env.YT_DLP_COOKIES || "").trim();
+  if (cookiesFile) args.push("--cookies", cookiesFile);
+  const fromBrowser = String(process.env.YT_DLP_COOKIES_FROM_BROWSER || "").trim();
+  if (fromBrowser && !cookiesFile) args.push("--cookies-from-browser", fromBrowser);
+  return args;
+}
+
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
@@ -175,7 +184,7 @@ function runProcess(binary, args, { timeoutMs, maxOutputBytes = 8 * 1024 * 1024,
       let message = "yt-dlp could not download or convert this video.";
       if (/private video|members.only|sign in to confirm|age.restricted/.test(combined)) {
         codeName = "YOUTUBE_RESTRICTED";
-        message = "This video requires authorization or is age restricted. Only use content you are authorized to access.";
+        message = "This video is age-restricted or needs sign-in. Export YouTube cookies to a file and set YT_DLP_COOKIES=/path/to/cookies.txt in .env, then restart.";
       } else if (/not available in your country|geo.restricted|blocked in your country/.test(combined)) {
         codeName = "YOUTUBE_REGION_BLOCKED";
         message = "This video is not available in the server's region.";
@@ -205,6 +214,7 @@ async function runFfmpegMetadata(outputPath, metadata, jobDir) {
   const ffmpeg = process.env.FFMPEG_PATH || "ffmpeg";
   const tempPath = path.join(path.dirname(outputPath), ".retag-" + crypto.randomUUID() + ".mp3");
   const args = ["-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-i", outputPath, "-map", "0:a:0", "-c:a", "copy", "-id3v2_version", "3"];
+  appendYtDlpAuthArgs(args);
   for (const key of ["title", "artist", "album", "year", "genre"]) {
     if (metadata[key]) args.push("-metadata", (key === "year" ? "date" : key) + "=" + metadata[key]);
   }
@@ -276,6 +286,7 @@ async function runOneJob(db, config, row) {
       "--embed-metadata", "--embed-thumbnail", "--write-thumbnail", "--convert-thumbnails", "jpg",
       "-o", outputTemplate
     ];
+  appendYtDlpAuthArgs(args);
     if (await fs.stat(cookiePath).then(() => true).catch(() => false)) args.unshift("--cookies", cookiePath);
     args.push(url);
     const result = await runProcess(ytdlp, args, {
