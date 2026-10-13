@@ -363,7 +363,7 @@ For the release checklist and prioritized known limitations, see [docs/ROADMAP.m
 ## Current limitations
 
 * Metadata extraction uses Python Mutagen. Without Python/Mutagen in a native setup, the scanner falls back to names and folders, so embedded tags and covers may not be available.
-* Duplicate matching is exact SHA-256. Acoustic fingerprints (Chromaprint) are not implemented; differently encoded copies will not necessarily be identified.
+* Duplicate matching is exact SHA-256. The internal fingerprint-provider interface is ready for a future optional Chromaprint provider, but only SHA-256 is registered today; differently encoded copies will not necessarily be identified.
 * FFmpeg transcoding is optional and disabled by default. Set `TRANSCODE_ENABLED=true`; actual playback compatibility still depends on the client.
 * Last.fm requires server-side API credentials and a callback URL that can reach SelfMusic. Retries use a lightweight SQLite queue rather than a distributed queue.
 * The YouTube conversion queue is deliberately small (three queued/running jobs). Progress is phase-aware and parses yt-dlp progress-template markers, but the percentage remains approximate during extraction, conversion and metadata tagging. Some videos are unavailable due to regional, account, or rights-holder restrictions.
