@@ -152,7 +152,7 @@ The client registers the service worker in production and uses the web app manif
 
 Offline audio is a client feature rather than a separate API endpoint. While signed in and online, use the download icon next to a track to save the full audio response in the browser's Cache API. The Offline Downloads screen shows saved items and allows removing their local copies. Saved audio is served through an internal service-worker route; normal private `/api/*` responses are not added to the generic application cache.
 
-Offline copies are scoped to the browser/device and may be evicted by the browser or operating system. They are not synchronized to other devices and are not part of the server's SQLite or music-folder backups. The server-side playback queue/current position is not synchronized between phone and desktop yet. Background playback and lock-screen controls depend on the target browser/OS and require a real-device smoke test.
+Offline copies are scoped to the browser/device and may be evicted by the browser or operating system. Signing out purges that browser's offline audio cache for privacy. Offline copies are not synchronized to other devices and are not part of the server's SQLite or music-folder backups. The server-side playback queue/current position is not synchronized between phone and desktop yet. Background playback and lock-screen controls depend on the target browser/OS and require a real-device smoke test.
 
 ## Subsonic-compatible API
 
