@@ -82,3 +82,11 @@ test("YouTube job progress uses explicit download/postprocess templates and phas
   assert.ok(source.includes('phase: "indexing"'));
   assert.ok(source.includes('phase: "conversion"'));
 });
+
+test("YouTube processing retries transient requests and explains temporary network failures", async () => {
+  const source = await fs.readFile(new URL("../server/youtube-jobs.js", import.meta.url), "utf8");
+  assert.equal((source.match(/"--retries", "3"/g) || []).length, 2);
+  assert.equal((source.match(/"--fragment-retries", "3"/g) || []).length, 2);
+  assert.ok(source.includes("YOUTUBE_TEMPORARY_FAILURE"));
+  assert.ok(source.includes("Request retries are enabled"));
+});
