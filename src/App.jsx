@@ -41,6 +41,7 @@ import {
 import AddTabs from "./components/Add/AddTabs.jsx";
 import FilterPanel, { FilterButton } from "./components/Library/FilterPanel.jsx";
 import SettingsTabs from "./components/Settings/SettingsTabs.jsx";
+import Navigation from "./components/Layout/Navigation.jsx";
 
 const FAVORITES_KEY = "selfmusic:favorites:v1";
 const LAST_TRACK_KEY = "selfmusic:last-track:v1";
@@ -2065,17 +2066,14 @@ function App() {
 
         <div className="sidebar-section">
           <p className="sidebar-label">YOUR SPACE</p>
-          <nav className="side-nav" aria-label="Main navigation">
-            <button className={view === "home" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("home"); setMobileMenuOpen(false); }}>
-              <SectionGlyph kind="home" size={19} /> <span>Home</span>
-            </button>
-            <button className={["library", "favorites", "playlists"].includes(view) ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("library"); setMobileMenuOpen(false); }}>
-              <SectionGlyph kind="library" size={19} /> <span>Library</span><span className="nav-count">{tracks.length}</span>
-            </button>
-            <button className={["import", "offline", "youtube"].includes(view) ? "nav-item nav-active" : "nav-item"} onClick={() => { setView(profile.role === "admin" && !offlineMode ? "import" : "youtube"); setMobileMenuOpen(false); }}>
-              <Plus size={19} /> <span>Add / Import</span>
-            </button>
-          </nav>
+          <Navigation
+            variant="desktop"
+            view={view}
+            onNavigate={(nextView) => { setView(nextView); setMobileMenuOpen(false); }}
+            role={profile.role}
+            offlineMode={offlineMode}
+            trackCount={tracks.length}
+          />
         </div>
 
         <div className="sidebar-library">
@@ -3050,13 +3048,14 @@ function App() {
         </div>
       )}
 
-      <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
-        <button className={view === "home" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("home")}><SectionGlyph kind="home" size={21} /><span>Home</span></button>
-        <button className={["library", "favorites", "playlists"].includes(view) ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("library")}><SectionGlyph kind="library" size={21} /><span>Library</span></button>
-        <button className={["import", "offline", "youtube"].includes(view) ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView(profile.role === "admin" && !offlineMode ? "import" : "youtube")}><Plus size={20} /><span>Add</span></button>
-        <button className={view === "server" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("server")}><SectionGlyph kind="server" size={21} /><span>Server</span></button>
-        <button className={view === "settings" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("settings")}><Palette size={20} /><span>Settings</span></button>
-      </nav>
+      <Navigation
+        variant="mobile"
+        view={view}
+        onNavigate={setView}
+        role={profile.role}
+        offlineMode={offlineMode}
+        trackCount={tracks.length}
+      />
 
       {authenticated && playbackSyncStatus !== "connected" && (
         <div className={"playback-sync-notice playback-sync-" + playbackSyncStatus} role="status" aria-live="polite">
