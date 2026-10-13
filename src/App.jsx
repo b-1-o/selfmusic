@@ -647,6 +647,14 @@ function App() {
         dismissedPlaybackKeysRef.current = new Set(keys);
         const storageKey = REMOTE_PLAYBACK_DISMISSED_KEY + ":" + (profile.id || "legacy");
         try { localStorage.setItem(storageKey, JSON.stringify(keys)); } catch {}
+        if (keys.length !== remoteKeys.length || keys.some((key) => !remoteKeys.includes(key))) {
+          fetch("/api/preferences/dismissed-playback", {
+            method: "PUT",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ value: { keys } }),
+          }).catch(() => {});
+        }
         setRemotePlaybackState((current) => {
           if (current && dismissedPlaybackKeysRef.current.has(remotePlaybackDismissalKey(current))) {
             playbackSyncPausedForRemoteRef.current = true;
@@ -1015,6 +1023,29 @@ function App() {
       setLoadingTracks(false);
     }
   }, []);
+
+  const refreshOfflineLibrary = useCallback(async () => {
+    setLoadingTracks(true);
+    setOfflineMessage("");
+    try {
+      const saved = await readOfflineLibraryFromCache();
+      setOfflineTracks(saved.tracks);
+      setOfflineTrackIds(saved.ids);
+      if (offlineMode) {
+        setTracks(saved.tracks);
+        setLoadError("");
+      }
+      setOfflineMessage(
+        saved.tracks.length
+          ? "Offline library refreshed."
+          : "No tracks are saved on this device yet. Save tracks from your library while connected."
+      );
+    } catch (error) {
+      setOfflineMessage(error.message || "Could not refresh saved offline tracks.");
+    } finally {
+      setLoadingTracks(false);
+    }
+  }, [offlineMode]);
 
   const handleDeleteTrack = useCallback(async (track) => {
     if (!track || deletingTrackId) return;
@@ -2156,7 +2187,7 @@ function App() {
           <div className="library-heading"><span>Your collection</span><span className="live-dot" /></div>
           <button className="collection-card" onClick={() => { setView("playlists"); setMobileMenuOpen(false); }}>
             <div className="collection-art"><SectionGlyph kind="library" size={29} /></div>
-            <span><strong>Your collection</strong><small>{playlists.length} {playlists.length === 1 ? "playlist" : "playlists"}</small></span>
+            <span><strong>Playlists</strong><small>{playlists.length} {playlists.length === 1 ? "playlist" : "playlists"}</small></span>
           </button>
           <div className="sidebar-collection-links">
             <button className={view === "favorites" ? "sidebar-collection-link nav-active" : "sidebar-collection-link"} onClick={() => setView("favorites")}><Heart size={15} /><span>Liked tracks</span><span>{favorites.length}</span></button>
@@ -2262,9 +2293,9 @@ function App() {
 
                   trackActionError={trackActionError}
                   onRefresh={loadTracks}
-                  emptyTitle={query ? "No matches found" : "Your first track is waiting"}
-                  emptyCopy={query ? "Try another title, artist, or album name." : "Put your own music files in the server's music folder, then refresh the library."}
-                  onServerSetup={() => setView("server")}
+                  emptyTitle={query ? "No matches found" : view === "offline" ? "No offline tracks yet" : view === "favorites" ? "Nothing liked yet" : "Your first track is waiting"}
+                  emptyCopy={query ? "Try another title, artist, or album name." : view === "offline" ? "Save tracks from your library while connected to keep them available on this device." : view === "favorites" ? "Tap the heart on a track to keep it in your liked collection." : "Put your own music files in the server's music folder, then refresh the library."}
+                  onServerSetup={view === "offline" ? undefined : () => setView("server")}
                   canManage={profile.role === "admin" && !offlineMode}
                   currentTime={currentTime}
                   duration={duration}
@@ -2287,7 +2318,7 @@ function App() {
               </div>
               <div className="library-toolbar">
                 <button className="primary-button" onClick={() => filteredTracks.length && playTrack(filteredTracks[0])} disabled={!filteredTracks.length}><Play size={16} fill="currentColor" /> Play all</button>
-                <button className="ghost-button" onClick={loadTracks}><RefreshCw size={15} className={loadingTracks ? "spin" : ""} /> Refresh</button>
+                <button className="ghost-button" onClick={view === "offline" ? refreshOfflineLibrary : loadTracks}><RefreshCw size={15} className={loadingTracks ? "spin" : ""} /> Refresh</button>
                 {view === "library" && <FilterButton filters={libraryFilters} open={libraryFiltersOpen} onToggle={() => setLibraryFiltersOpen((open) => !open)} />}
                 {view === "library" && profile.role === "admin" && !offlineMode && <button className="ghost-button" type="button" disabled={scanningLibrary} onClick={scanLibraryNow}><RefreshCw size={15} className={scanningLibrary ? "spin" : ""} /> {scanningLibrary ? "Scanning library…" : "Rescan library"}</button>}
               </div>

@@ -361,6 +361,15 @@ Keep the `tailscale-state` volume: it stores the container node's identity. Do n
 
 For release readiness and prioritized known limitations, see [docs/ROADMAP.md](docs/ROADMAP.md). Keep external-service and physical-device checks marked pending until they have actual results, with tested versions and redacted logs recorded.
 
+## Inviting a guest safely
+
+1. Sign in as the SelfMusic administrator and open **Settings → Accounts**.
+2. Create a unique username and a strong temporary password (at least 12 characters), choose **User — stream only**, and share the credentials privately. Never choose Admin for a guest.
+3. Give the guest private network access through your Tailscale setup (or another HTTPS/private tunnel you control), then share that private SelfMusic address. The guest must also sign in to SelfMusic.
+4. Do not forward port 8787 directly to the public internet. Remove the guest's network/account access when it is no longer needed.
+
+Managed user accounts can browse and stream the server library but cannot upload, import, delete tracks, or manage accounts. Browser-local offline audio and appearance cache are not shared with other accounts; account appearance settings and cross-device playback dismissal preferences are stored server-side per account.
+
 ## Current limitations
 
 * Metadata extraction uses Python Mutagen. Without Python/Mutagen in a native setup, the scanner falls back to names and folders, so embedded tags and covers may not be available.

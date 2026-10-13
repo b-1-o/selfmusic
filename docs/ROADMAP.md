@@ -13,6 +13,8 @@ This page records what is implemented on main, what automation verifies, and wha
 - A "Continue here" prompt for a session last updated by another device. Playback is not auto-started on page load; the user must choose to resume.
 - Per-account appearance preferences (including a bounded PNG/JPEG/WebP wallpaper) and playback-prompt dismissals persisted in SQLite and synced across authenticated devices.
 - Offline cache recovery that retains cached audio entries even if the browser loses their local descriptive metadata.
+- The Offline Downloads refresh action re-reads CacheStorage, and its empty state guides the user back to the library rather than to server setup.
+- Guest access is documented as a least-privilege managed account over a private network tunnel; no default shared guest credential is created.
 
 ## Priority 0 — manual release checks
 

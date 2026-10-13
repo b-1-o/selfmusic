@@ -58,3 +58,11 @@ test("offline cache recovery keeps cached IDs visible if local metadata is missi
   assert.match(app, /title: "Saved track " \+ id\.slice\(0, 8\)/);
   assert.match(app, /metadataFallback: true/);
 });
+
+test("Offline downloads refresh from CacheStorage and missing metadata remains playable", async () => {
+  const app = await read("src/App.jsx");
+  assert.match(app, /const refreshOfflineLibrary = useCallback\(async \(\) =>/);
+  assert.match(app, /readOfflineLibraryFromCache\(\)/);
+  assert.match(app, /byId\.get\(id\) \|\| \(\{/);
+  assert.match(app, /metadataFallback: true/);
+});

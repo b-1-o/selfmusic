@@ -135,6 +135,8 @@ Invalid state returns HTTP 400. A stale expected revision returns HTTP 409. The 
 
 Passwords are stored as scrypt hashes. Integration credentials such as Last.fm session keys and the encrypted Subsonic credential are protected with AES-256-GCM using a key derived from SESSION_SECRET.
 
+Create a guest from **Settings → Accounts** using a unique username, a strong password (12–128 characters), and the **User — stream only** role. Give the guest private network access through Tailscale or another HTTPS/private tunnel you control. Do not port-forward SelfMusic's port 8787 directly to the public internet.
+
 ## Account preferences
 
 All preference routes require an authenticated session and operate only on the signed-in user's own preferences. Values are stored in SQLite so they can follow the same account to another device.

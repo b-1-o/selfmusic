@@ -66,3 +66,28 @@ test("appearance and playback dismissals sync through per-account preferences", 
   assert.ok(css.includes("background-image: var(--user-background-direct, none) !important;"));
   assert.ok(css.includes("opacity: var(--user-wallpaper-backdrop-opacity, 1)"));
 });
+
+test("offline view refresh reads the device cache and does not offer server setup when empty", async () => {
+  const [app, trackList] = await Promise.all([
+    readSource("src/App.jsx"),
+    readSource("src/components/Library/TrackList.jsx"),
+  ]);
+  assert.ok(app.includes("const refreshOfflineLibrary = useCallback(async () =>"));
+  assert.ok(app.includes("onClick={view === \"offline\" ? refreshOfflineLibrary : loadTracks}"));
+  assert.ok(app.includes('view === "offline" ? "No offline tracks yet"'));
+  assert.ok(app.includes('onServerSetup={view === "offline" ? undefined : () => setView("server")}'));
+  assert.ok(trackList.includes("{onServerSetup && <button className=\"ghost-button\""));
+});
+
+test("collection card opens playlists without duplicating the collection title", async () => {
+  const app = await readSource("src/App.jsx");
+  assert.ok(app.includes('<div className="library-heading"><span>Your collection</span>'));
+  assert.ok(app.includes('<span><strong>Playlists</strong><small>{playlists.length}'));
+  assert.ok(app.includes('setView("playlists"); setMobileMenuOpen(false);'));
+});
+
+test("dismissal keys merged from other devices are synchronized back to the account", async () => {
+  const app = await readSource("src/App.jsx");
+  assert.ok(app.includes("keys.some((key) => !remoteKeys.includes(key))"));
+  assert.ok(app.includes('fetch("/api/preferences/dismissed-playback", {'));
+});
