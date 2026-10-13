@@ -2832,3 +2832,40 @@ html, body, #root {
   .playback-resume-action { grid-column: 1; width: 100%; }
   .playback-resume-dismiss { grid-column: 2; }
 }
+.playback-sync-notice {
+  position: fixed;
+  z-index: 1199;
+  top: max(12px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  max-width: calc(100vw - 24px);
+  padding: 7px 12px;
+  color: #fff;
+  background: rgba(21, 21, 29, .94);
+  border: 1px solid rgba(255, 255, 255, .22);
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.35;
+  box-shadow: 0 10px 35px rgba(0, 0, 0, .25);
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+}
+.playback-sync-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #f0b35a;
+}
+.playback-sync-offline .playback-sync-dot { background: #f07178; }
+.playback-sync-reconnecting .playback-sync-dot { background: #f0b35a; }
+@media (max-width: 720px) {
+  .playback-sync-notice {
+    top: max(8px, env(safe-area-inset-top));
+    right: 9px;
+    font-size: 10px;
+  }
+}
