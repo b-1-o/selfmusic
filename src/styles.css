@@ -2738,3 +2738,10 @@ html, body, #root {
   .track-row { min-height:63px; padding:7px; border-radius:13px; }
   .offline-mode-banner { align-items:flex-start; font-size:10px; }
 }
+
+.offline-retry-button { min-height:30px; flex:0 0 auto; padding:0 9px; font-size:10px; }
+@media (max-width:720px) {
+  .offline-mode-banner { flex-wrap:wrap; }
+  .offline-mode-banner > span { flex:1 1 calc(100% - 36px); }
+  .offline-retry-button { margin-left:26px; }
+}
