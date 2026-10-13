@@ -40,6 +40,7 @@ import {
 } from "lucide-react";
 import AddTabs from "./components/Add/AddTabs.jsx";
 import FilterPanel, { FilterButton } from "./components/Library/FilterPanel.jsx";
+import SettingsTabs from "./components/Settings/SettingsTabs.jsx";
 
 const FAVORITES_KEY = "selfmusic:favorites:v1";
 const LAST_TRACK_KEY = "selfmusic:last-track:v1";
@@ -465,6 +466,7 @@ function App() {
   const youtubeJobRef = useRef(null);
 
   const [view, setView] = useState("home");
+  const [settingsSection, setSettingsSection] = useState("profile");
   const contentWrapRef = useRef(null);
   const [favorites, setFavorites] = useState([]);
   const [profile, setProfile] = useState({ id: "legacy", username: "owner", role: "admin", legacy: true });
@@ -2049,7 +2051,7 @@ function App() {
   const pageTitle = view === "home" ? "Listen now" : view === "library" ? "Your library" : view === "favorites" ? "Liked tracks" : view === "offline" ? "Offline downloads" : view === "playlists" ? "Playlists" : view === "youtube" ? "Explore YouTube" : view === "import" ? "Add music" : view === "server" ? "Server" : view === "settings" ? "Settings" : "SelfMusic";
 
   return (
-    <div className="app-shell" data-view={view} data-theme={resolvedTheme} data-accent={appearance.accent} data-glass={appearance.glass} data-animations={appearance.animations ? "on" : "off"} data-density={appearance.density} style={{ "--user-accent": appearance.accentColor, "--user-accent-strong": darkenAccent(appearance.accentColor), "--user-glass-opacity": appearance.glassOpacity + "%", "--user-glass-blur": appearance.glassBlur + "px", "--user-radius": appearance.cornerRadius + "px", "--user-background-image": backgroundImage, "--user-motion-duration": motionDuration }}>
+    <div className="app-shell" data-view={view} data-settings-section={settingsSection} data-theme={resolvedTheme} data-accent={appearance.accent} data-glass={appearance.glass} data-animations={appearance.animations ? "on" : "off"} data-density={appearance.density} style={{ "--user-accent": appearance.accentColor, "--user-accent-strong": darkenAccent(appearance.accentColor), "--user-glass-opacity": appearance.glassOpacity + "%", "--user-glass-blur": appearance.glassBlur + "px", "--user-radius": appearance.cornerRadius + "px", "--user-background-image": backgroundImage, "--user-motion-duration": motionDuration }}>
       <aside className={"sidebar" + (mobileMenuOpen ? " sidebar-open" : "")}>
         <div className="brand">
           <span className="brand-mark"><AudioLines size={22} strokeWidth={2.2} /></span>
@@ -2686,6 +2688,8 @@ function App() {
                 <h1>{view === "server" ? "Server" : "Settings"}</h1>
                 <p>{view === "server" ? "Connection details for this device and your private home server." : "Tune your profile, appearance, playback, library, and integrations."}</p>
               </div>
+
+              {view === "settings" && <SettingsTabs active={settingsSection} onChange={setSettingsSection} />}
 
               <div className={"settings-status-card settings-status-" + (serverUnavailable || !navigator.onLine ? "offline" : playbackSyncStatus === "connected" ? "online" : "degraded")}>
                 <div className="settings-status-icon"><span className="status-pip" /></div>
