@@ -1378,8 +1378,8 @@ function App() {
       }
       return;
     }
-    playTrack(tracks[nextIndex]);
-  }, [tracks, currentTrackId, shuffle, repeatMode, playTrack]);
+    playTrack(queue[nextIndex]);
+  }, [tracks, activeQueueTracks, currentTrackId, shuffle, repeatMode, playTrack]);
 
   const playPrevious = useCallback(() => {
     const audio = audioRef.current;
@@ -1388,9 +1388,10 @@ function App() {
       setCurrentTime(0);
       return;
     }
-    const index = tracks.findIndex((track) => track.id === currentTrackId);
-    const previousIndex = index <= 0 ? (repeatMode === "all" ? tracks.length - 1 : 0) : index - 1;
-    if (activeQueueTracks[previousIndex]) playTrack(activeQueueTracks[previousIndex]);
+    const queue = activeQueueTracks.length ? activeQueueTracks : tracks;
+    const index = queue.findIndex((track) => track.id === currentTrackId);
+    const previousIndex = index <= 0 ? (repeatMode === "all" ? queue.length - 1 : 0) : index - 1;
+    if (queue[previousIndex]) playTrack(queue[previousIndex]);
   }, [tracks, activeQueueTracks, currentTrackId, repeatMode, playTrack]);
 
   const playPreviousTrack = useCallback(() => {
