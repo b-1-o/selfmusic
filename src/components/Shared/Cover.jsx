@@ -1,3 +1,5 @@
+import React from "react";
+
 export default function Cover({ track, large = false }) {
   return (
     <div className={"cover" + (large ? " cover-large" : "")}>
