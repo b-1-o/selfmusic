@@ -177,6 +177,19 @@ const migrations = [
       ALTER TABLE youtube_jobs ADD COLUMN metadata_json TEXT;
       ALTER TABLE youtube_jobs ADD COLUMN result_json TEXT;
     `
+  },
+  {
+    version: 7,
+    name: "youtube_job_phases",
+    sql: `
+      ALTER TABLE youtube_jobs ADD COLUMN phase TEXT NOT NULL DEFAULT 'queued';
+      UPDATE youtube_jobs SET phase = CASE
+        WHEN status = 'completed' THEN 'completed'
+        WHEN status = 'failed' THEN 'failed'
+        WHEN status = 'cancelled' THEN 'cancelled'
+        ELSE 'queued'
+      END;
+    `
   }
 ];
 
