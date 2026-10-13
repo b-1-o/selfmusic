@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { closeDatabase, createDatabase, latestMigrationVersion } from "../server/database.js";
 
 test("creates all versioned schema migrations and is safe to initialize twice", () => {
@@ -25,5 +28,32 @@ test("rejects invalid role values using the database constraint", () => {
     assert.throws(() => db.prepare("INSERT INTO users(id, username, password_hash, role) VALUES (?, ?, ?, ?)").run("u1", "badrole", "hash", "owner"));
   } finally {
     closeDatabase(db);
+  }
+});
+
+test("reopening a persisted database does not reapply migrations or lose existing data", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "selfmusic-migrations-"));
+  const databasePath = path.join(directory, "selfmusic.sqlite");
+  let db;
+  try {
+    db = createDatabase(databasePath);
+    db.prepare("INSERT INTO users(id, username, password_hash, role) VALUES (?, ?, ?, ?)").run("persisted-user", "persisted", "hash", "user");
+    db.prepare("INSERT INTO tracks(id, relative_path, title) VALUES (?, ?, ?)").run("persisted-track", "persisted.mp3", "Persisted Track");
+    db.prepare("INSERT INTO playback_states(user_id, revision, queue_json, current_track_id, position_seconds, is_playing, repeat_mode, shuffle, source_device_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
+      "persisted-user", 3, JSON.stringify(["persisted-track"]), "persisted-track", 73.25, 0, "off", 0, "test-device"
+    );
+    closeDatabase(db);
+    db = createDatabase(databasePath);
+
+    assert.equal(latestMigrationVersion(db), 8);
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get().count, 8);
+    assert.equal(db.prepare("SELECT username FROM users WHERE id = ?").get("persisted-user").username, "persisted");
+    assert.equal(db.prepare("SELECT title FROM tracks WHERE id = ?").get("persisted-track").title, "Persisted Track");
+    const state = db.prepare("SELECT revision, position_seconds AS positionSeconds FROM playback_states WHERE user_id = ?").get("persisted-user");
+    assert.equal(state.revision, 3);
+    assert.equal(state.positionSeconds, 73.25);
+  } finally {
+    closeDatabase(db);
+    fs.rmSync(directory, { recursive: true, force: true });
   }
 });
