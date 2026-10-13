@@ -3271,3 +3271,18 @@ html, body, #root {
   /* Light surfaces remain airy while the selected wallpaper can still show through. */
   background-color: #f5f6fa;
 }
+
+
+/* Unified soft-glass geometry: keep every interactive surface on the same radius scale. */
+.app-shell {
+  --surface-radius: clamp(12px, calc(var(--user-radius, 22px) * .72), 20px);
+}
+.app-shell :is(button, input, select, textarea, .hero-panel, .page-section, .settings-panel, .track-table, .track-row, .empty-state, .add-section-tabs, .collection-card, .player-bar, .settings-status-card, .setup-notice) {
+  border-radius: var(--surface-radius);
+}
+.app-shell :is(.primary-button, .ghost-button, .icon-button, .nav-item, .mobile-nav-item, .add-section-tab, .settings-section-tab, .text-button) {
+  border-radius: 999px;
+}
+.app-shell :is(.hero-panel, .page-section, .settings-panel, .track-table, .empty-state, .add-section-tabs, .settings-status-card, .setup-notice, .collection-card) {
+  border-color: color-mix(in srgb, var(--user-accent, #dc8197) 12%, var(--line-strong, rgba(255,255,255,.12)));
+}
