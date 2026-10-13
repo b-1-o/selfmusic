@@ -1,39 +1,69 @@
 # SelfMusic roadmap and known limitations
 
-This file separates implemented behavior from work that still needs implementation or device-level verification.
+This page records what is implemented in the platform branch, what automation verifies, and what still needs real service/device testing. A green CI run is not a substitute for the manual checklist near the end.
 
 ## Implemented in this branch
 
-- PWA app shell with a web app manifest and production service-worker registration.
-- Media Session metadata, play/pause, previous/next and seek handlers; the player updates lock-screen position where the browser supports it.
-- Explicit per-track offline saving to the browser's Cache API, an Offline Downloads view, and cached audio routing through the service worker.
-- Last.fm retry queue persisted in SQLite, with bounded exponential backoff for failed submissions.
-- YouTube queued downloads persisted in SQLite, with phase-aware progress parsed from yt-dlp download/postprocess templates and SSE updates to connected clients.
+- Versioned SQLite migrations for the library, accounts, collections, integrations, durable YouTube jobs, and per-user playback snapshots.
+- PWA app shell, manifest, service-worker registration, explicit per-track offline saving, Offline Downloads view, and cached audio routing.
+- Media Session metadata, play/pause, previous/next, seek handlers, and lock-screen position updates where supported by the browser.
+- Last.fm per-user authorization and a SQLite retry queue with bounded exponential backoff.
+- YouTube download jobs persisted in SQLite, with phase-aware progress parsed from yt-dlp download/postprocess progress-template markers and SSE updates to connected clients.
+- Cross-device playback sync: GET/PUT snapshot endpoints, per-user queue/position/repeat/shuffle state, monotonic revision numbers, optimistic conflict detection, and SSE pushes to that user's connected devices.
+- A "Continue here" prompt for a session last updated by another device. Playback is not auto-started on page load; the user must choose to resume.
 
-## Known limitations and next iterations
+## Priority 0 — manual release checks
 
-### Acoustic duplicate detection (Chromaprint)
+These checks require credentials, devices, or network conditions not available to the CI runner. Record date, device/OS/browser/client version, the result, and relevant redacted logs in the PR before marking them complete.
 
-Not implemented. Current duplicate groups require byte-identical SHA-256 hashes. Differently encoded versions of the same recording are not grouped. A follow-up can optionally install Chromaprint and `fpcalc`, compute fingerprints as a background task, and only flag probable matches for review; it should never delete files automatically based on acoustic similarity alone.
+- [ ] YouTube Data API search with a valid server-side API key.
+- [ ] YouTube → MP3 using yt-dlp and FFmpeg, checking conversion, library indexing, UI visibility, and the queued task after a server restart. Only test content the operator owns or has permission to save.
+- [ ] Last.fm authorization, now-playing, scrobble threshold, and retry after a real network interruption.
+- [ ] A real Subsonic client: authenticate, stream and seek, search3, getPlaylists, and scrobble.
+- [ ] iOS Safari/PWA and Android Chrome/PWA: install flow, background playback, lock screen, Bluetooth/media keys, interrupted network, reconnection, and storage eviction behavior.
+- [ ] Offline audio: explicitly save a track, verify it plays after disabling networking, then verify logout removes the user's offline cache as documented.
+- [ ] Cross-device sync: start from one browser/device, wait for a position update, then open a second browser/device as the same account, choose "Continue here", and confirm queue order and resume position. Also test two devices attempting to update at nearly the same time.
 
-### YouTube progress accuracy
+A test is not complete unless its actual device/OS/browser/client versions and outcome are recorded. Do not add guessed version numbers to the README.
 
-The client distinguishes metadata, download, conversion and indexing. Download and postprocess percentages come from explicit yt-dlp progress-template markers. They are more reliable than parsing arbitrary percentages in human-readable output, but conversion and metadata-tagging percentages can still be unavailable or approximate depending on the extractor/postprocessor. Future work should test representative yt-dlp output and display indeterminate progress when a percentage is unavailable.
+## Priority 1 — reliability and observability
+
+### Cross-device playback sync
+
+Implemented at the API/UI level, but still requires the manual two-device check above. The service stores one shared snapshot per user, not one independently playing session per device. The HTTP write includes an expected revision; a stale write returns 409 and the client pauses automatic writes when it detects another device's state. SSE provides near-real-time updates while connected, with a heartbeat and browser-managed reconnects.
+
+Limits and caveats:
+
+- A queue snapshot is capped at 500 track IDs and references tracks already indexed in that user's server library.
+- Sync requires an authenticated online connection to the same SelfMusic server. Offline audio remains browser-local and is not transferred between devices.
+- The user must click "Continue here" to avoid unexpected autoplay.
+- Concurrent playback on multiple devices is treated as a shared-session conflict, not as independent playback sessions. Conflict behavior needs testing on a real network.
 
 ### Last.fm delivery guarantees
 
-The SQLite queue survives a normal process restart and retries transient failures with exponential backoff. It is not a distributed queue, and the remote service can accept a scrobble while the client times out before receiving confirmation. That ambiguity can lead to a duplicate submission on retry; Last.fm does not provide a general idempotency key for every scrobble. Future work should add operator-visible dead-letter/error history and retention limits.
+The SQLite queue survives a normal process restart and retries transient failures with exponential backoff. It is not a distributed queue, and the remote service can accept a scrobble while the client times out before receiving confirmation. That ambiguity can lead to a duplicate submission on retry; Last.fm does not provide a general idempotency key for every scrobble. Add operator-visible dead-letter/error history and queue retention limits in a follow-up.
 
-### Cross-device playback queue and resume
+### YouTube progress accuracy
 
-Not implemented. Track lists, progress and the browser's last selected track are not a shared server-side queue/position protocol. The offline cache is per browser/device and is not synchronized across devices. A follow-up should add a server-side queue model with ordered track IDs, revision/version, current track, playback position, repeat/shuffle state and per-user authorization. Updates should use revisions or conditional writes so two devices cannot silently overwrite each other.
+The client distinguishes metadata, download, conversion and indexing. Download and postprocess percentages come from explicit yt-dlp progress-template markers. Conversion and metadata-tagging percentages may still be unavailable or approximate depending on the extractor/postprocessor. Test representative output, and show indeterminate progress when no reliable percentage is available.
 
-### Offline playback and background playback
+## Priority 2 — deduplication interface and acoustic matching
 
-The web application can store selected audio tracks in the browser's Cache API and the service worker can serve those tracks through an internal offline URL. This requires the PWA to have been opened online at least once, the service worker to have taken control, and the user to explicitly save each track before losing connectivity. Browser storage may be evicted by the operating system/browser; the UI cannot guarantee permanent storage. Offline downloads are not automatically synced or included in server backups.
+Chromaprint is not implemented. Current duplicate groups require byte-identical SHA-256 hashes, so differently encoded versions of the same recording are not grouped. Keep the existing SHA-256 implementation behind the same deduplication service boundary; a future fingerprint provider can add optional `fpcalc` / Chromaprint matching without changing API consumers. Acoustic similarity must only flag candidates for review and must never delete files automatically.
 
-Media Session handlers are implemented, but lock-screen/background behavior still varies by browser, OS power-management policy, and installation method. Manually verify on target iOS and Android devices, especially screen-lock playback, Bluetooth controls, interruption handling, low-storage behavior and reconnection from offline mode. CI cannot prove real device audio behavior.
+## Priority 3 — PWA and media compatibility
 
-### Integration and deployment validation
+SelfMusic can store selected audio tracks in the browser's Cache API and the service worker can serve them through an internal offline URL. This requires the PWA to have been opened online at least once, the service worker to control the page, and the user to explicitly save each track before losing connectivity. Browser storage may be evicted by the OS/browser; the UI cannot guarantee permanent storage. Offline downloads are not server backups and are not synchronized across devices.
 
-Unit/integration tests and the Docker image build validate packaging and internal behavior, not every external service. YouTube, Last.fm OAuth, Subsonic third-party clients, HTTPS/Tailscale, and long-running media playback require manual smoke tests with valid credentials and actual devices before promoting a release.
+Media Session handlers are implemented, but lock-screen/background behavior varies by browser, OS power-management policy, and installation method. CI cannot prove real-device audio behavior. Manually verify interruption handling, low storage, Bluetooth controls, and offline/reconnect behavior on target devices.
+
+## Priority 4 — additional product improvements
+
+- Add a user-visible history of Last.fm dead-letter/retry errors with retention controls.
+- Improve YouTube progress reporting when conversion tools provide no percentage.
+- Consider per-device session metadata / active-device labeling after the shared playback snapshot proves stable.
+- Continue accessibility checks: keyboard navigation, visible focus rings, high contrast and touch targets of at least 44 CSS pixels for primary touch controls.
+
+## Automated checks
+
+GitHub Actions currently covers syntax checks, the Node test suite, Vite production build, Python helper compilation, Docker build/runtime smoke test, and Windows launcher parsing. The playback-sync tests cover schema availability, default state, persistence, per-user isolation, bounded inputs, unknown track rejection, and revision conflicts. These automated tests do not claim to validate external services or physical device behavior.
