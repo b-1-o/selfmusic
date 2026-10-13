@@ -190,6 +190,25 @@ const migrations = [
         ELSE 'queued'
       END;
     `
+  },
+  {
+    version: 8,
+    name: "cross_device_playback_state",
+    sql: `
+      CREATE TABLE playback_states (
+        user_id TEXT PRIMARY KEY,
+        revision INTEGER NOT NULL DEFAULT 0,
+        queue_json TEXT NOT NULL DEFAULT '[]',
+        current_track_id TEXT,
+        position_seconds REAL NOT NULL DEFAULT 0,
+        is_playing INTEGER NOT NULL DEFAULT 0,
+        repeat_mode TEXT NOT NULL DEFAULT 'off' CHECK (repeat_mode IN ('off', 'one', 'all')),
+        shuffle INTEGER NOT NULL DEFAULT 0,
+        source_device_id TEXT,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX playback_states_updated_idx ON playback_states(updated_at);
+    `
   }
 ];
 
