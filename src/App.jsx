@@ -1336,6 +1336,7 @@ function App() {
   const filteredTracks = useMemo(() => {
     let list = tracks;
     if (view === "favorites") list = list.filter((track) => favorites.includes(track.id));
+    if (view === "offline") list = offlineTracks;
     if (view === "library") {
       if (libraryFilters.artist) list = list.filter((track) => track.artist === libraryFilters.artist);
       if (libraryFilters.album) list = list.filter((track) => track.album === libraryFilters.album);
@@ -1360,7 +1361,7 @@ function App() {
     else if (libraryFilters.sort === "recent") list.sort((a, b) => String(b.addedAt || "").localeCompare(String(a.addedAt || "")));
     else list.sort((a, b) => compare(a, b, "artist") || compare(a, b, "album") || compare(a, b, "trackNumber") || compare(a, b, "title"));
     return list;
-  }, [tracks, view, favorites, query, libraryFilters]);
+  }, [tracks, view, favorites, query, libraryFilters, offlineTracks]);
 
   const toggleOfflineTrack = useCallback(async (track) => {
     if (!track?.id || offlineBusyIds.includes(track.id)) return;
@@ -1675,7 +1676,7 @@ function App() {
     );
   }
 
-  const pageTitle = view === "home" ? "Listen now" : view === "library" ? "Your library" : view === "favorites" ? "Liked tracks" : view === "playlists" ? "Playlists" : view === "youtube" ? "Explore YouTube" : view === "import" ? "Import music" : "Server settings";
+  const pageTitle = view === "home" ? "Listen now" : view === "library" ? "Your library" : view === "favorites" ? "Liked tracks" : view === "offline" ? "Offline downloads" : view === "playlists" ? "Playlists" : view === "youtube" ? "Explore YouTube" : view === "import" ? "Import music" : "Server settings";
 
   return (
     <div className="app-shell" data-theme={appearance.theme} data-accent={appearance.accent} data-glass={appearance.glass} style={{ "--user-accent": appearance.accentColor, "--user-accent-strong": darkenAccent(appearance.accentColor) }}>
@@ -1705,6 +1706,9 @@ function App() {
             </button>
             <button className={view === "playlists" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("playlists"); setMobileMenuOpen(false); }}>
               <ListMusic size={19} /> <span>Playlists</span><span className="nav-count">{playlists.length}</span>
+            </button>
+            <button className={view === "offline" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("offline"); setMobileMenuOpen(false); }}>
+              <Download size={19} /> <span>Offline downloads</span><span className="nav-count">{offlineTrackIds.length}</span>
             </button>
             <button className={view === "youtube" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("youtube"); setMobileMenuOpen(false); }}>
               <SectionGlyph kind="youtube" size={19} /> <span>Explore YouTube</span>
@@ -1752,6 +1756,16 @@ function App() {
         </header>
 
         <div className="content-wrap" ref={contentWrapRef}>
+          {offlineMode && (
+            <div className="offline-mode-banner" role="status">
+              <Download size={16} /><span><strong>Offline mode</strong> — the home server cannot be reached. Playing and managing local copies still works.</span>
+            </div>
+          )}
+          {offlineMessage && (
+            <div className="offline-mode-banner offline-mode-feedback" role="status">
+              <span>{offlineMessage}</span><button className="icon-button" type="button" aria-label="Dismiss offline message" onClick={() => setOfflineMessage("")}><X size={14} /></button>
+            </div>
+          )}
           {view === "home" && (
             <>
               <section className="hero-panel">
@@ -1806,29 +1820,32 @@ function App() {
                   emptyTitle={query ? "No matches found" : "Your first track is waiting"}
                   emptyCopy={query ? "Try another title, artist, or album name." : "Put your own music files in the server's music folder, then refresh the library."}
                   onSettings={() => setView("settings")}
-                  canManage={profile.role === "admin"}
+                  canManage={profile.role === "admin" && !offlineMode}
                   currentTime={currentTime}
                   duration={duration}
+                  offlineTrackIds={offlineTrackIds}
+                  offlineBusyIds={offlineBusyIds}
+                  onOffline={toggleOfflineTrack}
                 />
               </section>
             </>
           )}
 
-          {(view === "library" || view === "favorites") && (
+          {(view === "library" || view === "favorites" || view === "offline") && (
             <section className="page-section">
               <div className="page-intro">
-                <div className="intro-icon"><SectionGlyph kind={view === "favorites" ? "liked" : "library"} size={29} /></div>
-                <p className="eyebrow">{view === "favorites" ? "THE ONES YOU KEEP" : "ALL YOUR AUDIO IN ONE PLACE"}</p>
-                <h1>{view === "favorites" ? "Liked tracks" : "Your library"}</h1>
-                <p>{view === "favorites" ? "Your personal shortlist, saved on this device." : "Music stored on your home server, ready when you are."}</p>
+                <div className="intro-icon">{view === "offline" ? <Download size={29} /> : <SectionGlyph kind={view === "favorites" ? "liked" : "library"} size={29} />}</div>
+                <p className="eyebrow">{view === "favorites" ? "THE ONES YOU KEEP" : view === "offline" ? "SAVED TO THIS DEVICE" : "ALL YOUR AUDIO IN ONE PLACE"}</p>
+                <h1>{view === "favorites" ? "Liked tracks" : view === "offline" ? "Offline downloads" : "Your library"}</h1>
+                <p>{view === "favorites" ? "Your personal shortlist, saved on this device." : view === "offline" ? "These complete audio files are stored on this device and can play without connecting to your home server." : offlineMode ? "Your server is unreachable. Only tracks explicitly saved for offline playback are shown." : "Music stored on your home server, ready when you are."}</p>
                 <div className="intro-meta"><span><Disc3 size={14} /> {filteredTracks.length} tracks</span><span className="meta-separator" /><span><ShieldCheck size={14} /> Private library</span></div>
               </div>
               <div className="library-toolbar">
                 <button className="primary-button" onClick={() => filteredTracks.length && playTrack(filteredTracks[0])} disabled={!filteredTracks.length}><Play size={16} fill="currentColor" /> Play all</button>
                 <button className="ghost-button" onClick={loadTracks}><RefreshCw size={15} className={loadingTracks ? "spin" : ""} /> Refresh</button>
-                {view === "library" && profile.role === "admin" && <button className="ghost-button" type="button" disabled={scanningLibrary} onClick={scanLibraryNow}><RefreshCw size={15} className={scanningLibrary ? "spin" : ""} /> {scanningLibrary ? "Scanning library…" : "Rescan library"}</button>}
+                {view === "library" && profile.role === "admin" && !offlineMode && <button className="ghost-button" type="button" disabled={scanningLibrary} onClick={scanLibraryNow}><RefreshCw size={15} className={scanningLibrary ? "spin" : ""} /> {scanningLibrary ? "Scanning library…" : "Rescan library"}</button>}
               </div>
-              {view === "library" && libraryScanMessage && <div className="upload-feedback" role="status"><span className="upload-feedback-icon"><Check size={17} /></span><span>{libraryScanMessage}</span></div>}
+              {view === "library" && !offlineMode && libraryScanMessage && <div className="upload-feedback" role="status"><span className="upload-feedback-icon"><Check size={17} /></span><span>{libraryScanMessage}</span></div>}
               {view === "library" && (
                 <div className="library-filter-row" aria-label="Library filters">
                   <label>Artist<select value={libraryFilters.artist} onChange={(event) => setLibraryFilters((value) => ({ ...value, artist: event.target.value }))}><option value="">All artists</option>{Array.from(new Set(tracks.map((track) => track.artist).filter(Boolean))).sort().map((artist) => <option key={artist} value={artist}>{artist}</option>)}</select></label>
@@ -1861,9 +1878,12 @@ function App() {
                 emptyTitle={view === "favorites" ? "Nothing liked yet" : query ? "No matches found" : "Your library is empty"}
                 emptyCopy={view === "favorites" ? "Tap the heart beside any track to keep it here." : "Add audio files to your server's music folder, then refresh."}
                 onSettings={() => setView("settings")}
-                canManage={profile.role === "admin"}
+                canManage={profile.role === "admin" && !offlineMode}
                 currentTime={currentTime}
                 duration={duration}
+                offlineTrackIds={offlineTrackIds}
+                offlineBusyIds={offlineBusyIds}
+                onOffline={toggleOfflineTrack}
               />
             </section>
           )}
@@ -2571,6 +2591,7 @@ function App() {
       <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
         <button className={view === "home" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("home")}><SectionGlyph kind="home" size={21} /><span>Home</span></button>
         <button className={view === "library" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("library")}><SectionGlyph kind="library" size={21} /><span>Library</span></button>
+        <button className={view === "offline" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("offline")}><Download size={20} /><span>Offline</span></button>
         <button className={view === "import" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("import")}><SectionGlyph kind="import" size={21} /><span>Import</span></button>
         <button className={view === "youtube" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("youtube")}><SectionGlyph kind="youtube" size={21} /><span>YouTube</span></button>
         <button className={view === "settings" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("settings")}><SectionGlyph kind="server" size={21} /><span>Server</span></button>
