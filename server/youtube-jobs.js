@@ -292,7 +292,7 @@ async function runOneJob(db, config, row) {
       error.code = "YOUTUBE_EMPTY_OUTPUT";
       throw error;
     }
-    updateJob(db, jobId, { phase: "conversion", progress: 92 });
+    updateJob(db, jobId, { phase: "conversion", progress: 94 });
     await runFfmpegMetadata(outputPath, effectiveMetadata, jobTemp);
     const finalStats = await fs.stat(outputPath);
     updateJob(db, jobId, { phase: "indexing", progress: 97 });
