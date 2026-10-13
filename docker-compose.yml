@@ -1,0 +1,50 @@
+services:
+  tailscale:
+    image: tailscale/tailscale:latest
+    hostname: selfmusic
+    environment:
+      TS_AUTHKEY: "${TS_AUTHKEY:?Set TS_AUTHKEY in .env. Create an auth key at https://login.tailscale.com/admin/settings/keys}"
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "false"
+      TS_EXTRA_ARGS: --advertise-tags=tag:selfmusic
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    restart: unless-stopped
+
+  selfmusic:
+    build: .
+    container_name: selfmusic
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # The app bundle is already built for production. The server must support the requested HTTP-over-tailnet URL.
+      # For Secure cookies and a fully installable PWA, optionally enable Tailscale Serve HTTPS (see README).
+      NODE_ENV: development
+      PORT: "8787"
+      MUSIC_DIR: /app/music
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
+      DATABASE_PATH: /app/data/selfmusic.sqlite
+      COVER_CACHE_DIR: /app/data/artwork
+      TRANSCODE_CACHE_DIR: /app/data/transcodes
+    volumes:
+      - ${MUSIC_HOST_DIR:-./music}:/app/music
+      - ./data:/app/data
+      # Optional: create cookies.txt in the project root, then uncomment to pass it read-only.
+      # - ./cookies.txt:/app/cookies.txt:ro
+    network_mode: "service:tailscale"
+    depends_on:
+      tailscale:
+        condition: service_started
+    # For direct LAN access instead of Tailscale, remove network_mode and depends_on above,
+    # then uncomment the following port mapping. Do not expose it directly to the public internet.
+    # ports:
+    #   - "8787:8787"
+
+volumes:
+  tailscale-state:
