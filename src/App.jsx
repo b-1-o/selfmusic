@@ -555,23 +555,31 @@ function App() {
   const [remoteWizardOpen, setRemoteWizardOpen] = useState(() => localStorage.getItem(REMOTE_WIZARD_KEY) !== "1");
 
   const currentTrack = tracks.find((track) => track.id === currentTrackId) || null;
-  const remotePlaybackTrack = remotePlaybackState?.currentTrackId
-    ? tracks.find((track) => track.id === remotePlaybackState.currentTrackId) || null
-    : null;
-  const activeQueueTracks = playbackQueueIds.length
-    ? playbackQueueIds.map((id) => tracks.find((track) => track.id === id)).filter(Boolean)
-    : tracks;
-  const knownTrackIds = new Set(tracks.map((track) => track.id));
-  let syncQueue = (playbackQueueIds.length ? playbackQueueIds.filter((id) => knownTrackIds.has(id)) : tracks.map((track) => track.id));
-  if (syncQueue.length > 500) {
-    const currentIndex = syncQueue.indexOf(currentTrackId);
-    const start = currentIndex >= 0 ? Math.max(0, Math.min(currentIndex - 250, syncQueue.length - 500)) : 0;
-    syncQueue = syncQueue.slice(start, start + 500);
-  }
-  if (currentTrackId && knownTrackIds.has(currentTrackId) && !syncQueue.includes(currentTrackId)) {
-    if (syncQueue.length >= 500) syncQueue = [...syncQueue.slice(0, 499), currentTrackId];
-    else syncQueue = [...syncQueue, currentTrackId];
-  }
+  const remotePlaybackTrack = useMemo(
+    () => remotePlaybackState?.currentTrackId ? tracks.find((track) => track.id === remotePlaybackState.currentTrackId) || null : null,
+    [remotePlaybackState, tracks]
+  );
+  const activeQueueTracks = useMemo(() => {
+    if (!playbackQueueIds.length) return tracks;
+    const trackById = new Map(tracks.map((track) => [track.id, track]));
+    return playbackQueueIds.map((id) => trackById.get(id)).filter(Boolean);
+  }, [playbackQueueIds, tracks]);
+  const syncQueue = useMemo(() => {
+    const knownTrackIds = new Set(tracks.map((track) => track.id));
+    let queue = playbackQueueIds.length
+      ? playbackQueueIds.filter((id) => knownTrackIds.has(id))
+      : tracks.map((track) => track.id);
+    if (queue.length > 500) {
+      const currentIndex = queue.indexOf(currentTrackId);
+      const start = currentIndex >= 0 ? Math.max(0, Math.min(currentIndex - 250, queue.length - 500)) : 0;
+      queue = queue.slice(start, start + 500);
+    }
+    if (currentTrackId && knownTrackIds.has(currentTrackId) && !queue.includes(currentTrackId)) {
+      if (queue.length >= 500) queue = [...queue.slice(0, 499), currentTrackId];
+      else queue = [...queue, currentTrackId];
+    }
+    return queue;
+  }, [playbackQueueIds, tracks, currentTrackId]);
   playbackSyncPayloadRef.current = {
     queue: syncQueue,
     currentTrackId: syncQueue.includes(currentTrackId) ? currentTrackId : null,
