@@ -34,6 +34,75 @@ jobs:
         run: python3 -m py_compile server/metadata.py
       - name: Build Docker image
         run: docker build --tag selfmusic-ci .
+      - name: Smoke test Docker runtime, legacy login, library upload and streaming
+        shell: bash
+        run: |
+          set -euo pipefail
+          base_url="http://127.0.0.1:18787"
+          docker run --detach --name selfmusic-smoke --publish 18787:8787 \
+            --env NODE_ENV=development \
+            --env SELF_MUSIC_PASSWORD=smoke-test-password \
+            --env SESSION_SECRET=smoke-test-session-secret-with-more-than-32-characters \
+            --env DATABASE_PATH=/app/data/selfmusic.sqlite \
+            --env COVER_CACHE_DIR=/app/data/artwork \
+            selfmusic-ci
+          cleanup() { docker rm --force selfmusic-smoke >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+
+          ready=0
+          for attempt in $(seq 1 40); do
+            if curl --fail --silent "$base_url/api/auth/session" >/tmp/selfmusic-session.json; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = "1"
+          grep -q '"configured":true' /tmp/selfmusic-session.json
+
+          curl --fail --silent --show-error \
+            --cookie-jar /tmp/selfmusic-cookies.txt \
+            --header 'Content-Type: application/json' \
+            --data '{"password":"smoke-test-password"}' \
+            "$base_url/api/auth/login" >/tmp/selfmusic-login.json
+          grep -q '"authenticated":true' /tmp/selfmusic-login.json
+
+          printf 'SelfMusic CI audio fixture\n' >/tmp/selfmusic-smoke.mp3
+          curl --fail --silent --show-error \
+            --cookie /tmp/selfmusic-cookies.txt \
+            --form 'files=@/tmp/selfmusic-smoke.mp3' \
+            "$base_url/api/upload" >/tmp/selfmusic-upload.json
+          grep -q '"uploaded":1' /tmp/selfmusic-upload.json
+
+          curl --fail --silent --show-error --cookie /tmp/selfmusic-cookies.txt \
+            "$base_url/api/tracks" >/tmp/selfmusic-tracks.json
+          track_id="$(node -e 'const fs=require("node:fs"); const data=JSON.parse(fs.readFileSync("/tmp/selfmusic-tracks.json","utf8")); if(!data.tracks || data.tracks.length!==1) process.exit(1); process.stdout.write(data.tracks[0].id);')"
+          test -n "$track_id"
+
+          stream_status="$(curl --silent --show-error --output /tmp/selfmusic-range.bin --write-out '%{http_code}' \
+            --header 'Range: bytes=0-2' --cookie /tmp/selfmusic-cookies.txt \
+            "$base_url/api/stream/$track_id")"
+          test "$stream_status" = "206"
+          test "$(wc -c </tmp/selfmusic-range.bin | tr -d ' ')" = "3"
+
+          curl --fail --silent --show-error --cookie /tmp/selfmusic-cookies.txt \
+            --header 'Content-Type: application/json' --data '{"name":"CI Smoke"}' \
+            "$base_url/api/playlists" >/tmp/selfmusic-playlist.json
+          grep -q '"name":"CI Smoke"' /tmp/selfmusic-playlist.json
+
+          salt="selfmusic-ci"
+          token="$(printf '%s%s' 'smoke-test-password' "$salt" | md5sum | cut -d ' ' -f 1)"
+          curl --fail --silent --show-error \
+            "$base_url/rest/ping.view?u=owner&t=$token&s=$salt&v=1.16.1&c=ci&f=json" \
+            >/tmp/selfmusic-subsonic.json
+          grep -q '"status":"ok"' /tmp/selfmusic-subsonic.json
+
+          youtube_status="$(curl --silent --show-error --output /tmp/selfmusic-youtube.json --write-out '%{http_code}' \
+            --cookie /tmp/selfmusic-cookies.txt --header 'Content-Type: application/json' \
+            --data '{"url":"https://example.com/not-youtube","async":true}' \
+            "$base_url/api/youtube/download")"
+          test "$youtube_status" = "400"
+          grep -q 'invalid_youtube_url' /tmp/selfmusic-youtube.json
 
   windows-launchers:
     runs-on: windows-latest
