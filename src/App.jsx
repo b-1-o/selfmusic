@@ -2024,25 +2024,11 @@ function App() {
             <button className={view === "home" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("home"); setMobileMenuOpen(false); }}>
               <SectionGlyph kind="home" size={19} /> <span>Home</span>
             </button>
-            <button className={view === "library" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("library"); setMobileMenuOpen(false); }}>
+            <button className={["library", "favorites", "playlists"].includes(view) ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("library"); setMobileMenuOpen(false); }}>
               <SectionGlyph kind="library" size={19} /> <span>Library</span><span className="nav-count">{tracks.length}</span>
             </button>
-            {profile.role === "admin" && (
-              <button className={view === "import" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("import"); setMobileMenuOpen(false); }}>
-                <SectionGlyph kind="import" size={19} /> <span>Import music</span>
-              </button>
-            )}
-            <button className={view === "favorites" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("favorites"); setMobileMenuOpen(false); }}>
-              <SectionGlyph kind="liked" size={19} /> <span>Liked tracks</span>
-            </button>
-            <button className={view === "playlists" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("playlists"); setMobileMenuOpen(false); }}>
-              <ListMusic size={19} /> <span>Playlists</span><span className="nav-count">{playlists.length}</span>
-            </button>
-            <button className={view === "offline" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("offline"); setMobileMenuOpen(false); }}>
-              <Download size={19} /> <span>Offline downloads</span><span className="nav-count">{offlineTrackIds.length}</span>
-            </button>
-            <button className={view === "youtube" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("youtube"); setMobileMenuOpen(false); }}>
-              <SectionGlyph kind="youtube" size={19} /> <span>Explore YouTube</span>
+            <button className={["import", "offline", "youtube"].includes(view) ? "nav-item nav-active" : "nav-item"} onClick={() => { setView(profile.role === "admin" && !offlineMode ? "import" : "youtube"); setMobileMenuOpen(false); }}>
+              <Plus size={19} /> <span>Add / Import</span>
             </button>
           </nav>
         </div>
@@ -2053,13 +2039,20 @@ function App() {
             <div className="collection-art"><SectionGlyph kind="library" size={29} /></div>
             <span><strong>Home library</strong><small>{tracks.length} {tracks.length === 1 ? "track" : "tracks"}</small></span>
           </button>
+          <div className="sidebar-collection-links">
+            <button className={view === "favorites" ? "sidebar-collection-link nav-active" : "sidebar-collection-link"} onClick={() => setView("favorites")}><Heart size={15} /><span>Liked tracks</span><span>{favorites.length}</span></button>
+            <button className={view === "playlists" ? "sidebar-collection-link nav-active" : "sidebar-collection-link"} onClick={() => setView("playlists")}><ListMusic size={15} /><span>Playlists</span><span>{playlists.length}</span></button>
+          </div>
           {!tracks.length && <p className="sidebar-hint">Add audio files to your server's music folder to begin.</p>}
         </div>
 
         <div className="sidebar-bottom">
-          <div className="connection-status"><span className="status-pip" /><span>Home server connected</span></div>
+          <div className="connection-status"><span className="status-pip" /><span>{serverUnavailable || offlineMode ? "Home server unreachable" : playbackSyncStatus === "connected" ? "Home server connected" : "Sync reconnecting"}</span></div>
+          <button className={view === "server" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("server"); setMobileMenuOpen(false); }}>
+            <SectionGlyph kind="server" size={19} /><span>Server</span>
+          </button>
           <button className={view === "settings" ? "nav-item nav-active" : "nav-item"} onClick={() => { setView("settings"); setMobileMenuOpen(false); }}>
-            <SectionGlyph kind="server" size={19} /><span>Server settings</span>
+            <Palette size={19} /><span>Settings</span>
           </button>
           <button className="nav-item logout-item" onClick={handleLogout}><LogOut size={18} /><span>Sign out</span></button>
           <div className="sidebar-version">SELFMUSIC <span>v0.1.0</span></div>
@@ -2087,6 +2080,7 @@ function App() {
         </header>
 
         <div className="content-wrap" ref={contentWrapRef}>
+          {["import", "offline", "youtube"].includes(view) && <AddTabs view={view} onNavigate={setView} isAdmin={profile.role === "admin" && !offlineMode} />}
           {offlineMode && (
             <div className="offline-mode-banner" role="status">
               <Download size={16} /><span><strong>Offline mode</strong> — the home server cannot be reached. Playing local copies still works.</span>
@@ -2108,7 +2102,7 @@ function App() {
                   <p>Your music collection, streamed from your own home server. No algorithm deciding what you hear.</p>
                   <div className="hero-actions">
                     <button className="primary-button" onClick={() => tracks.length ? playTrack(currentTrack || tracks[0]) : setView("library")}><Play size={17} fill="currentColor" /> {tracks.length ? "Start listening" : "Explore library"}</button>
-                    <button className="ghost-button" onClick={() => setView("settings")}><Server size={16} /> Server details</button>
+                    <button className="ghost-button" onClick={() => setView("server")}><Server size={16} /> Server details</button>
                   </div>
                 </div>
                 <div className="hero-visual" aria-hidden="true">
@@ -2947,11 +2941,10 @@ function App() {
 
       <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
         <button className={view === "home" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("home")}><SectionGlyph kind="home" size={21} /><span>Home</span></button>
-        <button className={view === "library" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("library")}><SectionGlyph kind="library" size={21} /><span>Library</span></button>
-        <button className={view === "offline" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("offline")}><Download size={20} /><span>Offline</span></button>
-        {profile.role === "admin" && !offlineMode && <button className={view === "import" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("import")}><SectionGlyph kind="import" size={21} /><span>Import</span></button>}
-        <button className={view === "youtube" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("youtube")}><SectionGlyph kind="youtube" size={21} /><span>YouTube</span></button>
-        <button className={view === "settings" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("settings")}><SectionGlyph kind="server" size={21} /><span>Server</span></button>
+        <button className={["library", "favorites", "playlists"].includes(view) ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("library")}><SectionGlyph kind="library" size={21} /><span>Library</span></button>
+        <button className={["import", "offline", "youtube"].includes(view) ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView(profile.role === "admin" && !offlineMode ? "import" : "youtube")}><Plus size={20} /><span>Add</span></button>
+        <button className={view === "server" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("server")}><SectionGlyph kind="server" size={21} /><span>Server</span></button>
+        <button className={view === "settings" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("settings")}><Palette size={20} /><span>Settings</span></button>
       </nav>
 
       {authenticated && playbackSyncStatus !== "connected" && (
