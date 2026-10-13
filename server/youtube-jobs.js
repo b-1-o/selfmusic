@@ -222,16 +222,17 @@ async function runOneJob(db, config, row) {
   const ytdlp = process.env.YT_DLP_PATH || (process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp");
   const musicRoot = path.resolve(config.musicRoot);
   const uploadRoot = path.join(musicRoot, "Uploads");
-  await fs.mkdir(uploadRoot, { recursive: true });
-  // Index the existing library before this task creates a new file, so duplicate lookup won't match the output against itself.
-  await scanLibrary(db, musicRoot, { coverCacheDir: config.coverCacheDir });
   const jobTemp = path.join(config.workDir, "youtube", jobId);
-  await fs.mkdir(jobTemp, { recursive: true });
-  const url = normalizeVideoUrl({ url: row.url });
-  updateJob(db, jobId, { status: "running", phase: "metadata", progress: 1, errorCode: null, errorMessage: null });
-
   let outputPath = null;
+
   try {
+    updateJob(db, jobId, { status: "running", phase: "indexing", progress: 1, errorCode: null, errorMessage: null });
+    await fs.mkdir(uploadRoot, { recursive: true });
+    // Index the existing library before this task creates a new file, so duplicate lookup won't match the output against itself.
+    await scanLibrary(db, musicRoot, { coverCacheDir: config.coverCacheDir });
+    await fs.mkdir(jobTemp, { recursive: true });
+    const url = normalizeVideoUrl({ url: row.url });
+    updateJob(db, jobId, { phase: "metadata", progress: 2 });
     const infoArgs = ["--no-warnings", "--no-playlist", "--dump-single-json", "--skip-download", "--no-colors", url];
     const cookiePath = path.join(config.projectRoot, "cookies.txt");
     try { await fs.access(cookiePath); infoArgs.splice(infoArgs.length - 1, 0, "--cookies", cookiePath); } catch {}
@@ -254,7 +255,7 @@ async function runOneJob(db, config, row) {
       genre: inputMetadata.genre || (Array.isArray(info.categories) ? info.categories[0] : "")
     });
     const title = effectiveMetadata?.title || String(info.title || "YouTube audio");
-    updateJob(db, jobId, { phase: "download", progress: 2, title });
+    updateJob(db, jobId, { phase: "download", progress: 5, title });
 
     const stem = sanitizeName(title);
     let suffix = 1;
@@ -280,7 +281,7 @@ async function runOneJob(db, config, row) {
       timeoutMs: 20 * 60 * 1000,
       maxOutputBytes: 200000,
       onProgress: (value, phase) => {
-        const progress = phase === "conversion" ? 90 + value * 0.03 : Math.min(89, 2 + value * 0.87);
+        const progress = phase === "conversion" ? 90 + value * 0.03 : Math.min(89, 5 + value * 0.84);
         updateJob(db, jobId, { phase, progress: Math.min(93, Math.max(2, progress)) });
       }
     });
@@ -398,7 +399,7 @@ export function mountYoutubeJobRoutes(app, config) {
     workDir: path.resolve(config.workDir)
   };
   fs.mkdir(workerConfig.workDir, { recursive: true }).catch((error) => console.error("[SelfMusic] YouTube work directory failed", error.message));
-  db.prepare("UPDATE youtube_jobs SET status = 'queued', progress = 0, updated_at = CURRENT_TIMESTAMP WHERE status = 'running'").run();
+  db.prepare("UPDATE youtube_jobs SET status = 'queued', phase = 'queued', progress = 0, updated_at = CURRENT_TIMESTAMP WHERE status = 'running'").run();
   workerContext = { db, config: workerConfig };
   setImmediate(() => { void drainQueue(); });
 
