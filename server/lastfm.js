@@ -53,12 +53,19 @@ function safeText(value, maximum = 300) {
 
 function getAccount(db, userId) {
   const account = db.prepare("SELECT session_key AS sessionKey, username FROM lastfm_accounts WHERE user_id = ?").get(userId);
-  if (!account) return null;
-  try {
-    return { ...account, sessionKey: decryptSecret(account.sessionKey) };
-  } catch {
-    return null;
+  if (account) {
+    try {
+      return { ...account, sessionKey: decryptSecret(account.sessionKey) };
+    } catch {
+      return null;
+    }
   }
+  // Compatibility fallback for the single-owner installation only. Managed users
+  // must authorize their own Last.fm account via OAuth.
+  if (userId === "legacy" && String(process.env.LASTFM_SESSION_KEY || "").trim()) {
+    return { sessionKey: String(process.env.LASTFM_SESSION_KEY).trim(), username: "Server Last.fm", global: true };
+  }
+  return null;
 }
 
 async function publishScrobble(db, userId, payload) {
@@ -79,8 +86,10 @@ async function publishScrobble(db, userId, payload) {
 export function mountLastFmRoutes(app, { db, requireAuth }) {
   app.get("/api/lastfm/status", requireAuth, (req, res) => {
     const account = db.prepare("SELECT username, connected_at AS connectedAt FROM lastfm_accounts WHERE user_id = ?").get(req.authUser.id);
+    const globalLegacy = req.authUser.id === "legacy" && Boolean(String(process.env.LASTFM_SESSION_KEY || "").trim());
+    const visibleAccount = account || (globalLegacy ? { username: "Server Last.fm", global: true } : null);
     res.setHeader("Cache-Control", "no-store");
-    res.json({ configured: Boolean(apiConfig()), connected: Boolean(account), account: account || null });
+    res.json({ configured: Boolean(apiConfig()), connected: Boolean(visibleAccount), account: visibleAccount });
   });
 
   app.post("/api/lastfm/connect", requireAuth, async (req, res) => {
