@@ -421,6 +421,8 @@ function App() {
   const [accountMessage, setAccountMessage] = useState("");
   const [accountMessageError, setAccountMessageError] = useState(false);
   const [libraryFilters, setLibraryFilters] = useState({ artist: "", album: "", year: "", genre: "", duration: "all", sort: "artist" });
+  const [scanningLibrary, setScanningLibrary] = useState(false);
+  const [libraryScanMessage, setLibraryScanMessage] = useState("");
   const [duplicateGroups, setDuplicateGroups] = useState([]);
   const [duplicateLoading, setDuplicateLoading] = useState(false);
   const [duplicateMessage, setDuplicateMessage] = useState("");
@@ -938,6 +940,22 @@ function App() {
     setLastFmStatus({ configured: Boolean(lastFmStatus.configured), connected: false, account: null });
     setLastFmMessage("Last.fm disconnected.");
   }, [lastFmStatus.configured]);
+
+  const scanLibraryNow = useCallback(async () => {
+    setScanningLibrary(true);
+    setLibraryScanMessage("");
+    try {
+      const response = await fetch("/api/library/scan", { method: "POST", credentials: "same-origin", cache: "no-store" });
+      if (!response.ok) throw new Error(await readMessage(response));
+      const body = await response.json();
+      setLibraryScanMessage("Scan complete — " + body.tracks + " tracks indexed.");
+      await loadTracks();
+    } catch (error) {
+      setLibraryScanMessage(error.message || "Library scan failed.");
+    } finally {
+      setScanningLibrary(false);
+    }
+  }, [loadTracks]);
 
   const refreshDuplicates = useCallback(async () => {
     setDuplicateLoading(true);
@@ -1621,7 +1639,9 @@ function App() {
               <div className="library-toolbar">
                 <button className="primary-button" onClick={() => filteredTracks.length && playTrack(filteredTracks[0])} disabled={!filteredTracks.length}><Play size={16} fill="currentColor" /> Play all</button>
                 <button className="ghost-button" onClick={loadTracks}><RefreshCw size={15} className={loadingTracks ? "spin" : ""} /> Refresh</button>
+                {view === "library" && profile.role === "admin" && <button className="ghost-button" type="button" disabled={scanningLibrary} onClick={scanLibraryNow}><RefreshCw size={15} className={scanningLibrary ? "spin" : ""} /> {scanningLibrary ? "Scanning library…" : "Rescan library"}</button>}
               </div>
+              {view === "library" && libraryScanMessage && <div className="upload-feedback" role="status"><span className="upload-feedback-icon"><Check size={17} /></span><span>{libraryScanMessage}</span></div>}
               {view === "library" && (
                 <div className="library-filter-row" aria-label="Library filters">
                   <label>Artist<select value={libraryFilters.artist} onChange={(event) => setLibraryFilters((value) => ({ ...value, artist: event.target.value }))}><option value="">All artists</option>{Array.from(new Set(tracks.map((track) => track.artist).filter(Boolean))).sort().map((artist) => <option key={artist} value={artist}>{artist}</option>)}</select></label>
