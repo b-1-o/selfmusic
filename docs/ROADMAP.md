@@ -8,7 +8,7 @@ This file separates implemented behavior from work that still needs implementati
 - Media Session metadata, play/pause, previous/next and seek handlers; the player updates lock-screen position where the browser supports it.
 - Explicit per-track offline saving to the browser's Cache API, an Offline Downloads view, and cached audio routing through the service worker.
 - Last.fm retry queue persisted in SQLite, with bounded exponential backoff for failed submissions.
-- YouTube queued downloads persisted in SQLite, with progress parsed from yt-dlp output and SSE updates to connected clients.
+- YouTube queued downloads persisted in SQLite, with phase-aware progress parsed from yt-dlp download/postprocess templates and SSE updates to connected clients.
 
 ## Known limitations and next iterations
 
@@ -18,7 +18,7 @@ Not implemented. Current duplicate groups require byte-identical SHA-256 hashes.
 
 ### YouTube progress accuracy
 
-The percentage is approximate. It parses yt-dlp's human-readable download progress, and conversion/metadata tagging do not provide a precise duration-based percentage for every extractor. A follow-up should use yt-dlp's stable progress-template output (or machine-readable hooks where supported), distinguish metadata, download, conversion, and indexing phases, and display phase-aware progress rather than presenting conversion time as an exact percentage.
+The client distinguishes metadata, download, conversion and indexing. Download and postprocess percentages come from explicit yt-dlp progress-template markers. They are more reliable than parsing arbitrary percentages in human-readable output, but conversion and metadata-tagging percentages can still be unavailable or approximate depending on the extractor/postprocessor. Future work should test representative yt-dlp output and display indeterminate progress when a percentage is unavailable.
 
 ### Last.fm delivery guarantees
 
