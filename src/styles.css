@@ -3118,3 +3118,45 @@ html, body, #root {
   .appearance-glass-options.theme-options .appearance-glass-option { padding: 8px 6px; }
   .appearance-glass-options.theme-options .appearance-glass-option small { font-size: 8px; }
 }
+
+
+/* The opacity slider controls the tint level; the blur slider changes backdrop sampling. */
+.app-shell[data-glass="liquid"] .settings-card,
+.app-shell[data-glass="liquid"] .settings-status-card,
+.app-shell[data-glass="liquid"] .stat-card,
+.app-shell[data-glass="liquid"] .glass-mist-panel,
+.app-shell[data-glass="liquid"] .library-filter-drawer {
+  background: linear-gradient(135deg,
+    color-mix(in srgb, #282430 var(--user-glass-opacity, 78%), transparent),
+    color-mix(in srgb, #111116 var(--user-glass-opacity, 78%), transparent) 76%);
+}
+.app-shell[data-glass="soft"] .settings-card,
+.app-shell[data-glass="soft"] .settings-status-card,
+.app-shell[data-glass="soft"] .stat-card,
+.app-shell[data-glass="soft"] .glass-mist-panel,
+.app-shell[data-glass="soft"] .library-filter-drawer {
+  background: color-mix(in srgb, #211f2a var(--user-glass-opacity, 78%), transparent);
+}
+.app-shell[data-theme="light"][data-glass="liquid"] .settings-card,
+.app-shell[data-theme="light"][data-glass="liquid"] .settings-status-card,
+.app-shell[data-theme="light"][data-glass="liquid"] .stat-card,
+.app-shell[data-theme="light"][data-glass="liquid"] .glass-mist-panel,
+.app-shell[data-theme="light"][data-glass="liquid"] .library-filter-drawer,
+.app-shell[data-theme="light"][data-glass="soft"] .settings-card,
+.app-shell[data-theme="light"][data-glass="soft"] .settings-status-card,
+.app-shell[data-theme="light"][data-glass="soft"] .stat-card,
+.app-shell[data-theme="light"][data-glass="soft"] .glass-mist-panel,
+.app-shell[data-theme="light"][data-glass="soft"] .library-filter-drawer {
+  background: color-mix(in srgb, #ffffff var(--user-glass-opacity, 78%), transparent);
+}
+.app-shell[data-theme] .content-wrap.view-entering > * {
+  animation-duration: var(--user-motion-duration, 220ms);
+}
+.app-shell[data-theme] .nav-item,
+.app-shell[data-theme] .mobile-nav-item,
+.app-shell[data-theme] .add-section-tab,
+.app-shell[data-theme] .settings-card,
+.app-shell[data-theme] .track-row,
+.app-shell[data-theme] .icon-button {
+  transition-duration: var(--user-motion-duration, 220ms);
+}
