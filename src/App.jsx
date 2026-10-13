@@ -2925,13 +2925,57 @@ function App() {
                     </div>
                   </div>
                   <div className="appearance-control">
-                    <div className="appearance-control-label"><strong>Color scheme</strong><span>Choose a light or dark interface</span></div>
+                    <div className="appearance-control-label"><strong>Color scheme</strong><span>Dark, light, or follow the device</span></div>
                     <div className="appearance-glass-options theme-options" role="group" aria-label="Color scheme">
                       <button type="button" className={"appearance-glass-option" + (appearance.theme === "dark" ? " appearance-glass-option-active" : "")} onClick={() => setAppearance((value) => ({ ...value, theme: "dark" }))} aria-pressed={appearance.theme === "dark"}><span className="theme-preview theme-preview-dark" /><strong>Dark</strong><small>OLED-friendly</small></button>
                       <button type="button" className={"appearance-glass-option" + (appearance.theme === "light" ? " appearance-glass-option-active" : "")} onClick={() => setAppearance((value) => ({ ...value, theme: "light" }))} aria-pressed={appearance.theme === "light"}><span className="theme-preview theme-preview-light" /><strong>Light</strong><small>Bright surfaces</small></button>
+                      <button type="button" className={"appearance-glass-option" + (appearance.theme === "system" ? " appearance-glass-option-active" : "")} onClick={() => setAppearance((value) => ({ ...value, theme: "system" }))} aria-pressed={appearance.theme === "system"}><span className="theme-preview theme-preview-system" /><strong>System</strong><small>Follow device</small></button>
                     </div>
                   </div>
-                  <button className="text-button appearance-reset" type="button" onClick={() => setAppearance({ accent: "rose", accentColor: ACCENT_PRESETS[0].color, ...hexToHsv(ACCENT_PRESETS[0].color), glass: "liquid", theme: "dark" })}>Reset appearance</button>
+                  <div className="appearance-control">
+                    <div className="appearance-control-label"><strong>Background presets</strong><span>Choose the mood of your music space</span></div>
+                    <div className="background-presets" role="group" aria-label="Background presets">
+                      {BACKGROUND_PRESETS.map((preset) => (
+                        <button type="button" key={preset.id} className={"background-preset" + (appearance.backgroundPreset === preset.id && !appearance.wallpaperDataUrl ? " background-preset-active" : "")} onClick={() => setAppearance((value) => ({ ...value, backgroundPreset: preset.id, wallpaperDataUrl: "" }))} aria-pressed={appearance.backgroundPreset === preset.id}>
+                          <span style={{ backgroundImage: preset.image }} /><strong>{preset.label}</strong>
+                        </button>
+                      ))}
+                    </div>
+                    <label className="wallpaper-upload">
+                      <span><Upload size={15} /> Use your own wallpaper <small>(PNG, JPEG, WebP · up to 1 MB)</small></span>
+                      <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (!file) return;
+                        if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 1024 * 1024) {
+                          setAppearanceMessage("Choose a PNG, JPEG, or WebP image up to 1 MB so it fits browser storage.");
+                          event.target.value = "";
+                          return;
+                        }
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                          if (typeof reader.result === "string") {
+                            setAppearance((value) => ({ ...value, wallpaperDataUrl: reader.result }));
+                            setAppearanceMessage("Wallpaper saved in this browser.");
+                          }
+                        };
+                        reader.onerror = () => setAppearanceMessage("Could not read this image. Try another file.");
+                        reader.readAsDataURL(file);
+                      }} />
+                    </label>
+                    {appearance.wallpaperDataUrl && <button className="text-button" type="button" onClick={() => setAppearance((value) => ({ ...value, wallpaperDataUrl: "" }))}>Remove wallpaper</button>}
+                    {appearance.wallpaperDataUrl && <label className="appearance-range-label"><span>Wallpaper dimming</span><strong>{appearance.wallpaperDim}%</strong><input className="range-input" type="range" min="5" max="85" step="5" value={appearance.wallpaperDim} onChange={(event) => setAppearance((value) => ({ ...value, wallpaperDim: Number(event.target.value) }))} /></label>}
+                  </div>
+                  <div className="appearance-control">
+                    <div className="appearance-control-label"><strong>Glass and layout</strong><span>Adjust how the controls feel</span></div>
+                    <label className="appearance-range-label"><span>Panel opacity</span><strong>{appearance.glassOpacity}%</strong><input className="range-input" type="range" min="35" max="96" step="1" value={appearance.glassOpacity} onChange={(event) => setAppearance((value) => ({ ...value, glassOpacity: Number(event.target.value) }))} /></label>
+                    <label className="appearance-range-label"><span>Blur</span><strong>{appearance.glassBlur}px</strong><input className="range-input" type="range" min="0" max="36" step="1" value={appearance.glassBlur} onChange={(event) => setAppearance((value) => ({ ...value, glassBlur: Number(event.target.value) }))} /></label>
+                    <label className="appearance-range-label"><span>Corner radius</span><strong>{appearance.cornerRadius}px</strong><input className="range-input" type="range" min="10" max="32" step="1" value={appearance.cornerRadius} onChange={(event) => setAppearance((value) => ({ ...value, cornerRadius: Number(event.target.value) }))} /></label>
+                    <label className="appearance-range-label">Interface density<select value={appearance.density} onChange={(event) => setAppearance((value) => ({ ...value, density: event.target.value }))}><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select></label>
+                    <label className="appearance-check-row"><input type="checkbox" checked={appearance.animations} onChange={(event) => setAppearance((value) => ({ ...value, animations: event.target.checked }))} /><span>Enable interface animations</span></label>
+                    <label className="appearance-range-label">Animation speed<select value={appearance.animationSpeed} disabled={!appearance.animations} onChange={(event) => setAppearance((value) => ({ ...value, animationSpeed: event.target.value }))}><option value="slow">Slow and soft</option><option value="normal">Balanced</option><option value="fast">Fast</option></select></label>
+                    {appearanceMessage && <p className="settings-footnote" role="status">{appearanceMessage}</p>}
+                  </div>
+                  <button className="text-button appearance-reset" type="button" onClick={() => { setAppearance({ accent: "rose", accentColor: ACCENT_PRESETS[0].color, ...hexToHsv(ACCENT_PRESETS[0].color), glass: "liquid", theme: "dark", glassOpacity: 78, glassBlur: 24, cornerRadius: 20, density: "comfortable", backgroundPreset: "midnight", wallpaperDataUrl: "", wallpaperDim: 38, animations: true, animationSpeed: "normal" }); setAppearanceMessage(""); }}>Reset appearance</button>
                 </div>
 
                 <div className="settings-card settings-card-wide">
