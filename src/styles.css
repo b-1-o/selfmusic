@@ -2869,3 +2869,50 @@ html, body, #root {
     font-size: 10px;
   }
 }
+/* Server connection diagnostics and PWA install controls. */
+.settings-status-card {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+}
+.settings-status-copy { flex: 1 1 260px; }
+.settings-status-copy p { overflow-wrap: anywhere; }
+.settings-status-copy code { color: inherit; font-size: inherit; }
+.settings-status-online .settings-status-icon { background: rgba(137,214,173,.08); }
+.settings-status-degraded .settings-status-icon { background: rgba(240,179,90,.1); border-color: rgba(240,179,90,.27); }
+.settings-status-offline .settings-status-icon { background: rgba(240,113,120,.1); border-color: rgba(240,113,120,.3); }
+.settings-status-degraded .settings-status-icon .status-pip { background: #f0b35a; }
+.settings-status-offline .settings-status-icon .status-pip { background: #f07178; }
+.settings-status-actions { display: flex; flex: 0 0 auto; flex-direction: column; align-items: flex-end; gap: 8px; }
+.settings-reconnect-button {
+  min-height: 44px;
+  padding-inline: 12px;
+  border-radius: 11px;
+}
+.settings-status-card button:focus-visible,
+.pwa-install-button:focus-visible {
+  outline: 2px solid var(--user-accent);
+  outline-offset: 3px;
+}
+.status-badge-offline {
+  color: #f2a2a6;
+  border-color: rgba(240,113,120,.3);
+  background: rgba(240,113,120,.08);
+}
+.status-badge-offline span { background: #f07178; }
+.status-badge-degraded {
+  color: #f2c987;
+  border-color: rgba(240,179,90,.3);
+  background: rgba(240,179,90,.08);
+}
+.status-badge-degraded span { background: #f0b35a; }
+.pwa-install-button { min-height: 44px; }
+@media (max-width: 720px) {
+  .settings-status-card { gap: 10px; padding: 15px; }
+  .settings-status-copy { flex-basis: calc(100% - 64px); }
+  .settings-status-actions { flex: 1 1 100%; flex-direction: row; align-items: center; justify-content: space-between; padding-left: 52px; }
+  .settings-reconnect-button { min-width: 112px; justify-content: center; }
+}
+.app-shell[data-theme="light"] .settings-status-copy p { color: #454650; }
