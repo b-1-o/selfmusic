@@ -2378,7 +2378,7 @@ function App() {
                       selectYoutubeVideo(item);
                     }}
                   >
-                    <div className="youtube-url-caption"><span>ALREADY HAVE A LINK?</span><span>OPEN IN OFFICIAL PLAYER</span></div>
+                    <div className="youtube-url-caption"><span>ALREADY HAVE A LINK?</span><span>PASTE LINK TO CONVERT</span></div>
                     <div className="youtube-url-row">
                       <label className="youtube-url-field">
                         <Link2 size={16} />
@@ -2395,7 +2395,7 @@ function App() {
                         />
                       </label>
                       <button className="ghost-button youtube-url-button" type="submit">
-                        <Play size={14} fill="currentColor" /> Open video
+                        <Download size={14} /> Use link
                       </button>
                     </div>
                     {youtubeUrlError && <p className="youtube-url-error" role="alert">{youtubeUrlError}</p>}
@@ -2417,14 +2417,14 @@ function App() {
                       <div>
                         <strong>{youtubeError}</strong>
                         <span>{youtubeError.toLowerCase().includes("youtube_api_key")
-                          ? "Open Settings → Integrations, add YOUTUBE_API_KEY to the server's private .env file, then restart SelfMusic. You can still open a direct YouTube video link here."
+                          ? "Search used a fallback. Check the server or try again."
                           : youtubeError.toLowerCase().includes("quota")
                             ? "The search quota for your YouTube API key has been reached. Try again tomorrow or review quota usage in Google Cloud."
                             : "Check the server connection and YouTube Data API v3 configuration in Settings → Integrations, then try again. Direct video links can still open in the official player."}</span>
                       </div>
                     </div>
                   )}
-                  {youtubeLoading && <div className="youtube-empty"><RefreshCw className="spin" size={23} /><strong>Looking through YouTube</strong><span>Searching embeddable videos…</span></div>}
+                  {youtubeLoading && <div className="youtube-empty"><RefreshCw className="spin" size={23} /><strong>Looking through YouTube</strong><span>Searching tracks…</span></div>}
                   {!youtubeLoading && !youtubeError && youtubeResults.length === 0 && (
                     <div className="youtube-empty"><div className="youtube-empty-icon"><Search size={22} /></div><strong>Your next discovery starts here</strong><span>Search for an artist, track, concert, or live set.</span></div>
                   )}
@@ -2447,24 +2447,56 @@ function App() {
                 </div>
 
                 <aside className="youtube-player-panel glass-mist-panel">
-                  <div className="youtube-panel-heading"><div><p className="eyebrow">NOW IN DISCOVERY</p><h2>Video player</h2></div><span className="youtube-live-label"><span /> READY</span></div>
+                  <div className="youtube-panel-heading"><div><p className="eyebrow">SELECTED TRACK</p><h2>Ready to import</h2></div><span className="youtube-live-label"><span /> SELECT</span></div>
                   {selectedYoutube ? (
                     <>
-                      <div className="youtube-player-frame">
+                      {selectedYoutube.thumbnail ? (
+                        <img className="youtube-selected-thumb" src={selectedYoutube.thumbnail} alt="" width={320} height={180} loading="lazy" />
+                      ) : null}
+                      <div className="youtube-selected-meta">
+                        <strong>{selectedYoutube.title}</strong>
+                        <span>{selectedYoutube.channelTitle}{selectedYoutube.duration ? " · " + selectedYoutube.duration : ""}</span>
                       </div>
-                      <div className="youtube-selected-meta"><strong>{selectedYoutube.title}</strong><span>{selectedYoutube.channelTitle}</span></div>
                       {profile.role === "admin" && (
-                        <button className="youtube-download-button" type="button" disabled={youtubeJobStarting || ["queued", "running"].includes(youtubeJob?.status)} onClick={() => startYoutubeDownload({ videoId: selectedYoutube.videoId, metadata: { title: selectedYoutube.title, artist: selectedYoutube.channelTitle } }, "explore")}>
+                        <button className="youtube-download-button primary-button" type="button" disabled={youtubeJobStarting || ["queued", "running"].includes(youtubeJob?.status)} onClick={() => startYoutubeDownload({ videoId: selectedYoutube.videoId, metadata: { title: selectedYoutube.title, artist: selectedYoutube.channelTitle } }, "explore")}>
                           {youtubeJobStarting || ["queued", "running"].includes(youtubeJob?.status) ? <RefreshCw size={15} className="spin" /> : <Download size={15} />}
                           <span>{youtubeJobStarting ? "Queueing…" : ["queued", "running"].includes(youtubeJob?.status) ? "Download in progress" : "Download MP3"}</span>
                         </button>
                       )}
-
                     </>
                   ) : (
-                    <div className="youtube-player-empty"><div className="youtube-player-art"><Youtube size={35} /></div><strong>Pick a video to play</strong><span>Your selection appears here inside the official YouTube player.</span></div>
+                    <div className="youtube-player-empty"><div className="youtube-player-art"><Youtube size={35} /></div><strong>Pick a track</strong><span>Choose a result to see title, channel, duration, then Download MP3.</span></div>
                   )}
-                  <div className="youtube-local-note"><Headphones size={16} /><span>For lock-screen and background listening, use audio files in your home library. YouTube playback stays in the visible video player.</span></div>
+                  <div className="youtube-local-note"><Headphones size={16} /><span>Audio is saved into your library. No embedded YouTube player.</span></div>
+                  {profile.role === "admin" && (
+                    <div className="youtube-cookies-box">
+                      <p className="eyebrow">AGE-RESTRICTED / SIGN-IN</p>
+                      <p className="youtube-cookies-help">Optional: upload a Netscape <code>cookies.txt</code> from a browser signed into YouTube so yt-dlp can convert restricted videos.</p>
+                      <label className="youtube-cookies-file">
+                        <input type="file" accept=".txt,text/plain" onChange={async (event) => {
+                          const file = event.target.files?.[0];
+                          event.target.value = "";
+                          if (!file) return;
+                          try {
+                            const text = await file.text();
+                            const response = await fetch("/api/youtube/cookies", {
+                              method: "POST",
+                              credentials: "same-origin",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ cookies: text }),
+                            });
+                            if (!response.ok) throw new Error(await readMessage(response));
+                            setYoutubeError("");
+                            setYoutubeUrlError("");
+                            window.alert("YouTube cookies saved on the server. Try Download MP3 again.");
+                          } catch (error) {
+                            window.alert(error.message || "Could not save cookies.");
+                          }
+                        }} />
+                        <span>Upload cookies.txt</span>
+                      </label>
+                    </div>
+                  )}
                 </aside>
               </div>
             </section>
