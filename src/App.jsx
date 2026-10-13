@@ -2286,7 +2286,7 @@ function App() {
                     <div className={"youtube-job-progress" + (youtubeJob.status === "failed" ? " youtube-job-failed" : "")} role="status">
                       <div className="youtube-job-progress-head">
                         <span className="youtube-job-icon">{youtubeJob.status === "completed" ? <Check size={16} /> : youtubeJob.status === "failed" ? <CircleAlert size={16} /> : <Download size={16} />}</span>
-                        <div><strong>{youtubeJob.status === "queued" ? "Queued for download" : youtubeJob.status === "running" ? "Downloading and converting" : youtubeJob.status === "completed" ? "Download complete" : "Download failed"}</strong><small>{youtubeJob.title || "YouTube audio"}</small></div>
+                        <div><strong>{youtubeJob.status === "queued" ? "Queued for download" : youtubeJob.status === "running" ? (youtubeJob.phase === "metadata" ? "Reading video metadata" : youtubeJob.phase === "download" ? "Downloading audio" : youtubeJob.phase === "conversion" ? "Converting audio" : youtubeJob.phase === "indexing" ? "Adding to library" : "Processing audio") : youtubeJob.status === "completed" ? "Download complete" : "Download failed"}</strong><small>{youtubeJob.title || "YouTube audio"}</small></div>
                         <b>{Math.round(youtubeJob.progress || 0)}%</b>
                       </div>
                       <div className="upload-progress-track"><span style={{ width: Math.max(0, Math.min(100, Number(youtubeJob.progress) || 0)) + "%" }} /></div>
