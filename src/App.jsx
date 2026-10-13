@@ -2010,9 +2010,9 @@ function App() {
 
         <div className="sidebar-library">
           <div className="library-heading"><span>Your collection</span><span className="live-dot" /></div>
-          <button className="collection-card" onClick={() => setView("library")}>
+          <button className="collection-card" onClick={() => { setView("playlists"); setMobileMenuOpen(false); }}>
             <div className="collection-art"><SectionGlyph kind="library" size={29} /></div>
-            <span><strong>Home library</strong><small>{tracks.length} {tracks.length === 1 ? "track" : "tracks"}</small></span>
+            <span><strong>Your collection</strong><small>{playlists.length} {playlists.length === 1 ? "playlist" : "playlists"}</small></span>
           </button>
           <div className="sidebar-collection-links">
             <button className={view === "favorites" ? "sidebar-collection-link nav-active" : "sidebar-collection-link"} onClick={() => setView("favorites")}><Heart size={15} /><span>Liked tracks</span><span>{favorites.length}</span></button>
