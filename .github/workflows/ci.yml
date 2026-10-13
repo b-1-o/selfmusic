@@ -20,6 +20,10 @@ jobs:
         with:
           node-version: 22
       - name: Install dependencies
+        env:
+          # SelfMusic invokes the system yt-dlp binary explicitly; avoid an extra unauthenticated GitHub API download during npm install.
+          YOUTUBE_DL_SKIP_DOWNLOAD: "1"
+          YOUTUBE_DL_SKIP_PYTHON_CHECK: "1"
         run: npm install --no-audit --no-fund
       - name: Check server and config syntax
         run: |
