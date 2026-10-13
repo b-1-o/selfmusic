@@ -648,6 +648,7 @@ function App() {
       if (!response.ok) throw new Error(await readMessage(response));
       const body = await response.json();
       setTracks(body.tracks || []);
+      setOfflineMode(false);
       if (body.truncated) setLoadError("Your library is very large; only the first 20,000 tracks are shown.");
       setAuthenticated(true);
     } catch (error) {
@@ -658,6 +659,7 @@ function App() {
           setOfflineTrackIds(saved.ids);
           setTracks(saved.tracks);
           setOfflineMode(true);
+          setProfile({ id: "offline", username: "Offline mode", role: "user", legacy: false });
           setLoadError("");
           return;
         }
@@ -787,7 +789,16 @@ function App() {
         setServerUnavailable(false);
         setConfigured(Boolean(state.configured));
         setAuthenticated(Boolean(state.authenticated));
-        if (state.authenticated) await loadTracks();
+        if (state.authenticated) {
+          await loadTracks();
+          try {
+            const profileResponse = await fetch("/api/auth/profile", { credentials: "same-origin", cache: "no-store" });
+            if (profileResponse.ok) {
+              const profileBody = await profileResponse.json();
+              setProfile(profileBody.user || { id: "legacy", username: "owner", role: "admin", legacy: true });
+            }
+          } catch {}
+        }
       } catch {
         // Keep the saved local library available until the server is reachable again.
       }
