@@ -94,8 +94,9 @@ def main() -> int:
     else:
         print("WARN: skip search button label (pattern not found)")
 
+    # Self-closing iframe used in the YouTube selected panel
     t2, n = re.subn(
-        r"\s*<iframe\s+key=\{selectedYoutube\.videoId\}[\s\S]*?</iframe>",
+        r"\s*<iframe\s+key=\{selectedYoutube\.videoId\}[\s\S]*?/>",
         "",
         t,
         count=1,
@@ -105,7 +106,7 @@ def main() -> int:
         changes.append("removed iframe")
     else:
         t2, n = re.subn(
-            r"\s*<iframe[\s\S]*?selectedYoutube\.videoId[\s\S]*?</iframe>",
+            r"\s*<iframe[\s\S]*?youtube\.com/embed/[\s\S]*?/>",
             "",
             t,
             count=1,
@@ -134,15 +135,20 @@ def main() -> int:
         "pageTitle Import",
     )
 
-    marker = '{view === "import" && ('
-    if marker in t:
-        t = t.replace(marker, '{(view === "import" || view === "import-url") && (', 1)
-        changes.append("import-url shares import page")
+    for marker in ('{view === "import" && (', "{view === 'import' && ("):
+        if marker in t:
+            t = t.replace(
+                marker,
+                '{(view === "import" || view === "import-url") && (',
+                1,
+            )
+            changes.append("import-url shares import page")
+            break
     else:
         print("WARN: skip import page marker")
 
     if t == original:
-        print("No changes applied.")
+        print("No changes applied (already patched?).")
         return 2
 
     APP.write_text(t, encoding="utf-8")
