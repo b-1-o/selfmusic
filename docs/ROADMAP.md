@@ -49,7 +49,7 @@ The client distinguishes metadata, download, conversion and indexing. Download a
 
 ## Priority 2 — deduplication interface and acoustic matching
 
-Chromaprint is not implemented. Current duplicate groups require byte-identical SHA-256 hashes, so differently encoded versions of the same recording are not grouped. Keep the existing SHA-256 implementation behind the same deduplication service boundary; a future fingerprint provider can add optional `fpcalc` / Chromaprint matching without changing API consumers. Acoustic similarity must only flag candidates for review and must never delete files automatically.
+Acoustic matching is not implemented yet. Current duplicate groups require byte-identical SHA-256 hashes. The internal `server/fingerprints.js` provider interface is now in place, and the existing `hashFile()` compatibility function still returns the same SHA-256 hex string. SHA-256 is the only registered provider today. A future optional `fpcalc` / Chromaprint provider can be registered behind this interface without changing the current duplicate API. Acoustic similarity must only flag candidates for review and must never delete files automatically.
 
 ## Priority 3 — PWA and media compatibility
 
