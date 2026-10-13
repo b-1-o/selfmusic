@@ -33,7 +33,7 @@ test("settings UI includes appearance, integration, offline and about sections",
     readSource("src/App.jsx"),
     readSource("src/styles.css"),
   ]);
-  const sectionIds = [...settings.matchAll(/\\{ id: "([^"]+)", label:/g)].map((match) => match[1]);
+  const sectionIds = [...settings.matchAll(/id: "([^"]+)", label:/g)].map((match) => match[1]);
   assert.equal(new Set(sectionIds).size, sectionIds.length, "Settings tab IDs must be unique to avoid duplicate React keys");
   for (const section of ["profile", "appearance", "player", "library", "integrations", "offline", "advanced", "about"]) {
     assert.ok(sectionIds.includes(section), "missing Settings section: " + section);
