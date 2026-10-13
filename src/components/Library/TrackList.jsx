@@ -70,7 +70,7 @@ export default function TrackList({
   onRefresh,
   emptyTitle,
   emptyCopy,
-  onSettings,
+  onServerSetup,
   canManage = true,
   currentTime = 0,
   duration = 0,
@@ -88,7 +88,7 @@ export default function TrackList({
     return <div className="empty-state">
       <div className="empty-disc"><Disc3 size={28} /></div>
       <h3>{emptyTitle}</h3><p>{emptyCopy}</p>
-      <button className="ghost-button" onClick={onSettings}><FolderOpen size={15} /> Open server setup</button>
+      <button className="ghost-button" onClick={onServerSetup}><FolderOpen size={15} /> Open server setup</button>
     </div>;
   }
 
