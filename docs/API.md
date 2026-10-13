@@ -99,6 +99,31 @@ curl -b session-cookies.txt \
   "$BASE_URL/api/playlists/<playlist-id>/export.m3u" -o road-trip.m3u
 ```
 
+## Cross-device playback state
+
+- GET `/api/playback/state` — returns the signed-in user's latest playback snapshot and revision. A new account starts at revision `0`.
+- PUT `/api/playback/state` — stores the queue, current track, position, playing state, repeat mode, shuffle flag and source device ID. Include the revision last seen as `expectedRevision`.
+- GET `/api/playback/events` — authenticated Server-Sent Events stream. The server sends an initial `playback-state` snapshot and then pushes new snapshots to other connections belonging to the same user. The browser automatically reconnects; the server sends keep-alives.
+
+The snapshot includes `revision`, `queue`, `currentTrackId`, `positionSeconds`, `isPlaying`, `repeatMode` (`off`, `one` or `all`), `shuffle`, `sourceDeviceId` and `updatedAt`. Track IDs must already exist in the server's indexed library. A queue can contain up to 500 track IDs. The current track must be included in the queue. The source device ID is a client-generated opaque identifier, not an authorization credential.
+
+Writes use optimistic concurrency: `expectedRevision` must equal the current server revision. A successful write increments the revision. A stale write returns HTTP 409 with `error: "revision_conflict"` and the latest `state`; read that snapshot before deciding whether to continue. State is isolated by authenticated user. It is a shared resume session, not an independent playback session per device. The client waits for the user to press "Continue here" before resuming a snapshot from another device.
+
+```bash
+# Read the current state.
+curl -b session-cookies.txt "$BASE_URL/api/playback/state"
+
+# Replace <track-id> with an ID returned by GET /api/tracks.
+curl -i -b session-cookies.txt -X PUT "$BASE_URL/api/playback/state" \
+  -H 'Content-Type: application/json' \
+  -d '{"expectedRevision":0,"queue":["<track-id>"],"currentTrackId":"<track-id>","positionSeconds":42.5,"isPlaying":true,"repeatMode":"all","shuffle":false,"sourceDeviceId":"laptop-browser"}'
+
+# Watch updates from this user's devices; Ctrl+C closes the stream.
+curl -N -b session-cookies.txt "$BASE_URL/api/playback/events"
+```
+
+Invalid state returns HTTP 400. A stale expected revision returns HTTP 409. The UI persists playback snapshots periodically while connected; if another device's newer snapshot wins a conflict, automatic writes pause and the UI offers a resume prompt instead of silently overriding the other device. Offline audio files remain local to each browser and are not transferred by these endpoints.
+
 ## Users and administration
 
 - GET /api/auth/profile — current user and role.
