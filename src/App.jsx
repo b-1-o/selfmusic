@@ -356,7 +356,7 @@ function LoginScreen({ configured, checking, onLogin, error, serverUnavailable, 
   const [showPassword, setShowPassword] = useState(false);
 
   return (
-    <div className="login-shell" data-theme={appearance.theme} data-accent={appearance.accent} data-glass={appearance.glass} style={{ "--user-accent": appearance.accentColor, "--user-accent-strong": darkenAccent(appearance.accentColor), "--user-glass-opacity": appearance.glassOpacity + "%", "--user-glass-blur": appearance.glassBlur + "px", "--user-radius": appearance.cornerRadius + "px", "--user-background-image": backgroundImage, "--user-motion-duration": motionDuration }}>
+    <div className="login-shell" data-theme={appearance.theme} data-accent={appearance.accent} data-glass={appearance.glass} style={{ "--user-accent": appearance.accentColor, "--user-accent-strong": darkenAccent(appearance.accentColor), "--user-glass-opacity": appearance.glassOpacity + "%", "--user-glass-blur": appearance.glassBlur + "px", "--user-radius": appearance.cornerRadius + "px", "--user-background-image": backgroundImage, "--user-wallpaper-blur": appearance.wallpaperBlur + "px", "--user-motion-duration": motionDuration }}>
       <div className="login-orb login-orb-one" />
       <div className="login-orb login-orb-two" />
       <div className="login-card">
@@ -2057,7 +2057,7 @@ function App() {
   const pageTitle = view === "home" ? "Listen now" : view === "library" ? "Your library" : view === "favorites" ? "Liked tracks" : view === "offline" ? "Offline downloads" : view === "playlists" ? "Playlists" : view === "youtube" ? "Explore YouTube" : view === "import" ? "Add music" : view === "server" ? "Server" : view === "settings" ? "Settings" : "SelfMusic";
 
   return (
-    <div className="app-shell" data-view={view} data-settings-section={settingsSection} data-nav-position={appearance.navPosition} data-theme={resolvedTheme} data-accent={appearance.accent} data-glass={appearance.glass} data-animations={appearance.animations ? "on" : "off"} data-density={appearance.density} style={{ "--user-accent": appearance.accentColor, "--user-accent-strong": darkenAccent(appearance.accentColor), "--user-glass-opacity": appearance.glassOpacity + "%", "--user-glass-blur": appearance.glassBlur + "px", "--user-radius": appearance.cornerRadius + "px", "--user-background-image": backgroundImage, "--user-motion-duration": motionDuration }}>
+    <div className="app-shell" data-view={view} data-settings-section={settingsSection} data-nav-position={appearance.navPosition} data-theme={resolvedTheme} data-accent={appearance.accent} data-glass={appearance.glass} data-animations={appearance.animations ? "on" : "off"} data-density={appearance.density} style={{ "--user-accent": appearance.accentColor, "--user-accent-strong": darkenAccent(appearance.accentColor), "--user-glass-opacity": appearance.glassOpacity + "%", "--user-glass-blur": appearance.glassBlur + "px", "--user-radius": appearance.cornerRadius + "px", "--user-background-image": backgroundImage, "--user-wallpaper-blur": appearance.wallpaperBlur + "px", "--user-motion-duration": motionDuration }}>
       <aside className={"sidebar" + (mobileMenuOpen ? " sidebar-open" : "")}>
         <div className="brand">
           <span className="brand-mark"><AudioLines size={22} strokeWidth={2.2} /></span>
@@ -2986,6 +2986,7 @@ function App() {
                     </label>
                     {appearance.wallpaperDataUrl && <button className="text-button" type="button" onClick={() => setAppearance((value) => ({ ...value, wallpaperDataUrl: "" }))}>Remove wallpaper</button>}
                     {appearance.wallpaperDataUrl && <label className="appearance-range-label"><span>Wallpaper dimming</span><strong>{appearance.wallpaperDim}%</strong><input className="range-input" type="range" min="5" max="85" step="5" value={appearance.wallpaperDim} onChange={(event) => setAppearance((value) => ({ ...value, wallpaperDim: Number(event.target.value) }))} /></label>}
+                    {appearance.wallpaperDataUrl && <label className="appearance-range-label"><span>Wallpaper blur</span><strong>{appearance.wallpaperBlur}px</strong><input className="range-input" type="range" min="0" max="18" step="1" value={appearance.wallpaperBlur} onChange={(event) => setAppearance((value) => ({ ...value, wallpaperBlur: Number(event.target.value) }))} /></label>}
                   </div>
                   <div className="appearance-control">
                     <div className="appearance-control-label"><strong>Glass and layout</strong><span>Adjust how the controls feel</span></div>
@@ -3051,7 +3052,7 @@ function App() {
                         }
                       }} />
                     </label>
-                    <button className="text-button appearance-reset" type="button" onClick={() => { setAppearance({ accent: "rose", accentColor: ACCENT_PRESETS[0].color, ...hexToHsv(ACCENT_PRESETS[0].color), glass: "liquid", theme: "dark", glassOpacity: 78, glassBlur: 24, cornerRadius: 20, density: "comfortable", navPosition: "auto", backgroundPreset: "midnight", wallpaperDataUrl: "", wallpaperDim: 38, animations: true, animationSpeed: "normal" }); setAppearanceMessage(""); }}>Reset appearance</button>
+                    <button className="text-button appearance-reset" type="button" onClick={() => { setAppearance({ accent: "rose", accentColor: ACCENT_PRESETS[0].color, ...hexToHsv(ACCENT_PRESETS[0].color), glass: "liquid", theme: "dark", glassOpacity: 78, glassBlur: 24, cornerRadius: 20, density: "comfortable", navPosition: "auto", backgroundPreset: "midnight", wallpaperDataUrl: "", wallpaperDim: 38, wallpaperBlur: 0, animations: true, animationSpeed: "normal" }); setAppearanceMessage(""); }}>Reset appearance</button>
                   </div>
                 </div>
 
