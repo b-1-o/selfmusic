@@ -351,7 +351,7 @@ Keep the `tailscale-state` volume: it stores the container node's identity. Do n
 * Duplicate matching is exact SHA-256. Acoustic fingerprints (Chromaprint) are not implemented; differently encoded copies will not necessarily be identified.
 * FFmpeg transcoding is optional and disabled by default. Set `TRANSCODE_ENABLED=true`; actual playback compatibility still depends on the client.
 * Last.fm requires server-side API credentials and a callback URL that can reach SelfMusic. Retries use a lightweight SQLite queue rather than a distributed queue.
-* The YouTube conversion queue is deliberately small (three queued/running jobs) and progress is approximate. Some videos are unavailable due to regional, account, or rights-holder restrictions.
+* The YouTube conversion queue is deliberately small (three queued/running jobs). Progress is phase-aware and parses yt-dlp progress-template markers, but the percentage remains approximate during extraction, conversion and metadata tagging. Some videos are unavailable due to regional, account, or rights-holder restrictions.
 * The Subsonic-compatible API implements a documented minimal method set; client-specific extensions and advanced behaviors may vary.
 * Offline audio is cached per browser/device only after the user explicitly saves each track. Browser storage can be evicted; offline copies are not server backups and are not synced to another device.
 * The playback queue and listening position are not yet synchronized across devices. Media Session and background playback need manual verification on each target mobile browser/OS.
