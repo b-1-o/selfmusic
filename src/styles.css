@@ -3182,7 +3182,8 @@ html, body, #root {
 .app-shell[data-view="settings"][data-settings-section="library"] .settings-grid > [data-settings-section="library"],
 .app-shell[data-view="settings"][data-settings-section="integrations"] .settings-grid > [data-settings-section="integrations"],
 .app-shell[data-view="settings"][data-settings-section="offline"] .settings-grid > [data-settings-section="offline"],
-.app-shell[data-view="settings"][data-settings-section="advanced"] .settings-grid > [data-settings-section="advanced"] {
+.app-shell[data-view="settings"][data-settings-section="advanced"] .settings-grid > [data-settings-section="advanced"],
+.app-shell[data-view="settings"][data-settings-section="about"] .settings-grid > [data-settings-section="about"] {
   display: block !important;
 }
 .app-shell[data-theme="light"] .settings-section-nav { border-color: rgba(29,32,47,.1); }
