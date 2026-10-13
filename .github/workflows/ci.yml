@@ -41,11 +41,13 @@ jobs:
       - name: Guard against API key leakage in client bundle
         run: |
           set -euo pipefail
-          if grep -R -n -E 'AIza|YOUTUBE_API_KEY|key=AIza' dist/ 2>/dev/null; then
-            echo "::error::Possible YouTube API key or secret string found in client bundle (dist/)"
+          # Flag real key material only (YouTube keys look like AIzaSy...).
+          # Do not flag the env var name YOUTUBE_API_KEY in UI help text.
+          if grep -R -nE 'AIzaSy[A-Za-z0-9_-]{8,}|key=AIzaSy' dist/ 2>/dev/null; then
+            echo "::error::Possible YouTube API key material found in client bundle (dist/)"
             exit 1
           fi
-          echo "No API key patterns found in dist/"
+          echo "No API key material found in dist/"
       - name: Check Python metadata helper syntax
         run: python3 -m py_compile server/metadata.py
       - name: Build Docker image
