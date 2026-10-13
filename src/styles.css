@@ -3243,3 +3243,30 @@ html, body, #root {
   .appearance-theme-actions { align-items: stretch; }
   .appearance-theme-actions .appearance-reset { margin-left: 0; }
 }
+
+
+/* Isolate the backdrop so wallpaper blur affects only the background, never the controls. */
+.app-shell[data-theme] {
+  position: relative;
+  isolation: isolate;
+  background-color: transparent !important;
+  background-image: none !important;
+}
+.app-shell[data-theme]::before {
+  content: "";
+  position: fixed;
+  z-index: -1;
+  inset: -22px;
+  pointer-events: none;
+  background-image: var(--user-background-image, linear-gradient(145deg, #101018, #08090e));
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  filter: blur(var(--user-wallpaper-blur, 0px));
+  transform: scale(1.015);
+  transition: filter var(--user-motion-duration, 220ms) ease;
+}
+.app-shell[data-theme="light"]:not([data-nav-position="bottom"])::before {
+  /* Light surfaces remain airy while the selected wallpaper can still show through. */
+  background-color: #f5f6fa;
+}
