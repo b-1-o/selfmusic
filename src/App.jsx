@@ -2313,7 +2313,7 @@ function App() {
                 <div className="intro-icon">{view === "offline" ? <Download size={29} /> : <SectionGlyph kind={view === "favorites" ? "liked" : "library"} size={29} />}</div>
                 <p className="eyebrow">{view === "favorites" ? "THE ONES YOU KEEP" : view === "offline" ? "SAVED TO THIS DEVICE" : "ALL YOUR AUDIO IN ONE PLACE"}</p>
                 <h1>{view === "favorites" ? "Liked tracks" : view === "offline" ? "Offline downloads" : "Your library"}</h1>
-                <p>{view === "favorites" ? "Your personal shortlist, saved on this device." : view === "offline" ? "These complete audio files are stored on this device and can play without connecting to your home server." : offlineMode ? "Your server is unreachable. Only tracks explicitly saved for offline playback are shown." : "Music stored on your home server, ready when you are."}</p>
+                <p>{view === "favorites" ? "Your personal shortlist, synced to your account." : view === "offline" ? "These complete audio files are stored on this device and can play without connecting to your home server." : offlineMode ? "Your server is unreachable. Only tracks explicitly saved for offline playback are shown." : "Music stored on your home server, ready when you are."}</p>
                 <div className="intro-meta"><span><Disc3 size={14} /> {filteredTracks.length} tracks</span><span className="meta-separator" /><span><ShieldCheck size={14} /> Private library</span></div>
               </div>
               <div className="library-toolbar">

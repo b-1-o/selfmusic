@@ -81,6 +81,11 @@ test("offline view refresh reads the device cache and does not offer server setu
   assert.ok(trackList.includes("{onServerSetup && <button className=\"ghost-button\""));
 });
 
+test("favorites copy reflects account-synced storage", async () => {
+  const app = await readSource("src/App.jsx");
+  assert.ok(app.includes("Your personal shortlist, synced to your account."));
+});
+
 test("collection card opens playlists without duplicating the collection title", async () => {
   const app = await readSource("src/App.jsx");
   assert.ok(app.includes('<div className="library-heading"><span>Your collection</span>'));

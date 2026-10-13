@@ -12,7 +12,7 @@ from any device on your network or through a tunnel you control.
 * Smart playlists, M3U import/export, SHA-256 duplicate review, and admin-managed accounts.
 * Optional FFmpeg transcoding, Subsonic-compatible client API, and per-user Last.fm scrobbling.
 * Upload audio files from a device through the web UI.
-* Import a single track from a direct HTTPS audio URL.
+* Admin-only API endpoint for importing a single track from a validated direct HTTPS audio URL.
 * **Download a YouTube video's audio to MP3 and add it to the library.**
 * Optional YouTube search using the official YouTube Data API v3.
 * Legacy password login plus admin-managed user accounts and HMAC-signed session cookies.

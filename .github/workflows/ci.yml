@@ -2,7 +2,7 @@ name: SelfMusic CI
 
 on:
   push:
-    branches: [main, "feat/**", "fix/**"]
+    branches: [main]
   pull_request:
 
 permissions:
@@ -52,7 +52,7 @@ jobs:
         run: python3 -m py_compile server/metadata.py
       - name: Build Docker image
         run: docker build --tag selfmusic-ci .
-      - name: Smoke test Docker runtime, legacy login, library upload and streaming
+      - name: Smoke test Docker runtime, managed guest permissions, library upload and streaming
         shell: bash
         run: |
           set -euo pipefail
@@ -85,7 +85,38 @@ jobs:
             "$base_url/api/auth/login" >/tmp/selfmusic-login.json
           grep -q '"authenticated":true' /tmp/selfmusic-login.json
 
+          guest_password="guest-smoke-password-12"
+          curl --fail --silent --show-error \
+            --cookie /tmp/selfmusic-cookies.txt \
+            --header 'Content-Type: application/json' \
+            --data "{\\"username\\":\\"ci-guest\\",\\"password\\":\\"$guest_password\\",\\"role\\":\\"user\\"}" \
+            "$base_url/api/auth/register" >/tmp/selfmusic-guest-create.json
+          grep -q '"role":"user"' /tmp/selfmusic-guest-create.json
+
+          curl --fail --silent --show-error \
+            --cookie-jar /tmp/selfmusic-guest-cookies.txt \
+            --header 'Content-Type: application/json' \
+            --data "{\\"username\\":\\"ci-guest\\",\\"password\\":\\"$guest_password\\"}" \
+            "$base_url/api/auth/login" >/tmp/selfmusic-guest-login.json
+          grep -q '"authenticated":true' /tmp/selfmusic-guest-login.json
+          grep -q '"role":"user"' /tmp/selfmusic-guest-login.json
+
+          guest_admin_status="$(curl --silent --show-error --output /tmp/selfmusic-guest-admin.json --write-out '%{http_code}' \
+            --cookie /tmp/selfmusic-guest-cookies.txt "$base_url/api/admin/users")"
+          test "$guest_admin_status" = "403"
+          guest_register_status="$(curl --silent --show-error --output /tmp/selfmusic-guest-register.json --write-out '%{http_code}' \
+            --cookie /tmp/selfmusic-guest-cookies.txt \
+            --header 'Content-Type: application/json' \
+            --data "{\\"username\\":\\"guest-escalation\\",\\"password\\":\\"$guest_password\\",\\"role\\":\\"admin\\"}" \
+            "$base_url/api/auth/register")"
+          test "$guest_register_status" = "403"
+
           printf 'SelfMusic CI audio fixture\n' >/tmp/selfmusic-smoke.mp3
+          guest_upload_before_admin="$(curl --silent --show-error --output /tmp/selfmusic-guest-upload.json --write-out '%{http_code}' \
+            --cookie /tmp/selfmusic-guest-cookies.txt \
+            --form 'files=@/tmp/selfmusic-smoke.mp3' "$base_url/api/upload")"
+          test "$guest_upload_before_admin" = "403"
+
           curl --fail --silent --show-error \
             --cookie /tmp/selfmusic-cookies.txt \
             --form 'files=@/tmp/selfmusic-smoke.mp3' \
@@ -96,6 +127,17 @@ jobs:
             "$base_url/api/tracks" >/tmp/selfmusic-tracks.json
           track_id="$(node -e 'const fs=require("node:fs"); const data=JSON.parse(fs.readFileSync("/tmp/selfmusic-tracks.json","utf8")); if(!data.tracks || data.tracks.length!==1) process.exit(1); process.stdout.write(data.tracks[0].id);')"
           test -n "$track_id"
+
+          curl --fail --silent --show-error --cookie /tmp/selfmusic-guest-cookies.txt \
+            "$base_url/api/tracks" >/tmp/selfmusic-guest-tracks.json
+          node -e 'const fs=require("node:fs"); const data=JSON.parse(fs.readFileSync("/tmp/selfmusic-guest-tracks.json","utf8")); if(!data.tracks || data.tracks.length!==1) process.exit(1); process.stdout.write(data.tracks[0].id);' >/tmp/selfmusic-guest-track-id.txt
+          test "$(cat /tmp/selfmusic-guest-track-id.txt)" = "$track_id"
+
+          guest_stream_status="$(curl --silent --show-error --output /tmp/selfmusic-guest-range.bin --write-out '%{http_code}' \
+            --header 'Range: bytes=0-2' --cookie /tmp/selfmusic-guest-cookies.txt \
+            "$base_url/api/stream/$track_id")"
+          test "$guest_stream_status" = "206"
+          test "$(wc -c </tmp/selfmusic-guest-range.bin | tr -d ' ')" = "3"
 
           stream_status="$(curl --silent --show-error --output /tmp/selfmusic-range.bin --write-out '%{http_code}' \
             --header 'Range: bytes=0-2' --cookie /tmp/selfmusic-cookies.txt \
