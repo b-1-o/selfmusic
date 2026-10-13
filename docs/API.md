@@ -6,7 +6,7 @@ This document describes the API shipped with SelfMusic. The web client and API a
 
 Most endpoints require a session cookie. Sign in with either the legacy shared password or a managed account.
 
-``@@TICK@bash
+```bash
 BASE_URL="http://localhost:8787"
 
 # Legacy owner login
@@ -22,7 +22,7 @@ curl -i -c session-cookies.txt -H 'Content-Type: application/json' \
 curl -b session-cookies.txt "$BASE_URL/api/auth/profile"
 curl -b session-cookies.txt "$BASE_URL/api/auth/session"
 curl -b session-cookies.txt -X POST "$BASE_URL/api/auth/logout"
-``@@TICK@
+```
 
 Managed accounts have unique passwords of 12–128 characters. Usernames are 3–32 characters using letters, numbers, dot, underscore or hyphen. Administrators create accounts. On a fresh database, BOOTSTRAP_ADMIN_USERNAME and BOOTSTRAP_ADMIN_PASSWORD create the initial administrator if a password of 12–128 characters is provided. Keep a persistent SESSION_SECRET of at least 32 characters.
 
@@ -52,7 +52,7 @@ Mutating requests are checked against their origin. API requests are rate-limite
 - POST /api/duplicates/merge — admin-only merge. Provide a keeper ID and an array of duplicate IDs; favorites, playlists and listening history are reassigned before duplicate files are removed.
 - DELETE /api/duplicates/:trackId — admin-only permanent deletion of one indexed file.
 
-``@@TICK@bash
+```bash
 curl -b session-cookies.txt "$BASE_URL/api/tracks"
 curl -b session-cookies.txt "$BASE_URL/api/artists"
 curl -b session-cookies.txt "$BASE_URL/api/albums"
@@ -67,7 +67,7 @@ curl -b session-cookies.txt -D - \
 curl -b session-cookies.txt -H 'Content-Type: application/json' \
   -d '{"keepId":"<track-id-1>","duplicateIds":["<track-id-2>"]}' \
   "$BASE_URL/api/duplicates/merge"
-``@@TICK@
+```
 
 Track IDs are opaque API identifiers. Do not build filesystem paths from client input. Transcoding is disabled by default; set TRANSCODE_ENABLED=true and install FFmpeg to enable it. Transcodes are cached under TRANSCODE_CACHE_DIR.
 
@@ -86,7 +86,7 @@ Track IDs are opaque API identifiers. Do not build filesystem paths from client 
 
 M3U import only matches entries against indexed library paths or an unambiguous basename; it never opens arbitrary paths from a submitted playlist.
 
-``@@TICK@bash
+```bash
 curl -b session-cookies.txt -H 'Content-Type: application/json' \
   -d '{"name":"Road Trip","description":"Favorites for driving"}' \
   "$BASE_URL/api/playlists"
@@ -97,7 +97,7 @@ curl -b session-cookies.txt -H 'Content-Type: application/json' \
 
 curl -b session-cookies.txt \
   "$BASE_URL/api/playlists/<playlist-id>/export.m3u" -o road-trip.m3u
-``@@TICK@
+```
 
 ## Users and administration
 
@@ -117,9 +117,9 @@ The official YouTube Data API v3 is used for search and duration metadata only. 
 - GET /api/youtube/search?q=<query> — returns items containing videoId, title, channelTitle, description, thumbnail and duration. Results are cached in server memory for YOUTUBE_CACHE_TTL_SECONDS.
 - POST /api/youtube/download — backward-compatible synchronous mode remains available; send {"url":"https://youtu.be/...","async":true,"bitrate":"192k","metadata":{"title":"...","artist":"..."}} for queue/progress (HTTP 202).
 - POST /api/youtube/jobs — asynchronous job endpoint (admin-only).
-- GET /api/youtube/status/:jobId — poll job state; response includes status, progress, title, trackId, result or error. Send Accept: text/event-stream to receive progress updates as SSE.
+- GET /api/youtube/status/:jobId — poll job state; response includes status, phase (metadata, download, conversion, indexing, completed, or failed), progress, title, trackId, result or error. Send Accept: text/event-stream to receive progress updates as SSE.
 
-``@@TICK@bash
+```bash
 curl -b session-cookies.txt -G --data-urlencode 'q=public domain jazz' \
   "$BASE_URL/api/youtube/search"
 
@@ -129,7 +129,7 @@ curl -b session-cookies.txt -H 'Content-Type: application/json' \
 
 curl -N -b session-cookies.txt -H 'Accept: text/event-stream' \
   "$BASE_URL/api/youtube/status/<job-uuid>"
-``@@TICK@
+```
 
 Jobs are persisted in SQLite and resumed after restart. The queue is intentionally small to limit CPU and bandwidth spikes. Queued downloads accept YouTube video URLs only; channel and playlist URLs are rejected. The requesting account must have the admin role.
 
@@ -161,11 +161,11 @@ JSON endpoints are available at /rest/<method>.view. For token/salt authenticati
 Supported method names:
 ping, getLicense, getMusicFolders, getIndexes, getArtists, getArtist, getAlbum, getSong, stream, download, getPlaylists, getPlaylist, createPlaylist, updatePlaylist, deletePlaylist, search3, scrobble, star, unstar, getStarred2.
 
-``@@TICK@bash
+```bash
 SALT=$(openssl rand -hex 8)
 TOKEN=$(printf '%s%s' "$SUBSONIC_PASSWORD" "$SALT" | md5sum | awk '{print $1}')
 curl "$BASE_URL/rest/ping.view?u=$SUBSONIC_USER&t=$TOKEN&s=$SALT&v=1.16.1&c=curl&f=json"
-``@@TICK@
+```
 
 The Subsonic layer provides a minimal compatibility surface, not a guarantee of support for every client extension. The download method is admin-only; regular users can stream.
 
