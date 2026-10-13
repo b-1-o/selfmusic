@@ -3029,6 +3029,7 @@ html, body, #root {
 .app-shell[data-theme="light"] .add-section-tab-active { color: #242631; }
 
 /* Filter panel uses an explicit disclosure control and removable active chips. */
+.library-filter-drawer:not(.library-filter-drawer-open) { display: none; }
 .filter-toggle { position: relative; white-space: nowrap; }
 .filter-toggle-open { border-color: color-mix(in srgb, var(--user-accent) 32%, transparent); color: var(--text); }
 .filter-count { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 6px; color: #16131a; background: var(--user-accent); font: 700 9px "DM Mono", monospace; }
