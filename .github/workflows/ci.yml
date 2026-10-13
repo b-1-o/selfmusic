@@ -2,9 +2,8 @@ name: SelfMusic CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "feat/**", "fix/**"]
   pull_request:
-    branches: [main]
 
 permissions:
   contents: read
@@ -21,19 +20,34 @@ jobs:
           node-version: 22
       - name: Install dependencies
         env:
-          # SelfMusic invokes the system yt-dlp binary explicitly; avoid an extra unauthenticated GitHub API download during npm install.
           YOUTUBE_DL_SKIP_DOWNLOAD: "1"
           YOUTUBE_DL_SKIP_PYTHON_CHECK: "1"
         run: npm install --no-audit --no-fund
-      - name: Check server and config syntax
+      - name: Check server module syntax
         run: |
           node --check server/index.js
+          node --check server/youtube-search.js
+          node --check server/youtube-jobs.js
+          node --check server/youtube-routes.js
+          node --check server/database.js
           node --check vite.config.js
           bash -n install.sh selfmusic.sh
       - name: Run unit tests
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
         run: npm test
       - name: Build web client
         run: npm run build
+      - name: Guard against API key leakage in client bundle
+        run: |
+          set -euo pipefail
+          # Flag real key material only (YouTube keys look like AIzaSy...).
+          # Do not flag the env var name YOUTUBE_API_KEY in UI help text.
+          if grep -R -nE 'AIzaSy[A-Za-z0-9_-]{8,}|key=AIzaSy' dist/ 2>/dev/null; then
+            echo "::error::Possible YouTube API key material found in client bundle (dist/)"
+            exit 1
+          fi
+          echo "No API key material found in dist/"
       - name: Check Python metadata helper syntax
         run: python3 -m py_compile server/metadata.py
       - name: Build Docker image

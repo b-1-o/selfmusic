@@ -209,6 +209,24 @@ const migrations = [
       );
       CREATE INDEX playback_states_updated_idx ON playback_states(updated_at);
     `
+  },
+  {
+    version: 9,
+    name: "youtube_search_cache_and_video_id",
+    sql: `
+      CREATE TABLE IF NOT EXISTS youtube_search_cache (
+        query_hash TEXT PRIMARY KEY,
+        query TEXT NOT NULL,
+        source TEXT NOT NULL,
+        response_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_youtube_cache_expires ON youtube_search_cache(expires_at);
+
+      ALTER TABLE tracks ADD COLUMN youtube_video_id TEXT;
+      CREATE INDEX IF NOT EXISTS tracks_youtube_video_id_idx ON tracks(youtube_video_id);
+    `
   }
 ];
 

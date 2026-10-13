@@ -28,6 +28,7 @@ services:
       NODE_ENV: development
       PORT: "8787"
       MUSIC_DIR: /app/music
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
       DATABASE_PATH: /app/data/selfmusic.sqlite
       COVER_CACHE_DIR: /app/data/artwork
       TRANSCODE_CACHE_DIR: /app/data/transcodes

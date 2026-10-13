@@ -20,6 +20,7 @@ import { encryptSecret } from "./secret.js";
 import { mountSubsonicRoutes } from "./subsonic.js";
 import { flushQueue as flushLastFmQueue, mountLastFmRoutes } from "./lastfm.js";
 import { createYoutubeJob, mountYoutubeJobRoutes } from "./youtube-jobs.js";
+import { mountYoutubeSearchRoutes, isApiEnabled, purgeExpiredSearchCache } from "./youtube-routes.js";
 import { mountPlaybackSyncRoutes } from "./playback-sync.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -58,7 +59,6 @@ const mimeTypes = {
 };
 const artNames = ["cover.webp", "cover.jpg", "cover.jpeg", "cover.png", "folder.webp", "folder.jpg", "folder.jpeg", "folder.png"];
 const loginAttempts = new Map();
-const youtubeSearchCache = new Map();
 
 function configuredDuplicateStrategy() {
   const strategy = String(process.env.DUPLICATE_STRATEGY || "keep").toLowerCase();
@@ -529,6 +529,18 @@ mountPlaybackSyncRoutes(app, { db, requireAuth });
 mountSubsonicRoutes(app, { db, musicRoot, requireFindTracks: findTracks, resolveTrackFile });
 mountLastFmRoutes(app, { db, requireAuth });
 mountYoutubeJobRoutes(app, { db, requireAuth, requireAdmin, projectRoot, musicRoot, coverCacheDir, workDir: path.join(projectRoot, "data") });
+mountYoutubeSearchRoutes(app, { db, requireAuth });
+try {
+  purgeExpiredSearchCache(db);
+} catch (error) {
+  console.warn("[SelfMusic] youtube search cache purge skipped:", error.message);
+}
+const youtubeCachePurgeTimer = setInterval(() => {
+  try { purgeExpiredSearchCache(db); } catch (error) {
+    console.warn("[SelfMusic] youtube search cache purge failed:", error.message);
+  }
+}, 60 * 60 * 1000);
+youtubeCachePurgeTimer.unref();
 async function resolveTrackFile(id) {
   if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,2048}$/.test(id)) return null;
   const filePath = safeTrackPath(id);
@@ -548,7 +560,13 @@ async function resolveTrackFile(id) {
 }
 
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, app: "SelfMusic", configured: isConfigured(), version: "0.1.0" });
+  res.json({
+    ok: true,
+    app: "SelfMusic",
+    configured: isConfigured(),
+    version: "0.1.0",
+    youtube_api_enabled: isApiEnabled(),
+  });
 });
 
 app.get("/api/auth/session", (req, res) => {
@@ -1173,111 +1191,7 @@ function parseIsoDuration(value) {
   return Number.isFinite(seconds) ? Math.round(seconds) : null;
 }
 
-function pruneYoutubeSearchCache(now = Date.now()) {
-  for (const [key, entry] of youtubeSearchCache) {
-    if (entry.expiresAt <= now) youtubeSearchCache.delete(key);
-  }
-  while (youtubeSearchCache.size > 250) youtubeSearchCache.delete(youtubeSearchCache.keys().next().value);
-}
-
-app.get("/api/youtube/search", requireAuth, async (req, res, next) => {
-  try {
-    const apiKey = process.env.YOUTUBE_API_KEY;
-    if (!apiKey) {
-      return res.status(503).json({
-        error: "youtube_not_configured",
-        message: "Set YOUTUBE_API_KEY in .env and restart SelfMusic to enable YouTube search."
-      });
-    }
-
-    const query = typeof req.query.q === "string" ? req.query.q.trim() : "";
-    if (query.length < 2 || query.length > 100) {
-      return res.status(400).json({
-        error: "invalid_query",
-        message: "Enter a search with 2–100 characters."
-      });
-    }
-
-    const cacheKey = query.toLocaleLowerCase();
-    pruneYoutubeSearchCache();
-    const cached = youtubeSearchCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) {
-      res.setHeader("Cache-Control", "private, max-age=60");
-      return res.json({ ...cached.payload, cached: true });
-    }
-
-    const url = new URL("https://www.googleapis.com/youtube/v3/search");
-    url.searchParams.set("key", apiKey);
-    url.searchParams.set("part", "snippet");
-    url.searchParams.set("type", "video");
-    url.searchParams.set("videoEmbeddable", "true");
-    url.searchParams.set("videoSyndicated", "true");
-    url.searchParams.set("safeSearch", "moderate");
-    url.searchParams.set("maxResults", "18");
-    url.searchParams.set("q", query);
-
-    const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
-    const payload = await response.json();
-
-    if (!response.ok) {
-      const reason = payload?.error?.errors?.[0]?.reason || "";
-      if (reason === "quotaExceeded" || reason === "dailyLimitExceeded") {
-        return res.status(429).json({
-          error: "youtube_quota_exceeded",
-          message: "YouTube search quota has been used up for today. Try again later."
-        });
-      }
-      console.warn("[SelfMusic] YouTube API request failed:", payload?.error?.message || response.status);
-      return res.status(502).json({
-        error: "youtube_api_error",
-        message: "YouTube search is unavailable. Check the API key and YouTube Data API v3 settings."
-      });
-    }
-
-    const items = (Array.isArray(payload.items) ? payload.items : [])
-      .filter((item) => /^[A-Za-z0-9_-]{11}$/.test(String(item?.id?.videoId || "")))
-      .map((item) => ({
-        videoId: item.id.videoId,
-        title: String(item.snippet?.title || "Untitled video"),
-        channelTitle: String(item.snippet?.channelTitle || "YouTube"),
-        description: String(item.snippet?.description || ""),
-        thumbnail: String(item.snippet?.thumbnails?.medium?.url || item.snippet?.thumbnails?.default?.url || ""),
-        duration: null
-      }));
-
-    if (items.length) {
-      const detailsUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
-      detailsUrl.searchParams.set("key", apiKey);
-      detailsUrl.searchParams.set("part", "contentDetails");
-      detailsUrl.searchParams.set("id", items.map((item) => item.videoId).join(","));
-      try {
-        const detailsResponse = await fetch(detailsUrl, { signal: AbortSignal.timeout(7000) });
-        if (detailsResponse.ok) {
-          const detailsPayload = await detailsResponse.json();
-          const durationById = new Map((detailsPayload.items || []).map((item) => [item.id, parseIsoDuration(item.contentDetails?.duration)]));
-          for (const item of items) item.duration = durationById.get(item.videoId) ?? null;
-        }
-      } catch (error) {
-        console.warn("[SelfMusic] YouTube duration lookup failed:", error.message);
-      }
-    }
-
-    const resultPayload = { items, totalResults: payload.pageInfo?.totalResults || items.length, cached: false };
-    const cacheSeconds = Math.min(3600, Math.max(0, Number.parseInt(process.env.YOUTUBE_CACHE_TTL_SECONDS || "300", 10) || 300));
-    if (cacheSeconds > 0) {
-      youtubeSearchCache.set(cacheKey, { payload: resultPayload, expiresAt: Date.now() + cacheSeconds * 1000 });
-      pruneYoutubeSearchCache();
-    }
-    res.setHeader("Cache-Control", "private, max-age=60");
-    res.json(resultPayload);
-  } catch (error) {
-    if (error.name === "TimeoutError" || error.name === "AbortError") {
-      return res.status(504).json({ error: "youtube_timeout", message: "YouTube search took too long. Try again." });
-    }
-    next(error);
-  }
-});
-
+// YouTube search routes: mountYoutubeSearchRoutes (POST canonical; GET deprecated).
 
 async function ensureYoutubeArtwork(info, targetPath) {
   const directory = path.dirname(targetPath);
