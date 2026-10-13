@@ -926,6 +926,9 @@ function App() {
           body: JSON.stringify({ value: appearance }),
         });
         if (!response.ok) throw new Error("Could not sync appearance.");
+        setAppearanceMessage(appearance.wallpaperDataUrl
+          ? "Appearance and wallpaper saved to your account."
+          : "Appearance saved to your account.");
       } catch {
         setAppearanceMessage("Appearance is saved on this device; account sync is unavailable.");
       }

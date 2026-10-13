@@ -64,6 +64,8 @@ test("appearance and playback dismissals sync through per-account preferences", 
   assert.ok(app.includes("const dismissalKey = remotePlaybackDismissalKey(remotePlaybackState)"));
   assert.ok(routes.includes('new Set(["appearance", "dismissed-playback"])'));
   assert.ok(routes.includes("MAX_WALLPAPER_DATA_URL_LENGTH"));
+  assert.ok(app.includes("Appearance and wallpaper saved to your account."));
+  assert.ok(app.includes("Appearance saved to your account."));
   assert.ok(app.includes('"--user-background-direct": appearance.wallpaperBlur === 0 ? backgroundImage : "none"'));
   assert.ok(css.includes("background-image: var(--user-background-direct, none) !important;"));
   assert.ok(css.includes("opacity: var(--user-wallpaper-backdrop-opacity, 1)"));
