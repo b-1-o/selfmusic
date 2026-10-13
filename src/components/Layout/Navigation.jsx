@@ -2,7 +2,7 @@ import React from "react";
 import { BookOpen, Home, Palette, Plus, Server } from "lucide-react";
 
 const LIBRARY_VIEWS = ["library", "favorites", "playlists"];
-const IMPORT_VIEWS = ["import", "import-url", "youtube", "offline"];
+const IMPORT_VIEWS = ["import", "youtube", "offline"];
 
 /**
  * Mobile bottom bar: exactly 5 items (Home, Library, Import, Server, Settings).
@@ -22,7 +22,7 @@ export default function Navigation({
       ? [
           { id: "home", label: "Home", icon: Home, active: view === "home" },
           { id: "library", label: "Library", icon: BookOpen, active: LIBRARY_VIEWS.includes(view) },
-          { id: "import", label: "Import", icon: Plus, active: IMPORT_VIEWS.includes(view), target: openImport },
+          { id: "add", label: "Import", icon: Plus, active: IMPORT_VIEWS.includes(view), target: openImport },
           { id: "server", label: "Server", icon: Server, active: view === "server" },
           { id: "settings", label: "Settings", icon: Palette, active: view === "settings" },
         ]
