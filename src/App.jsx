@@ -57,7 +57,15 @@ const ACCENT_PRESETS = [
   { id: "ocean", label: "Ocean", color: "#87d7ee" },
   { id: "violet", label: "Violet", color: "#c5a9ff" },
   { id: "amber", label: "Amber", color: "#f4c27a" },
-  { id: "mint", label: "Mint", color: "#8fe0bf" },
+  { id: "silver", label: "Silver", color: "#c2cad7" },
+];
+
+const BACKGROUND_PRESETS = [
+  { id: "midnight", label: "Midnight", image: "radial-gradient(ellipse at 78% 12%, rgba(92, 74, 130, .24), transparent 38%), linear-gradient(145deg, #101018, #08090e 70%)" },
+  { id: "fog", label: "Fog", image: "radial-gradient(ellipse at 20% 15%, rgba(159, 174, 193, .18), transparent 42%), linear-gradient(145deg, #171b22, #0a0d13 78%)" },
+  { id: "dawn", label: "Dawn", image: "radial-gradient(ellipse at 80% 12%, rgba(195, 128, 151, .24), transparent 40%), linear-gradient(145deg, #1e1721, #0c0a12 75%)" },
+  { id: "neon", label: "Neon", image: "radial-gradient(ellipse at 80% 10%, rgba(78, 122, 177, .22), transparent 34%), radial-gradient(ellipse at 15% 85%, rgba(151, 89, 145, .12), transparent 44%), #090b12" },
+  { id: "minimal", label: "Minimal", image: "linear-gradient(145deg, #111116, #09090c)" },
 ];
 
 const clampNumber = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -549,8 +557,21 @@ function App() {
       saturation: Number.isFinite(saved?.saturation) ? clampNumber(saved.saturation, 0, 100) : colorState.saturation,
       value: Number.isFinite(saved?.value) ? clampNumber(saved.value, 0, 100) : colorState.value,
       glass: ["liquid", "soft", "solid"].includes(saved?.glass) ? saved.glass : "liquid",
-      theme: ["dark", "light"].includes(saved?.theme) ? saved.theme : "dark",
+      theme: ["dark", "light", "system"].includes(saved?.theme) ? saved.theme : "dark",
+      glassOpacity: Number.isFinite(saved?.glassOpacity) ? clampNumber(saved.glassOpacity, 35, 96) : 78,
+      glassBlur: Number.isFinite(saved?.glassBlur) ? clampNumber(saved.glassBlur, 0, 36) : 24,
+      cornerRadius: Number.isFinite(saved?.cornerRadius) ? clampNumber(saved.cornerRadius, 10, 32) : 20,
+      density: saved?.density === "compact" ? "compact" : "comfortable",
+      backgroundPreset: BACKGROUND_PRESETS.some((preset) => preset.id === saved?.backgroundPreset) ? saved.backgroundPreset : "midnight",
+      wallpaperDataUrl: typeof saved?.wallpaperDataUrl === "string" && saved.wallpaperDataUrl.startsWith("data:image/") ? saved.wallpaperDataUrl : "",
+      wallpaperDim: Number.isFinite(saved?.wallpaperDim) ? clampNumber(saved.wallpaperDim, 5, 85) : 38,
+      animations: saved?.animations !== false,
+      animationSpeed: ["slow", "normal", "fast"].includes(saved?.animationSpeed) ? saved.animationSpeed : "normal",
     };
+  });
+  const [appearanceMessage, setAppearanceMessage] = useState("");
+  const [systemTheme, setSystemTheme] = useState(() => {
+    try { return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"; } catch { return "dark"; }
   });
   const [networkAddresses, setNetworkAddresses] = useState({ local: [], tailscale: [] });
   const [networkLoading, setNetworkLoading] = useState(false);
@@ -836,8 +857,19 @@ function App() {
   };
 
   useEffect(() => {
-    try { localStorage.setItem(APPEARANCE_KEY, JSON.stringify(appearance)); } catch { /* Ignore storage quota errors. */ }
+    try { localStorage.setItem(APPEARANCE_KEY, JSON.stringify(appearance)); } catch {
+      setAppearanceMessage("This browser has reached its local storage limit. Choose a smaller wallpaper image.");
+    }
   }, [appearance]);
+
+  useEffect(() => {
+    const media = window.matchMedia?.("(prefers-color-scheme: light)");
+    if (!media) return undefined;
+    const update = (event) => setSystemTheme(event.matches ? "light" : "dark");
+    setSystemTheme(media.matches ? "light" : "dark");
+    media.addEventListener?.("change", update);
+    return () => media.removeEventListener?.("change", update);
+  }, []);
 
   useEffect(() => {
     try { localStorage.setItem("selfmusic:library-filters:v1", JSON.stringify(libraryFilters)); } catch { /* Filters remain usable if storage is disabled. */ }
