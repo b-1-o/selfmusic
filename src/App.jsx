@@ -2998,7 +2998,70 @@ function App() {
                     <label className="appearance-range-label">Animation speed<select value={appearance.animationSpeed} disabled={!appearance.animations} onChange={(event) => setAppearance((value) => ({ ...value, animationSpeed: event.target.value }))}><option value="slow">Slow and soft</option><option value="normal">Balanced</option><option value="fast">Fast</option></select></label>
                     {appearanceMessage && <p className="settings-footnote" role="status">{appearanceMessage}</p>}
                   </div>
-                  <button className="text-button appearance-reset" type="button" onClick={() => { setAppearance({ accent: "rose", accentColor: ACCENT_PRESETS[0].color, ...hexToHsv(ACCENT_PRESETS[0].color), glass: "liquid", theme: "dark", glassOpacity: 78, glassBlur: 24, cornerRadius: 20, density: "comfortable", navPosition: "auto", backgroundPreset: "midnight", wallpaperDataUrl: "", wallpaperDim: 38, animations: true, animationSpeed: "normal" }); setAppearanceMessage(""); }}>Reset appearance</button>
+                  <div className="appearance-theme-actions">
+                    <button className="ghost-button" type="button" onClick={() => {
+                      try {
+                        const blob = new Blob([JSON.stringify({ format: "selfmusic-theme", version: 1, appearance }, null, 2)], { type: "application/json" });
+                        const url = URL.createObjectURL(blob);
+                        const anchor = document.createElement("a");
+                        anchor.href = url;
+                        anchor.download = "selfmusic-theme.json";
+                        anchor.click();
+                        URL.revokeObjectURL(url);
+                        setAppearanceMessage("Theme exported. Import this JSON on another browser to copy the design.");
+                      } catch {
+                        setAppearanceMessage("Theme export failed in this browser.");
+                      }
+                    }}><Download size={15} /> Export theme</button>
+                    <label className="ghost-button theme-import-button"><Upload size={15} /> Import theme
+                      <input type="file" accept="application/json,.json" onChange={async (event) => {
+                        const file = event.target.files?.[0];
+                        if (!file) return;
+                        try {
+                          if (file.size > 2 * 1024 * 1024) throw new Error("Theme file is larger than 2 MB.");
+                          const parsed = JSON.parse(await file.text());
+                          const incoming = parsed?.appearance;
+                          if (parsed?.format !== "selfmusic-theme" || parsed?.version !== 1 || !incoming || typeof incoming !== "object") throw new Error("This is not a supported SelfMusic theme file.");
+                          if (incoming.wallpaperDataUrl && (typeof incoming.wallpaperDataUrl !== "string" || !/^data:image\/(png|jpeg|webp);base64,/.test(incoming.wallpaperDataUrl) || incoming.wallpaperDataUrl.length > 1450000)) throw new Error("The theme wallpaper is invalid or too large.");
+                          const accentColor = /^#[0-9a-f]{6}$/i.test(incoming.accentColor || "") ? incoming.accentColor : ACCENT_PRESETS[0].color;
+                          const next = {
+                            ...appearance,
+                            accent: ACCENT_PRESETS.some((item) => item.id === incoming.accent) ? incoming.accent : "custom",
+                            accentColor,
+                            ...hexToHsv(accentColor),
+                            glass: ["liquid", "soft", "solid"].includes(incoming.glass) ? incoming.glass : "liquid",
+                            theme: ["dark", "light", "system"].includes(incoming.theme) ? incoming.theme : "dark",
+                            glassOpacity: clampNumber(Number(incoming.glassOpacity) || 78, 35, 96),
+                            glassBlur: clampNumber(Number(incoming.glassBlur) || 24, 0, 36),
+                            cornerRadius: clampNumber(Number(incoming.cornerRadius) || 20, 10, 32),
+                            density: incoming.density === "compact" ? "compact" : "comfortable",
+                            navPosition: ["auto", "left", "right", "bottom"].includes(incoming.navPosition) ? incoming.navPosition : "auto",
+                            backgroundPreset: BACKGROUND_PRESETS.some((preset) => preset.id === incoming.backgroundPreset) ? incoming.backgroundPreset : "midnight",
+                            wallpaperDataUrl: incoming.wallpaperDataUrl || "",
+                            wallpaperDim: clampNumber(Number(incoming.wallpaperDim) || 38, 5, 85),
+                            animations: incoming.animations !== false,
+                            animationSpeed: ["slow", "normal", "fast"].includes(incoming.animationSpeed) ? incoming.animationSpeed : "normal",
+                          };
+                          setAppearance(next);
+                          setAppearanceMessage("Theme imported and saved in this browser.");
+                        } catch (error) {
+                          setAppearanceMessage(error.message || "Could not import this theme file.");
+                        } finally {
+                          event.target.value = "";
+                        }
+                      }} />
+                    </label>
+                    <button className="text-button appearance-reset" type="button" onClick={() => { setAppearance({ accent: "rose", accentColor: ACCENT_PRESETS[0].color, ...hexToHsv(ACCENT_PRESETS[0].color), glass: "liquid", theme: "dark", glassOpacity: 78, glassBlur: 24, cornerRadius: 20, density: "comfortable", navPosition: "auto", backgroundPreset: "midnight", wallpaperDataUrl: "", wallpaperDim: 38, animations: true, animationSpeed: "normal" }); setAppearanceMessage(""); }}>Reset appearance</button>
+                  </div>
+                </div>
+
+                <div className="settings-card settings-card-wide" data-settings-section="about">
+                  <div className="settings-card-head"><span className="settings-icon"><AudioLines size={19} /></span><span className="settings-overline">ABOUT SELFMUSIC</span></div>
+                  <h3>SelfMusic · v0.1.0</h3>
+                  <p>Your personal music space, hosted on your own machine. Your server keeps the original files while this browser stores the current appearance preferences and local offline copies.</p>
+                  <div className="settings-action"><Server size={15} /> Active server <span>{window.location.origin}</span></div>
+                  <a className="settings-action settings-link" href="https://github.com/b-1-o/selfmusic" target="_blank" rel="noreferrer"><Globe2 size={15} /> Source code and release notes <ArrowUpRight size={15} /></a>
+                  <p className="settings-footnote">Appearance and wallpaper preferences currently stay in this browser. Export a theme from Settings → Appearance and import it on another device to copy the look; server-side preference sync is not implemented yet.</p>
                 </div>
 
                 <div className="settings-card settings-card-wide" data-settings-section="advanced">
