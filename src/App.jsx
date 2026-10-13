@@ -552,6 +552,17 @@ function App() {
   const [networkAddresses, setNetworkAddresses] = useState({ local: [], tailscale: [] });
   const [networkLoading, setNetworkLoading] = useState(false);
   const [networkError, setNetworkError] = useState("");
+  const [serverCheckBusy, setServerCheckBusy] = useState(false);
+  const [serverCheckMessage, setServerCheckMessage] = useState("");
+  const [installPromptEvent, setInstallPromptEvent] = useState(null);
+  const [pwaInstalled, setPwaInstalled] = useState(() => {
+    try {
+      return Boolean(window.matchMedia?.("(display-mode: standalone)").matches || navigator.standalone === true);
+    } catch {
+      return false;
+    }
+  });
+  const [pwaInstallMessage, setPwaInstallMessage] = useState("");
   const [remoteWizardOpen, setRemoteWizardOpen] = useState(() => localStorage.getItem(REMOTE_WIZARD_KEY) !== "1");
 
   const currentTrack = tracks.find((track) => track.id === currentTrackId) || null;
@@ -676,6 +687,39 @@ function App() {
     return () => window.clearInterval(timer);
   }, [authenticated, playbackDeviceId]);
 
+  useEffect(() => {
+    const onBeforeInstallPrompt = (event) => {
+      event.preventDefault();
+      setInstallPromptEvent(event);
+    };
+    const onInstalled = () => {
+      setPwaInstalled(true);
+      setInstallPromptEvent(null);
+      setPwaInstallMessage("SelfMusic was installed on this device.");
+    };
+    const displayMode = window.matchMedia?.("(display-mode: standalone)");
+    const onDisplayModeChange = () => setPwaInstalled(Boolean(displayMode?.matches || navigator.standalone === true));
+    window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+    window.addEventListener("appinstalled", onInstalled);
+    displayMode?.addEventListener?.("change", onDisplayModeChange);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", onInstalled);
+      displayMode?.removeEventListener?.("change", onDisplayModeChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    const onOnline = () => setPlaybackSyncStatus("reconnecting");
+    const onOffline = () => setPlaybackSyncStatus("offline");
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, []);
+
   const refreshNetworkAddresses = useCallback(async () => {
     setNetworkLoading(true);
     setNetworkError("");
@@ -697,6 +741,66 @@ function App() {
       setNetworkLoading(false);
     }
   }, []);
+
+  const reconnectServer = useCallback(async () => {
+    setServerCheckBusy(true);
+    setServerCheckMessage("");
+    const startedAt = Date.now();
+    try {
+      const response = await fetch("/api/health", {
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache" }
+      });
+      if (!response.ok) throw new Error("The server returned HTTP " + response.status + ".");
+      const health = await response.json();
+      if (health?.ok !== true) throw new Error("The server health check did not confirm readiness.");
+      setServerUnavailable(false);
+      setServerCheckMessage(Date.now() - startedAt > 900 ? "Server reachable, but response was slow." : "Server is reachable.");
+      await refreshNetworkAddresses();
+      setPlaybackSyncStatus("reconnecting");
+    } catch (error) {
+      setServerUnavailable(true);
+      setPlaybackSyncStatus("offline");
+      setServerCheckMessage(error.message || "Could not reach the SelfMusic server.");
+    } finally {
+      setServerCheckBusy(false);
+    }
+  }, [refreshNetworkAddresses]);
+
+  const installSelfMusic = useCallback(async () => {
+    setPwaInstallMessage("");
+    if (pwaInstalled) {
+      setPwaInstallMessage("SelfMusic is already installed on this device.");
+      return;
+    }
+    if (installPromptEvent) {
+      try {
+        await installPromptEvent.prompt();
+        const choice = await installPromptEvent.userChoice;
+        if (choice?.outcome === "accepted") {
+          setPwaInstalled(true);
+          setPwaInstallMessage("Installation accepted. Follow your browser's confirmation.");
+        } else {
+          setPwaInstallMessage("Installation was dismissed. You can install it from the browser menu later.");
+        }
+      } catch {
+        setPwaInstallMessage("The browser could not open its install prompt. Use its menu to install SelfMusic.");
+      } finally {
+        setInstallPromptEvent(null);
+      }
+      return;
+    }
+
+    const userAgent = navigator.userAgent || "";
+    if (/iphone|ipad|ipod/i.test(userAgent)) {
+      setPwaInstallMessage("On iPhone or iPad: open Safari's Share menu, then choose Add to Home Screen.");
+    } else if (!/^https:$/i.test(window.location.protocol) && !["localhost", "127.0.0.1"].includes(window.location.hostname)) {
+      setPwaInstallMessage("Use the HTTPS server address to enable PWA installation, then open the browser menu.");
+    } else {
+      setPwaInstallMessage("Open the browser menu and choose Install app or Create shortcut. The exact wording depends on your browser.");
+    }
+  }, [installPromptEvent, pwaInstalled]);
 
   const closeRemoteWizard = useCallback(() => {
     setRemoteWizardOpen(false);
@@ -2541,10 +2645,23 @@ function App() {
                 <p>Keep the library private, and make it reachable when you leave home.</p>
               </div>
 
-              <div className="settings-status-card">
+              <div className={"settings-status-card settings-status-" + (serverUnavailable || !navigator.onLine ? "offline" : playbackSyncStatus === "connected" ? "online" : "degraded")}>
                 <div className="settings-status-icon"><span className="status-pip" /></div>
-                <div className="settings-status-copy"><span className="settings-overline">SERVER STATUS</span><h3>Connected to your home server</h3><p>The player uses a secure session cookie for library and audio requests.</p></div>
-                <span className="status-badge"><span /> Online</span>
+                <div className="settings-status-copy">
+                  <span className="settings-overline">SERVER STATUS</span>
+                  <h3>{serverUnavailable || !navigator.onLine ? "Server unreachable" : playbackSyncStatus === "connected" ? "Connected and syncing" : "Server connected · sync reconnecting"}</h3>
+                  <p>The active server URL is <code>{window.location.origin}</code>.</p>
+                  <p>Connection: {(/\.ts\.net$/i.test(window.location.hostname) || /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(window.location.hostname)) ? "Tailscale private network" : (["localhost", "127.0.0.1"].includes(window.location.hostname) || networkAddresses.local.includes(window.location.hostname)) ? "Local machine / home network" : "External domain or reverse proxy"}</p>
+                  <p>Tailscale: {networkAddresses.tailscale.length ? "detected (" + networkAddresses.tailscale[0] + ")" : "no Tailscale IPv4 detected on this host"}</p>
+                  {serverCheckMessage && <p className={serverUnavailable ? "form-error" : "settings-footnote"} role="status">{serverCheckMessage}</p>}
+                  {networkError && <p className="form-error" role="status">{networkError}</p>}
+                </div>
+                <div className="settings-status-actions">
+                  <span className={"status-badge " + (serverUnavailable || !navigator.onLine ? "status-badge-offline" : playbackSyncStatus === "connected" ? "" : "status-badge-degraded")}><span />{serverUnavailable || !navigator.onLine ? "Offline" : playbackSyncStatus === "connected" ? "Online" : "Degraded"}</span>
+                  <button className="settings-action settings-reconnect-button" type="button" onClick={reconnectServer} disabled={serverCheckBusy}>
+                    <RefreshCw size={15} className={serverCheckBusy ? "spin" : ""} /> {serverCheckBusy ? "Checking…" : "Reconnect"}
+                  </button>
+                </div>
               </div>
 
               <div className="settings-grid">
@@ -2662,6 +2779,17 @@ function App() {
                   <p>Set up Tailscale on this computer and your phone. No router port forwarding and no shared auth key are needed for the normal native setup.</p>
                   <button className="settings-action" type="button" onClick={() => setRemoteWizardOpen(true)}><Smartphone size={15} /> Open setup wizard <ArrowUpRight size={15} /></button>
                   {networkAddresses.tailscale.length > 0 && <div className="info-note"><ShieldCheck size={16} /><span>Tailscale detected: {networkAddresses.tailscale[0]}</span></div>}
+                </div>
+
+                <div className="settings-card">
+                  <div className="settings-card-head"><span className="settings-icon"><Download size={19} /></span><span className="settings-overline">INSTALLABLE PLAYER</span></div>
+                  <h3>{pwaInstalled ? "SelfMusic is installed" : "Install SelfMusic"}</h3>
+                  <p>Open your music server in an app-like window. Playback and offline downloads remain available where your browser supports them.</p>
+                  <button className="settings-action pwa-install-button" type="button" onClick={installSelfMusic} disabled={pwaInstalled}>
+                    <Smartphone size={16} /> {pwaInstalled ? "Installed on this device" : installPromptEvent ? "Install app" : "Show install instructions"}
+                  </button>
+                  {pwaInstallMessage && <p className="settings-footnote" role="status">{pwaInstallMessage}</p>}
+                  {!pwaInstalled && <p className="settings-footnote">On iOS, use Safari's Share menu and choose Add to Home Screen. HTTPS is required for most install and service-worker features.</p>}
                 </div>
 
                 <div className="settings-card settings-card-wide appearance-settings-card">
