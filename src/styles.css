@@ -3192,3 +3192,39 @@ html, body, #root {
   .settings-section-nav { margin: 0 -2px 14px; gap: 4px; padding-bottom: 7px; }
   .settings-section-tab { min-height: 34px; padding: 0 10px; font-size: 10px; }
 }
+
+
+/* Navigation placement is a preference on desktop; phones keep the thumb-friendly bottom bar. */
+@media (min-width: 721px) {
+  .app-shell[data-nav-position="right"] .sidebar {
+    inset: 0 0 0 auto;
+    border-right: 0;
+    border-left: 1px solid color-mix(in srgb, var(--user-accent) 8%, transparent);
+  }
+  .app-shell[data-nav-position="right"] .main-panel { margin-left: 0; margin-right: 264px; }
+  .app-shell[data-nav-position="right"] .playerbar { left: 0; right: 264px; }
+  .app-shell[data-nav-position="right"] .sidebar-section { order: 0; }
+  .app-shell[data-nav-position="bottom"] .sidebar { display: none; }
+  .app-shell[data-nav-position="bottom"] .main-panel { margin-left: 0; margin-right: 0; }
+  .app-shell[data-nav-position="bottom"] .playerbar { left: 0; right: 0; }
+  .app-shell[data-nav-position="bottom"] .mobile-bottom-nav {
+    position: fixed; z-index: 70; display: grid; grid-template-columns: repeat(5, minmax(0,1fr));
+    left: 50%; right: auto; bottom: 102px; width: min(650px, calc(100% - 48px));
+    height: 62px; padding: 7px 10px; transform: translateX(-50%);
+    border: 1px solid var(--line-strong); border-radius: 18px;
+    background: color-mix(in srgb, #111116 var(--user-glass-opacity, 78%), transparent);
+    backdrop-filter: blur(var(--user-glass-blur, 24px)) saturate(145%);
+    -webkit-backdrop-filter: blur(var(--user-glass-blur, 24px)) saturate(145%);
+    box-shadow: 0 18px 48px rgba(0,0,0,.24);
+  }
+  .app-shell[data-nav-position="bottom"] .mobile-nav-item { font-size: 10px; }
+}
+@media (min-width: 721px) and (max-width: 1240px) {
+  .app-shell[data-nav-position="right"] .main-panel { margin-right: 238px; }
+  .app-shell[data-nav-position="right"] .playerbar { right: 238px; }
+}
+@media (max-width: 720px) {
+  .app-shell[data-nav-position="right"] .sidebar { left: auto; right: 0; transform: translateX(105%); border-left: 1px solid var(--line); border-right: 0; }
+  .app-shell[data-nav-position="right"] .sidebar.sidebar-open { transform: translateX(0); }
+  .app-shell[data-nav-position="bottom"] .mobile-bottom-nav { left: 0; right: 0; bottom: 0; width: auto; height: calc(63px + env(safe-area-inset-bottom)); padding: 5px 9px calc(6px + env(safe-area-inset-bottom)); transform: none; border-width: 1px 0 0; border-radius: 0; }
+}
