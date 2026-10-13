@@ -1798,7 +1798,8 @@ function App() {
         <div className="content-wrap" ref={contentWrapRef}>
           {offlineMode && (
             <div className="offline-mode-banner" role="status">
-              <Download size={16} /><span><strong>Offline mode</strong> — the home server cannot be reached. Playing and managing local copies still works.</span>
+              <Download size={16} /><span><strong>Offline mode</strong> — the home server cannot be reached. Playing local copies still works.</span>
+              <button className="ghost-button offline-retry-button" type="button" onClick={() => window.location.reload()}><RefreshCw size={14} /> Retry server</button>
             </div>
           )}
           {offlineMessage && (
