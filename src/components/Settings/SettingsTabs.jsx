@@ -9,6 +9,7 @@ const SECTIONS = [
   { id: "integrations", label: "Integrations", icon: Plug },
   { id: "offline", label: "Offline", icon: Download },
   { id: "advanced", label: "Advanced", icon: Shield },
+  { id: "about", label: "About", icon: AudioLines },
   { id: "about", label: "About", icon: Info },
 ];
 
