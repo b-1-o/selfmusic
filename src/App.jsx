@@ -651,6 +651,17 @@ function App() {
       if (body.truncated) setLoadError("Your library is very large; only the first 20,000 tracks are shown.");
       setAuthenticated(true);
     } catch (error) {
+      try {
+        const saved = await readOfflineLibraryFromCache();
+        if (saved.tracks.length) {
+          setOfflineTracks(saved.tracks);
+          setOfflineTrackIds(saved.ids);
+          setTracks(saved.tracks);
+          setOfflineMode(true);
+          setLoadError("");
+          return;
+        }
+      } catch {}
       setLoadError(error.message || "The music library could not be loaded.");
     } finally {
       setLoadingTracks(false);
@@ -749,6 +760,7 @@ function App() {
             setOfflineMode(true);
             setConfigured(true);
             setAuthenticated(true);
+            setProfile({ id: "offline", username: "Offline mode", role: "user", legacy: false });
             setView("library");
             setServerUnavailable(false);
             setLoadError("");
@@ -1454,6 +1466,10 @@ function App() {
   }, [offlineBusyIds, offlineMode]);
 
   const toggleFavorite = useCallback(async (id) => {
+    if (offlineMode) {
+      setOfflineMessage("Favorites sync to the server. You can keep listening offline and sync favorites when it is reachable again.");
+      return;
+    }
     const wasFavorite = favorites.includes(id);
     try {
       const response = await fetch("/api/favorites/" + encodeURIComponent(id), {
@@ -1467,7 +1483,7 @@ function App() {
       setPlaylistMessage(error.message || "Could not update favorites.");
       setPlaylistError(true);
     }
-  }, [favorites]);
+  }, [favorites, offlineMode]);
 
   const handleSelectUploadFiles = useCallback((fileList) => {
     const nextFiles = Array.from(fileList || []);
@@ -2595,7 +2611,7 @@ function App() {
         <button className={view === "home" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("home")}><SectionGlyph kind="home" size={21} /><span>Home</span></button>
         <button className={view === "library" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("library")}><SectionGlyph kind="library" size={21} /><span>Library</span></button>
         <button className={view === "offline" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("offline")}><Download size={20} /><span>Offline</span></button>
-        <button className={view === "import" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("import")}><SectionGlyph kind="import" size={21} /><span>Import</span></button>
+        {profile.role === "admin" && !offlineMode && <button className={view === "import" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("import")}><SectionGlyph kind="import" size={21} /><span>Import</span></button>}
         <button className={view === "youtube" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("youtube")}><SectionGlyph kind="youtube" size={21} /><span>YouTube</span></button>
         <button className={view === "settings" ? "mobile-nav-item nav-active" : "mobile-nav-item"} onClick={() => setView("settings")}><SectionGlyph kind="server" size={21} /><span>Server</span></button>
       </nav>
