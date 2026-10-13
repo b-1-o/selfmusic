@@ -935,6 +935,16 @@ function App() {
       await fetch("/api/auth/logout", { method: "POST" });
     } finally {
       audioRef.current?.pause();
+      try {
+        if ("caches" in window) await window.caches.delete(OFFLINE_AUDIO_CACHE);
+        localStorage.removeItem(OFFLINE_TRACKS_KEY);
+      } catch {
+        // The browser may reject storage cleanup; the session still needs to end.
+      }
+      setOfflineTracks([]);
+      setOfflineTrackIds([]);
+      setOfflineMode(false);
+      setOfflineMessage("");
       setIsPlaying(false);
       setAuthenticated(false);
       setTracks([]);
