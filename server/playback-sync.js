@@ -242,6 +242,5 @@ export function mountPlaybackSyncRoutes(app, { db, requireAuth }) {
       if (current && !current.size) clientsByUser.delete(userId);
     };
     res.on("close", cleanup);
-    req.on("close", cleanup);
   });
 }
