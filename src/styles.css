@@ -3228,3 +3228,18 @@ html, body, #root {
   .app-shell[data-nav-position="right"] .sidebar.sidebar-open { transform: translateX(0); }
   .app-shell[data-nav-position="bottom"] .mobile-bottom-nav { left: 0; right: 0; bottom: 0; width: auto; height: calc(63px + env(safe-area-inset-bottom)); padding: 5px 9px calc(6px + env(safe-area-inset-bottom)); transform: none; border-width: 1px 0 0; border-radius: 0; }
 }
+
+.app-shell[data-view="settings"][data-settings-section="about"] .settings-grid > [data-settings-section="about"] {
+  display: block !important;
+}
+.app-shell[data-nav-position="bottom"] .main-panel { padding-bottom: 205px; }
+.appearance-theme-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.appearance-theme-actions .appearance-reset { margin-left: auto; }
+.theme-import-button { position: relative; display: inline-flex; align-items: center; gap: 7px; overflow: hidden; cursor: pointer; }
+.theme-import-button input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.settings-link { text-decoration: none; }
+.settings-link:hover { color: var(--user-accent); border-color: color-mix(in srgb, var(--user-accent) 30%, transparent); }
+@media (max-width: 720px) {
+  .appearance-theme-actions { align-items: stretch; }
+  .appearance-theme-actions .appearance-reset { margin-left: 0; }
+}
