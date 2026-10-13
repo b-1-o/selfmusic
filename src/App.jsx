@@ -43,6 +43,8 @@ const FAVORITES_KEY = "selfmusic:favorites:v1";
 const LAST_TRACK_KEY = "selfmusic:last-track:v1";
 const APPEARANCE_KEY = "selfmusic:appearance:v1";
 const REMOTE_WIZARD_KEY = "selfmusic:remote-wizard-seen:v1";
+const OFFLINE_AUDIO_CACHE = "selfmusic-offline-audio-v1";
+const OFFLINE_TRACKS_KEY = "selfmusic:offline-tracks:v1";
 const TAILSCALE_DOWNLOAD_URL = "https://tailscale.com/download";
 const TAILSCALE_QR_URL = "https://api.qrserver.com/v1/create-qr-code/?size=192x192&margin=8&data=" + encodeURIComponent(TAILSCALE_DOWNLOAD_URL);
 const SUPPORTED_UPLOAD_EXTENSIONS = new Set(["mp3", "m4a", "aac", "flac", "wav", "ogg", "opus", "webm"]);
@@ -183,6 +185,34 @@ function readLocalJson(key, fallback) {
   }
 }
 
+function offlineTrackUrl(trackId) {
+  return "/__selfmusic_offline/" + encodeURIComponent(trackId);
+}
+
+function offlineCacheRequest(trackId) {
+  return new Request(new URL(offlineTrackUrl(trackId), window.location.origin).toString(), { method: "GET" });
+}
+
+async function readOfflineLibraryFromCache() {
+  if (!("caches" in window)) return { ids: [], tracks: [] };
+  const cache = await window.caches.open(OFFLINE_AUDIO_CACHE);
+  const requests = await cache.keys();
+  const cachedIds = new Set();
+  for (const request of requests) {
+    try {
+      const pathname = new URL(request.url).pathname;
+      const match = /^\\/__selfmusic_offline\\/([^/]+)$/.exec(pathname);
+      if (match) cachedIds.add(decodeURIComponent(match[1]));
+    } catch {}
+  }
+
+  const stored = readLocalJson(OFFLINE_TRACKS_KEY, []);
+  const byId = new Map((Array.isArray(stored) ? stored : []).filter((track) => track && typeof track.id === "string").map((track) => [track.id, track]));
+  const tracks = [...cachedIds].map((id) => byId.get(id)).filter(Boolean);
+  try { localStorage.setItem(OFFLINE_TRACKS_KEY, JSON.stringify(tracks)); } catch {}
+  return { ids: [...cachedIds], tracks };
+}
+
 function formatTime(value) {
   if (!Number.isFinite(value) || value < 0) return "0:00";
   const minutes = Math.floor(value / 60);
@@ -253,7 +283,7 @@ function Cover({ track, large = false }) {
   );
 }
 
-const TrackRow = React.memo(function TrackRow({ track, index, active, playing, favorite, onPlay, onFavorite, onDelete, deleting, canManage = true, currentTime = 0, duration = 0 }) {
+const TrackRow = React.memo(function TrackRow({ track, index, active, playing, favorite, onPlay, onFavorite, onDelete, deleting, canManage = true, currentTime = 0, duration = 0, offlineSaved = false, offlineBusy = false, onOffline }) {
   return (
     <div className={"track-row" + (active ? " track-row-active" : "")}>
       <button className="track-index" aria-label={"Play " + track.title} onClick={() => onPlay(track)}>
@@ -278,7 +308,17 @@ const TrackRow = React.memo(function TrackRow({ track, index, active, playing, f
       >
         <Heart size={17} fill={favorite ? "currentColor" : "none"} />
       </button>
-      {canManage && (
+      <button
+        className={"icon-button track-offline" + (offlineSaved ? " is-offline" : "")}
+        type="button"
+        disabled={offlineBusy}
+        aria-label={offlineSaved ? "Remove offline copy of " + track.title : "Save " + track.title + " for offline playback"}
+        title={offlineSaved ? "Saved offline — click to remove" : "Save for offline playback"}
+        onClick={() => onOffline(track)}
+      >
+        {offlineBusy ? <RefreshCw size={15} className="spin" /> : offlineSaved ? <Check size={16} /> : <Download size={15} />}
+      </button>
+      {canManage ? (
         <button
           className="icon-button track-delete"
           type="button"
@@ -289,7 +329,7 @@ const TrackRow = React.memo(function TrackRow({ track, index, active, playing, f
         >
           {deleting ? <RefreshCw size={16} className="spin" /> : <Trash2 size={16} />}
         </button>
-      )}
+      ) : <span className="track-delete-placeholder" aria-hidden="true" />}
       <span className="track-duration">—:—</span>
     </div>
   );
@@ -381,6 +421,15 @@ function App() {
   const [configured, setConfigured] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
   const [serverUnavailable, setServerUnavailable] = useState(false);
+  const [offlineMode, setOfflineMode] = useState(false);
+  const [offlineTracks, setOfflineTracks] = useState(() => readLocalJson(OFFLINE_TRACKS_KEY, []));
+  const [offlineTrackIds, setOfflineTrackIds] = useState(() => {
+    const saved = readLocalJson(OFFLINE_TRACKS_KEY, []);
+    return Array.isArray(saved) ? saved.map((track) => track?.id).filter((id) => typeof id === "string") : [];
+  });
+  const [offlineBusyIds, setOfflineBusyIds] = useState([]);
+  const [offlineMessage, setOfflineMessage] = useState("");
+
   const [loginError, setLoginError] = useState("");
   const [tracks, setTracks] = useState([]);
   const [loadError, setLoadError] = useState("");
@@ -2489,6 +2538,9 @@ function TrackList({
   canManage = true,
   currentTime = 0,
   duration = 0,
+  offlineTrackIds = [],
+  offlineBusyIds = [],
+  onOffline,
 }) {
   if (loading && !tracks.length) {
     return <div className="empty-state"><RefreshCw size={23} className="spin" /><h3>Finding your music</h3><p>Scanning the library on your home server.</p></div>;
@@ -2513,7 +2565,7 @@ function TrackList({
       </div>
     )}
     <div className="track-table">
-      <div className="track-table-head"><span>#</span><span>TITLE</span><span>ALBUM / FOLDER</span><span><Heart size={14} /></span><span aria-label="Delete track"><Trash2 size={13} /></span><span>TIME</span></div>
+      <div className="track-table-head"><span>#</span><span>TITLE</span><span>ALBUM / FOLDER</span><span><Heart size={14} /></span><span aria-label="Offline copy"><Download size={13} /></span><span aria-label="Delete track"><Trash2 size={13} /></span><span>TIME</span></div>
       {tracks.map((track, index) => (
         <TrackRow
           key={track.id}
@@ -2529,6 +2581,9 @@ function TrackList({
           canManage={canManage}
           currentTime={currentTime}
           duration={duration}
+          offlineSaved={offlineTrackIds.includes(track.id)}
+          offlineBusy={offlineBusyIds.includes(track.id)}
+          onOffline={onOffline}
         />
       ))}
     </div>
