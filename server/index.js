@@ -1009,7 +1009,7 @@ app.post("/api/library/scan", requireAuth, requireAdmin, async (_req, res, next)
   } catch (error) { next(error); }
 });
 
-app.get("/api/duplicates", requireAuth, async (_req, res, next) => {
+app.get("/api/duplicates", requireAuth, requireAdmin, async (_req, res, next) => {
   try {
     await findTracks();
     const groups = db.prepare("SELECT sha256, COUNT(*) AS count FROM tracks WHERE sha256 IS NOT NULL GROUP BY sha256 HAVING COUNT(*) > 1 ORDER BY count DESC").all();
