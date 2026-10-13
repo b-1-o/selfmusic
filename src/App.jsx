@@ -354,7 +354,7 @@ function LoginScreen({ configured, checking, onLogin, error, serverUnavailable, 
   const [showPassword, setShowPassword] = useState(false);
 
   return (
-    <div className="login-shell" data-theme={appearance.theme} data-accent={appearance.accent} data-glass={appearance.glass} style={{ "--user-accent": appearance.accentColor, "--user-accent-strong": darkenAccent(appearance.accentColor) }}>
+    <div className="login-shell" data-theme={appearance.theme} data-accent={appearance.accent} data-glass={appearance.glass} style={{ "--user-accent": appearance.accentColor, "--user-accent-strong": darkenAccent(appearance.accentColor), "--user-glass-opacity": appearance.glassOpacity + "%", "--user-glass-blur": appearance.glassBlur + "px", "--user-radius": appearance.cornerRadius + "px", "--user-background-image": backgroundImage, "--user-motion-duration": motionDuration }}>
       <div className="login-orb login-orb-one" />
       <div className="login-orb login-orb-two" />
       <div className="login-card">
