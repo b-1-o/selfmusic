@@ -283,6 +283,61 @@ app.use((req, res, next) => {
   res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   next();
 });
+function normalizeConfiguredClientOrigin(value) {
+  const input = String(value || "").trim();
+  if (!input) return "";
+  // Tizen packaged web apps can emit either an opaque origin or "file://".
+  if (input === "null" || input === "file://") return "opaque";
+  try {
+    const url = new URL(input);
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) return "";
+    return url.origin;
+  } catch {
+    return "";
+  }
+}
+
+function configuredEmbeddedClientOrigins() {
+  return new Set(
+    String(process.env.SELF_MUSIC_ALLOWED_ORIGINS || "")
+      .split(",")
+      .map(normalizeConfiguredClientOrigin)
+      .filter(Boolean)
+  );
+}
+
+function isAllowedEmbeddedClientOrigin(origin) {
+  if (!origin) return false;
+  return configuredEmbeddedClientOrigins().has(normalizeConfiguredClientOrigin(origin));
+}
+
+function appendVaryHeader(res, name) {
+  const values = String(res.getHeader("Vary") || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (!values.some((value) => value.toLowerCase() === name.toLowerCase())) values.push(name);
+  res.setHeader("Vary", values.join(", "));
+}
+
+// CORS is allow-list only. A packaged app gets a short-lived signed access token;
+// the server never enables credentialed wildcard CORS.
+app.use("/api", (req, res, next) => {
+  const origin = req.get("origin");
+  if (!isAllowedEmbeddedClientOrigin(origin)) {
+    if (req.method === "OPTIONS") return res.status(403).json({ error: "origin_not_allowed" });
+    return next();
+  }
+
+  res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, Range, X-Requested-With");
+  res.setHeader("Access-Control-Expose-Headers", "Accept-Ranges, Content-Length, Content-Range");
+  appendVaryHeader(res, "Origin");
+  if (req.method === "OPTIONS") return res.status(204).end();
+  next();
+});
+
 app.use("/api", enforceSameOriginMutation);
 
 const genericRateLimitBuckets = new Map();
@@ -380,11 +435,19 @@ function createSessionToken(userId = "legacy") {
 }
 
 function getSessionInfo(req) {
-  const cookies = String(req.headers.cookie || "").split(";").map((part) => part.trim());
-  const entry = cookies.find((part) => part.startsWith(sessionCookie + "="));
-  if (!entry) return { status: "missing", userId: null };
+  // The first-party SelfMusic UI uses the HTTP-only cookie. Trusted embedded clients
+  // use the same signed session token as an explicit Bearer token, avoiding
+  // third-party-cookie restrictions in packaged Tizen web applications.
+  const authorization = String(req.get("authorization") || "");
+  const bearer = authorization.match(/^Bearer\\s+([^\\s]+)$/i);
+  let token = bearer ? bearer[1] : null;
+  if (!token) {
+    const cookies = String(req.headers.cookie || "").split(";").map((part) => part.trim());
+    const entry = cookies.find((part) => part.startsWith(sessionCookie + "="));
+    token = entry ? entry.slice(sessionCookie.length + 1) : null;
+  }
+  if (!token) return { status: "missing", userId: null };
 
-  const token = entry.slice(sessionCookie.length + 1);
   const parts = token.split(".");
   let userId = "legacy";
   let expiresAt;
@@ -463,6 +526,10 @@ function enforceSameOriginMutation(req, res, next) {
     }
     return next();
   }
+
+  // Explicitly configured B1O TV origins may perform API mutations. These requests
+  // use a Bearer token, so they do not depend on cross-site cookies.
+  if (isAllowedEmbeddedClientOrigin(origin)) return next();
 
   let originUrl;
   try {
@@ -620,9 +687,13 @@ app.post("/api/auth/login", (req, res) => {
   }
 
   loginAttempts.delete(key);
-  setSessionCookie(req, res, createSessionToken(userId));
+  const accessToken = createSessionToken(userId);
+  setSessionCookie(req, res, accessToken);
   res.json({
     authenticated: true,
+    // Only return a readable token to an explicitly allow-listed embedded client.
+    // The ordinary SelfMusic site continues using its HTTP-only session cookie.
+    accessToken: isAllowedEmbeddedClientOrigin(req.get("origin")) ? accessToken : undefined,
     user: user ? { id: user.id, username, role: db.prepare("SELECT role FROM users WHERE id = ?").get(user.id)?.role || "user" } : { id: "legacy", username: "owner", role: "admin" }
   });
 });
