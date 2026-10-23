@@ -424,8 +424,9 @@ function constantTimeTextCompare(left, right) {
   return crypto.timingSafeEqual(a, b);
 }
 
-function createSessionToken(userId = "legacy") {
-  const expiresAt = String(Math.floor(Date.now() / 1000) + sessionLifetimeSeconds);
+function createSessionToken(userId = "legacy", lifetimeSeconds = sessionLifetimeSeconds) {
+  const safeLifetimeSeconds = Math.max(60, Math.min(sessionLifetimeSeconds, Number(lifetimeSeconds) || sessionLifetimeSeconds));
+  const expiresAt = String(Math.floor(Date.now() / 1000) + safeLifetimeSeconds);
   if (userId === "legacy") {
     const signature = crypto.createHmac("sha256", sessionSecret).update(expiresAt).digest("base64url");
     return expiresAt + "." + signature;
@@ -713,13 +714,13 @@ app.post("/api/auth/login", (req, res) => {
   }
 
   loginAttempts.delete(key);
-  const accessToken = createSessionToken(userId);
-  setSessionCookie(req, res, accessToken);
+  const embeddedClient = isAllowedEmbeddedClientOrigin(req.get("origin"));
+  setSessionCookie(req, res, createSessionToken(userId));
   res.json({
     authenticated: true,
-    // Only return a readable token to an explicitly allow-listed embedded client.
-    // The ordinary SelfMusic site continues using its HTTP-only session cookie.
-    accessToken: isAllowedEmbeddedClientOrigin(req.get("origin")) ? accessToken : undefined,
+    // Embedded access tokens expire after one hour and are only returned to an
+    // explicitly allow-listed client. The normal UI keeps its HTTP-only cookie.
+    accessToken: embeddedClient ? createSessionToken(userId, 60 * 60) : undefined,
     user: user ? { id: user.id, username, role: db.prepare("SELECT role FROM users WHERE id = ?").get(user.id)?.role || "user" } : { id: "legacy", username: "owner", role: "admin" }
   });
 });
