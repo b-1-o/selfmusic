@@ -60,6 +60,7 @@ jobs:
           docker run --detach --name selfmusic-smoke --publish 18787:8787 \
             --env NODE_ENV=development \
             --env SELF_MUSIC_PASSWORD=smoke-test-password \
+            --env SELF_MUSIC_ALLOWED_ORIGINS=http://127.0.0.1:5173 \
             --env SESSION_SECRET=smoke-test-session-secret-with-more-than-32-characters \
             --env DATABASE_PATH=/app/data/selfmusic.sqlite \
             --env COVER_CACHE_DIR=/app/data/artwork \
@@ -127,6 +128,43 @@ jobs:
             "$base_url/api/tracks" >/tmp/selfmusic-tracks.json
           track_id="$(node -e 'const fs=require("node:fs"); const data=JSON.parse(fs.readFileSync("/tmp/selfmusic-tracks.json","utf8")); if(!data.tracks || data.tracks.length!==1) process.exit(1); process.stdout.write(data.tracks[0].id);')"
           test -n "$track_id"
+
+          # Embedded-client sign-in returns a one-hour Bearer token only for the
+          # exact configured origin. Standard SelfMusic cookie authentication above remains supported.
+          curl --fail --silent --show-error \
+            --dump-header /tmp/selfmusic-embed-headers.txt \
+            --header 'Origin: http://127.0.0.1:5173' \
+            --header 'Content-Type: application/json' \
+            --data '{"password":"smoke-test-password"}' \
+            "$base_url/api/auth/login" >/tmp/selfmusic-embed-login.json
+          grep -qi '^Access-Control-Allow-Origin: http://127.0.0.1:5173' /tmp/selfmusic-embed-headers.txt
+          embedded_token="$(node -e 'const fs=require("node:fs"); const data=JSON.parse(fs.readFileSync("/tmp/selfmusic-embed-login.json","utf8")); if(typeof data.accessToken!=="string" || !data.accessToken) process.exit(1); process.stdout.write(data.accessToken);')"
+          node -e 'const t=process.argv[1].split("."); const exp=Number(t[t.length-2] || t[0]); const now=Math.floor(Date.now()/1000); if(!Number.isSafeInteger(exp) || exp<=now || exp>now+3601) process.exit(1);' "$embedded_token"
+          curl --fail --silent --show-error \
+            --header 'Origin: http://127.0.0.1:5173' \
+            --header "Authorization: Bearer $embedded_token" \
+            "$base_url/api/tracks" >/tmp/selfmusic-embed-tracks.json
+          node -e 'const fs=require("node:fs"); const data=JSON.parse(fs.readFileSync("/tmp/selfmusic-embed-tracks.json","utf8")); if(!data.tracks || data.tracks.length!==1) process.exit(1);'
+          blocked_origin_status="$(curl --silent --show-error --output /tmp/selfmusic-blocked-origin.json --write-out '%{http_code}' \
+            --request OPTIONS \
+            --header 'Origin: https://untrusted.example' \
+            --header 'Access-Control-Request-Method: POST' \
+            "$base_url/api/auth/login")"
+          test "$blocked_origin_status" = "403"
+
+          embed_ticket_body="$(node -e 'process.stdout.write(JSON.stringify({purpose:"stream",trackIds:[process.argv[1]]}))' "$track_id")"
+          curl --fail --silent --show-error \
+            --header 'Origin: http://127.0.0.1:5173' \
+            --header "Authorization: Bearer $embedded_token" \
+            --header 'Content-Type: application/json' \
+            --data "$embed_ticket_body" \
+            "$base_url/api/embed/media-tickets" >/tmp/selfmusic-embed-tickets.json
+          media_ticket="$(node -e 'const fs=require("node:fs"); const d=JSON.parse(fs.readFileSync("/tmp/selfmusic-embed-tickets.json","utf8")); const id=process.argv[1]; if(typeof d.tickets?.[id]!=="string") process.exit(1); process.stdout.write(d.tickets[id]);' "$track_id")"
+          embed_stream_status="$(curl --silent --show-error --output /tmp/selfmusic-embed-range.bin --write-out '%{http_code}' \
+            --header 'Range: bytes=0-2' \
+            "$base_url/api/stream/$track_id?ticket=$media_ticket")"
+          test "$embed_stream_status" = "206"
+          test "$(wc -c </tmp/selfmusic-embed-range.bin | tr -d ' ')" = "3"
 
           curl --fail --silent --show-error --cookie /tmp/selfmusic-guest-cookies.txt \
             "$base_url/api/tracks" >/tmp/selfmusic-guest-tracks.json
