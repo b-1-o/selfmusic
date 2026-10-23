@@ -19,6 +19,8 @@ test("embedded access tokens are separate, bearer-authenticated, and one-hour li
   assert.ok(server.includes('accessToken: embeddedClient ? createSessionToken(userId, 60 * 60) : undefined'));
   assert.ok(server.includes("setSessionCookie(req, res, createSessionToken(userId))"));
   assert.ok(server.includes("safeLifetimeSeconds = Math.max(60, Math.min(sessionLifetimeSeconds"));
+  assert.ok(server.includes("revokedSessionTokens.set(token, expirySeconds * 1000)"));
+  assert.ok(server.includes("revokedUntil > now"));
 });
 
 test("media tickets are restricted to one track, purpose, and expiration time", async () => {
@@ -27,6 +29,7 @@ test("media tickets are restricted to one track, purpose, and expiration time", 
   assert.ok(server.includes('["artwork", "stream"].includes(purpose)'));
   assert.ok(server.includes('ticket.purpose !== purpose || ticket.trackId !== req.params.id'));
   assert.ok(server.includes("ticket.expiresAt <= Date.now()"));
+  assert.ok(server.includes("id.length > 2048 || id.includes"));
   assert.ok(server.includes('app.get("/api/artwork/:id", requireMediaAccess("artwork")'));
   assert.ok(server.includes('app.get("/api/stream/:id", requireMediaAccess("stream")'));
 });
