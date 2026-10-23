@@ -61,6 +61,7 @@ const mimeTypes = {
 const artNames = ["cover.webp", "cover.jpg", "cover.jpeg", "cover.png", "folder.webp", "folder.jpg", "folder.jpeg", "folder.png"];
 const loginAttempts = new Map();
 const embeddedMediaTickets = new Map();
+const revokedSessionTokens = new Map();
 
 function configuredDuplicateStrategy() {
   const strategy = String(process.env.DUPLICATE_STRATEGY || "keep").toLowerCase();
@@ -450,6 +451,13 @@ function getSessionInfo(req) {
   }
   if (!token) return { status: "missing", userId: null };
 
+  const now = Date.now();
+  const revokedUntil = revokedSessionTokens.get(token);
+  if (revokedUntil) {
+    if (revokedUntil > now) return { status: "invalid", userId: null };
+    revokedSessionTokens.delete(token);
+  }
+
   const parts = token.split(".");
   let userId = "legacy";
   let expiresAt;
@@ -808,6 +816,39 @@ app.delete("/api/admin/users/:id", requireAuth, (req, res) => {
 
 app.post("/api/auth/logout", (req, res) => {
   res.setHeader("Cache-Control", "no-store, max-age=0");
+
+  // Revoke the signed session presented by the first-party cookie or the
+  // embedded client's Bearer token, so sign-out takes effect immediately.
+  const session = getSessionInfo(req);
+  if (session.status === "valid") {
+    const authorization = String(req.get("authorization") || "");
+    const bearer = authorization.match(/^Bearer\\s+([^\\s]+)$/i);
+    let token = bearer ? bearer[1] : null;
+    if (!token) {
+      const cookies = String(req.headers.cookie || "").split(";").map((part) => part.trim());
+      const entry = cookies.find((part) => part.startsWith(sessionCookie + "="));
+      token = entry ? entry.slice(sessionCookie.length + 1) : null;
+    }
+    if (token) {
+      const parts = token.split(".");
+      const expiryPart = parts.length === 2 ? parts[0] : parts.length === 3 ? parts[1] : "";
+      const expirySeconds = Number(expiryPart);
+      if (Number.isSafeInteger(expirySeconds) && expirySeconds * 1000 > Date.now()) {
+        revokedSessionTokens.set(token, expirySeconds * 1000);
+      }
+    }
+  }
+
+  const now = Date.now();
+  for (const [token, expiry] of revokedSessionTokens) {
+    if (expiry <= now) revokedSessionTokens.delete(token);
+  }
+  while (revokedSessionTokens.size > 10000) {
+    const oldest = revokedSessionTokens.keys().next().value;
+    if (oldest === undefined) break;
+    revokedSessionTokens.delete(oldest);
+  }
+
   setSessionCookie(req, res, "", 0);
   res.status(204).end();
 });
