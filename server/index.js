@@ -288,8 +288,9 @@ app.use((req, res, next) => {
 function normalizeConfiguredClientOrigin(value) {
   const input = String(value || "").trim();
   if (!input) return "";
-  // Tizen packaged web apps can emit either an opaque origin or "file://".
-  if (input === "null" || input === "file://") return "opaque";
+  // Opaque Tizen origins serialize as "null". Do not alias the non-HTTP
+  // file:// scheme to that shared origin; only the actual Origin value is accepted.
+  if (input === "null") return "opaque";
   try {
     const url = new URL(input);
     if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) return "";
