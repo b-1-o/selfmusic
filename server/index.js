@@ -1087,7 +1087,7 @@ app.post("/api/embed/media-tickets", requireAuth, (req, res) => {
     return res.status(400).json({ error: "invalid_media_purpose", message: "Purpose must be artwork or stream." });
   }
   if (!Array.isArray(trackIds) || trackIds.length < 1 || trackIds.length > 100 ||
-      trackIds.some((id) => typeof id !== "string" || !id.trim() || id.length > 128 || id.includes("/") || id.includes("\\") || id.includes("?") || id.includes("#") || Array.from(id).some((character) => character.charCodeAt(0) < 32))) {
+      trackIds.some((id) => typeof id !== "string" || !id.trim() || id.length > 2048 || id.includes("/") || id.includes("\\") || id.includes("?") || id.includes("#") || Array.from(id).some((character) => character.charCodeAt(0) < 32))) {
     return res.status(400).json({ error: "invalid_track_ids", message: "Provide 1–100 valid track IDs." });
   }
 
