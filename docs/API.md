@@ -37,6 +37,20 @@ Managed accounts have unique passwords of 12–128 characters. Usernames are 3�
 
 Mutating requests are checked against their origin. API requests are rate-limited. Session cookies are HTTP-only and expire after seven days.
 
+## Embedded TV clients (B1O TV)
+
+SelfMusic can serve its authenticated library to a trusted native/web-app client without embedding the separate SelfMusic website. Configure a comma-separated exact-origin allow-list in the private SelfMusic `.env` file, then restart the server:
+
+```dotenv
+SELF_MUSIC_ALLOWED_ORIGINS=http://localhost:5173
+```
+
+For the packaged Samsung TV app, open **B1O TV → SelfMusic** and copy the displayed **B1O app origin** into `SELF_MUSIC_ALLOWED_ORIGINS`. Use the exact origin shown, including scheme and port where present. A packaged Tizen app may report an opaque origin as `null`; only allow that value if the runtime actually reports it and SelfMusic remains on a private network you control. Never use a wildcard origin.
+
+When the request origin is allow-listed, `POST /api/auth/login` also returns an `accessToken` in JSON for the embedded client. The value is the normal signed seven-day session token. Send it as `Authorization: Bearer <accessToken>` for API requests. The B1O player keeps it in application memory and does not store the SelfMusic password. Ordinary same-origin SelfMusic pages continue using the HTTP-only cookie.
+
+The player requests short-lived, track-scoped media tickets with `POST /api/embed/media-tickets`, using a JSON body like `{"purpose":"artwork","trackIds":["<track-id-1>","<track-id-2>"]}` (1–100 IDs). Use `"purpose":"stream"` for the selected track's audio URL. Tickets expire and only authorize the matching track and media type; they do not grant access to the rest of the library. The app-origin allow-list is also required for API reads and mutations. Prefer HTTPS when the TV connects to SelfMusic over a network.
+
 ## Library, metadata and streaming
 
 - GET /api/tracks — indexed track list; preserves the existing { "tracks": [...], "truncated": false } response.
