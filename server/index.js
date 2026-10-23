@@ -822,7 +822,7 @@ app.post("/api/auth/logout", (req, res) => {
   const session = getSessionInfo(req);
   if (session.status === "valid") {
     const authorization = String(req.get("authorization") || "");
-    const bearer = authorization.match(/^Bearer\\s+([^\\s]+)$/i);
+  const bearer = authorization.match(/^Bearer\s+([^\s]+)$/i);
     let token = bearer ? bearer[1] : null;
     if (!token) {
       const cookies = String(req.headers.cookie || "").split(";").map((part) => part.trim());
