@@ -60,6 +60,7 @@ const mimeTypes = {
 };
 const artNames = ["cover.webp", "cover.jpg", "cover.jpeg", "cover.png", "folder.webp", "folder.jpg", "folder.jpeg", "folder.png"];
 const loginAttempts = new Map();
+const embeddedMediaTickets = new Map();
 
 function configuredDuplicateStrategy() {
   const strategy = String(process.env.DUPLICATE_STRATEGY || "keep").toLowerCase();
@@ -568,6 +569,31 @@ function requireAuth(req, res, next) {
   next();
 }
 
+function requireMediaAccess(purpose) {
+  return (req, res, next) => {
+    const ticketValue = typeof req.query.ticket === "string" ? req.query.ticket : "";
+    if (!ticketValue) return requireAuth(req, res, next);
+
+    const ticket = embeddedMediaTickets.get(ticketValue);
+    if (!ticket || ticket.expiresAt <= Date.now() || ticket.purpose !== purpose || ticket.trackId !== req.params.id) {
+      embeddedMediaTickets.delete(ticketValue);
+      return res.status(401).json({ error: "media_ticket_invalid", message: "This media link expired. Reopen the track and try again." });
+    }
+
+    if (ticket.userId === "legacy") {
+      req.authUser = { id: "legacy", username: "owner", role: "admin", legacy: true };
+      return next();
+    }
+    const user = db.prepare("SELECT id, username, role, created_at AS createdAt FROM users WHERE id = ?").get(ticket.userId);
+    if (!user) {
+      embeddedMediaTickets.delete(ticketValue);
+      return res.status(401).json({ error: "unauthorized", message: "This account no longer exists." });
+    }
+    req.authUser = user;
+    next();
+  };
+}
+
 function requireAdmin(req, res, next) {
   if (req.authUser?.role !== "admin") {
     return res.status(403).json({ error: "admin_required", message: "Administrator access is required for this operation." });
@@ -1053,6 +1079,40 @@ app.post("/api/import-url", requireAuth, requireAdmin, async (req, res, next) =>
   }
 });
 
+app.post("/api/embed/media-tickets", requireAuth, (req, res) => {
+  const purpose = req.body?.purpose;
+  const trackIds = req.body?.trackIds;
+  if (!["artwork", "stream"].includes(purpose)) {
+    return res.status(400).json({ error: "invalid_media_purpose", message: "Purpose must be artwork or stream." });
+  }
+  if (!Array.isArray(trackIds) || trackIds.length < 1 || trackIds.length > 100 ||
+      trackIds.some((id) => typeof id !== "string" || !id.trim() || id.length > 128 || /[\\x00-\\x1f/\\\\?#]/.test(id))) {
+    return res.status(400).json({ error: "invalid_track_ids", message: "Provide 1–100 valid track IDs." });
+  }
+
+  const now = Date.now();
+  for (const [key, ticket] of embeddedMediaTickets) {
+    if (ticket.expiresAt <= now) embeddedMediaTickets.delete(key);
+  }
+  if (embeddedMediaTickets.size > 20000) {
+    for (const key of embeddedMediaTickets.keys()) {
+      embeddedMediaTickets.delete(key);
+      if (embeddedMediaTickets.size <= 15000) break;
+    }
+  }
+
+  const uniqueIds = [...new Set(trackIds)];
+  const expiresAt = now + (purpose === "stream" ? 6 * 60 * 60 * 1000 : 60 * 60 * 1000);
+  const tickets = {};
+  for (const trackId of uniqueIds) {
+    const ticket = crypto.randomBytes(32).toString("base64url");
+    embeddedMediaTickets.set(ticket, { userId: req.authUser.id, trackId, purpose, expiresAt });
+    tickets[trackId] = ticket;
+  }
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ tickets, expiresAt });
+});
+
 app.get("/api/tracks", requireAuth, async (_req, res, next) => {
   try {
     const tracks = await findTracks();
@@ -1514,7 +1574,7 @@ app.post("/api/youtube/download", requireAuth, requireAdmin, async (req, res, ne
   }
 });
 
-app.get("/api/artwork/:id", requireAuth, async (req, res, next) => {
+app.get("/api/artwork/:id", requireMediaAccess("artwork"), async (req, res, next) => {
   try {
     const track = await resolveTrackFile(req.params.id);
     if (!track) return res.status(404).json({ error: "not_found" });
@@ -1569,7 +1629,7 @@ app.get("/api/artwork/:id", requireAuth, async (req, res, next) => {
   }
 });
 
-app.get("/api/stream/:id", requireAuth, async (req, res, next) => {
+app.get("/api/stream/:id", requireMediaAccess("stream"), async (req, res, next) => {
   try {
     const track = await resolveTrackFile(req.params.id);
     if (!track) return res.status(404).json({ error: "track_not_found" });
