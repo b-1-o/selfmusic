@@ -166,6 +166,18 @@ jobs:
           test "$embed_stream_status" = "206"
           test "$(wc -c </tmp/selfmusic-embed-range.bin | tr -d ' ')" = "3"
 
+          logout_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+            --request POST \
+            --header 'Origin: http://127.0.0.1:5173' \
+            --header "Authorization: Bearer $embedded_token" \
+            "$base_url/api/auth/logout")"
+          test "$logout_status" = "204"
+          revoked_token_status="$(curl --silent --show-error --output /tmp/selfmusic-revoked-token.json --write-out '%{http_code}' \
+            --header 'Origin: http://127.0.0.1:5173' \
+            --header "Authorization: Bearer $embedded_token" \
+            "$base_url/api/tracks")"
+          test "$revoked_token_status" = "401"
+
           curl --fail --silent --show-error --cookie /tmp/selfmusic-guest-cookies.txt \
             "$base_url/api/tracks" >/tmp/selfmusic-guest-tracks.json
           node -e 'const fs=require("node:fs"); const data=JSON.parse(fs.readFileSync("/tmp/selfmusic-guest-tracks.json","utf8")); if(!data.tracks || data.tracks.length!==1) process.exit(1); process.stdout.write(data.tracks[0].id);' >/tmp/selfmusic-guest-track-id.txt
