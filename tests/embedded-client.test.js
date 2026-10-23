@@ -9,6 +9,8 @@ test("embedded SelfMusic clients use an exact origin allow-list and no wildcard 
   assert.ok(server.includes("SELF_MUSIC_ALLOWED_ORIGINS"));
   assert.ok(server.includes('res.setHeader("Access-Control-Allow-Origin", origin)'));
   assert.ok(server.includes("configuredEmbeddedClientOrigins"));
+  assert.ok(server.includes('if (input === "null") return "opaque"'));
+  assert.ok(!server.includes('input === "file://"'));
   assert.ok(server.includes('if (req.method === "OPTIONS") return res.status(403).json({ error: "origin_not_allowed" })'));
   assert.ok(!server.includes('res.setHeader("Access-Control-Allow-Origin", "*")'));
 });
@@ -21,6 +23,7 @@ test("embedded access tokens are separate, bearer-authenticated, and one-hour li
   assert.ok(server.includes("safeLifetimeSeconds = Math.max(60, Math.min(sessionLifetimeSeconds"));
   assert.ok(server.includes("revokedSessionTokens.set(token, expirySeconds * 1000)"));
   assert.ok(server.includes("revokedUntil > now"));
+  assert.ok(server.includes('app.post("/api/auth/logout"'));
 });
 
 test("media tickets are restricted to one track, purpose, and expiration time", async () => {
