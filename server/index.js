@@ -439,7 +439,7 @@ function getSessionInfo(req) {
   // use the same signed session token as an explicit Bearer token, avoiding
   // third-party-cookie restrictions in packaged Tizen web applications.
   const authorization = String(req.get("authorization") || "");
-  const bearer = authorization.match(/^Bearer\\s+([^\\s]+)$/i);
+  const bearer = authorization.match(/^Bearer\s+([^\s]+)$/i);
   let token = bearer ? bearer[1] : null;
   if (!token) {
     const cookies = String(req.headers.cookie || "").split(";").map((part) => part.trim());
